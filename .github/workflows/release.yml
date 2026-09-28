@@ -1,0 +1,49 @@
+name: Release TUI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.0'
+      - name: Test
+        run: go test ./...
+      - name: Build release archives
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets/stage
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o release-assets/stage/service-lasso-tui.exe ./cmd/service-lasso-tui
+          (cd release-assets/stage && zip ../service-lasso-tui-windows-amd64.zip service-lasso-tui.exe)
+          rm -f release-assets/stage/service-lasso-tui.exe
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o release-assets/stage/service-lasso-tui ./cmd/service-lasso-tui
+          (cd release-assets/stage && tar -czf ../service-lasso-tui-linux-amd64.tar.gz service-lasso-tui)
+          rm -f release-assets/stage/service-lasso-tui
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o release-assets/stage/service-lasso-tui ./cmd/service-lasso-tui
+          (cd release-assets/stage && tar -czf ../service-lasso-tui-darwin-arm64.tar.gz service-lasso-tui)
+          rm -rf release-assets/stage
+          (cd release-assets && sha256sum service-lasso-tui-windows-amd64.zip service-lasso-tui-linux-amd64.tar.gz service-lasso-tui-darwin-arm64.tar.gz > SHA256SUMS.txt)
+      - name: Compute release version
+        id: version
+        run: echo "version=$(date -u +%Y.%-m.%-d)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: ${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          files: |
+            release-assets/service-lasso-tui-windows-amd64.zip
+            release-assets/service-lasso-tui-linux-amd64.tar.gz
+            release-assets/service-lasso-tui-darwin-arm64.tar.gz
+            release-assets/SHA256SUMS.txt
+          generate_release_notes: true

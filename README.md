@@ -2,7 +2,15 @@
 
 Keyboard-first terminal operator interface for the Service Lasso runtime API.
 
-This repository is bootstrapped from a source-independent `develop` baseline.
-Implementation work is tracked by [Issue #1](https://github.com/service-lasso/service-lasso-tui/issues/1).
+## Run
 
-No release, deployment, or runtime mutation is implied by this bootstrap.
+```powershell
+go run ./cmd/service-lasso-tui --api http://127.0.0.1:17883
+```
+
+Use `j`/`k` or the arrow keys to select a service, `Enter` for details, `r` to
+refresh, and `q` to quit. The initial foundation is read-only: it makes runtime
+connectivity and service state visible without issuing lifecycle mutations.
+
+See [the runtime API contract](docs/runtime-api-contract.md) and
+[the framework decision](docs/framework-decision.md).

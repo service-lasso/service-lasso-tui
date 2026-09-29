@@ -48,7 +48,14 @@ whose source SHA suffix matches the dispatched `develop` commit. It creates
 an exact `SHA256SUMS.txt` and versioned candidate manifest. The workflow must
 test source, build all targets, verify every checksum, and structurally smoke
 the extracted executable path before uploading the retained candidate
-artifact. It never creates a GitHub release, tag, deployment, or GA claim.
+artifact. It never runs automatically and never creates a deployment or GA
+claim.
+After its source and native Windows, Linux, and macOS smoke jobs pass, the
+manual dispatch creates a prerelease candidate tag and release for those exact
+assets. It is not the latest release and does not establish GA, deployment, or
+publication acceptance. The hosted macOS runner directly smokes only its host
+architecture; the other macOS archive is cross-built and structurally checked
+as surrogate evidence until native hardware acceptance is available.
 Core #1461 may consume a candidate only after independent release review pins
 the candidate version, full source SHA, manifest, assets, and digests; a
 mutable release selector or incomplete asset set is rejected.

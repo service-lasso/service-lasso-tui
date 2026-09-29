@@ -54,6 +54,7 @@ type model struct {
 	loading            bool
 	err                error
 	pendingAction      string
+	pendingServiceID   string
 	submittingAction   bool
 	lastResult         string
 	width              int
@@ -164,7 +165,7 @@ func (m model) loadHistory() tea.Cmd {
 }
 
 func (m model) runLifecycle() tea.Cmd {
-	service, ok := m.selectedService()
+	service, ok := m.serviceByID(m.pendingServiceID)
 	if !ok {
 		return nil
 	}
@@ -187,6 +188,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.health, m.services = message.health, message.services
 			m.stale = false
 			m.ensureSelectedService()
+			if m.pendingAction != "" && !m.hasServiceID(m.pendingServiceID) {
+				m.pendingAction, m.pendingServiceID = "", ""
+				m.lastResult = "Selected service changed; confirmation cancelled."
+			}
 		} else if len(m.services) > 0 {
 			m.stale = true
 		}
@@ -202,6 +207,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case lifecycleMsg:
 		m.loading = false
 		m.pendingAction = ""
+		m.pendingServiceID = ""
 		m.submittingAction = false
 		if message.err != nil {
 			m.err = message.err
@@ -254,7 +260,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.screen = servicesScreen
 		case "i":
 			if m.screen == detailScreen && m.hasSelectedService() && m.pendingAction == "" {
-				m.pendingAction = "install"
+				m.beginPendingAction("install")
 			} else {
 				m.screen = inboxScreen
 			}
@@ -266,21 +272,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.narrow = !m.narrow
 		case "esc", "backspace":
 			if m.pendingAction != "" {
-				m.pendingAction = ""
+				m.pendingAction, m.pendingServiceID = "", ""
 			} else {
 				m.screen = dashboardScreen
 			}
 		case "y":
-			if m.pendingAction != "" && !m.submittingAction {
+			if m.pendingAction != "" && !m.submittingAction && m.hasServiceID(m.pendingServiceID) {
 				m.loading, m.err = true, nil
 				m.submittingAction = true
 				return m, m.runLifecycle()
 			}
+			if m.pendingAction != "" && !m.hasServiceID(m.pendingServiceID) {
+				m.pendingAction, m.pendingServiceID = "", ""
+				m.lastResult = "Selected service changed; confirmation cancelled."
+			}
 		case "c", "s", "x", "R", "l":
 			if m.screen == detailScreen && m.hasSelectedService() && m.pendingAction == "" {
-				m.pendingAction = map[string]string{
+				m.beginPendingAction(map[string]string{
 					"c": "config", "s": "start", "x": "stop", "R": "restart", "l": "reload",
-				}[message.String()]
+				}[message.String()])
 			}
 		case "down", "j":
 			m.moveSelected(1)
@@ -328,6 +338,25 @@ func (m model) selectedService() (api.Service, bool) {
 		}
 	}
 	return api.Service{}, false
+}
+
+func (m model) serviceByID(id string) (api.Service, bool) {
+	for _, service := range m.services {
+		if service.ID == id {
+			return service, true
+		}
+	}
+	return api.Service{}, false
+}
+
+func (m model) hasServiceID(id string) bool { _, ok := m.serviceByID(id); return ok }
+
+func (m *model) beginPendingAction(action string) {
+	service, ok := m.selectedService()
+	if !ok {
+		return
+	}
+	m.pendingAction, m.pendingServiceID = action, service.ID
 }
 
 func (m model) hasSelectedService() bool { _, ok := m.selectedService(); return ok }
@@ -446,10 +475,10 @@ func (m model) View() string {
 }
 
 func (m model) detailView(b *strings.Builder) string {
-	if len(m.services) == 0 {
+	service, selected := m.selectedService()
+	if !selected {
 		b.WriteString("No service selected.\n")
 	} else {
-		service, _ := m.selectedService()
 		fmt.Fprintf(b, "%s (%s)\n\n%s\n\nLifecycle: %s\nHealth: %s\nEnabled: %t\nHistory transitions: %d\n", safeTerminalText(service.Name, 120), safeTerminalText(service.ID, 128), safeTerminalText(service.Description, 240), safeTerminalText(service.Lifecycle.State, 40), safeTerminalText(service.Health.Status, 40), service.Enabled, m.history.Entries)
 		if m.historyUnavailable {
 			b.WriteString("Health history is unavailable.\n")
@@ -458,7 +487,7 @@ func (m model) detailView(b *strings.Builder) string {
 	if m.submittingAction {
 		b.WriteString("\nSubmitting one confirmed request to Core…\n")
 	} else if m.pendingAction != "" {
-		fmt.Fprintf(b, "\nConfirm %s for the selected service? y confirm • esc cancel\n", m.pendingAction)
+		fmt.Fprintf(b, "\nConfirm %s for %s? y confirm • esc cancel\n", m.pendingAction, safeTerminalText(m.pendingServiceID, 128))
 	} else {
 		b.WriteString("\ni install • c config • s start • x stop • R restart • l reload\n")
 		b.WriteString("Each action asks Core to enforce permission and confirmation.\n")

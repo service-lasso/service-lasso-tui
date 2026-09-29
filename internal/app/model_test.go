@@ -210,6 +210,44 @@ func TestFilteredServiceConfirmationTargetsDisplayedService(t *testing.T) {
 	}
 }
 
+func TestPendingConfirmationKeepsItsServiceAcrossSearchChanges(t *testing.T) {
+	client := &countingClient{fakeClient: fakeClient{services: []api.Service{{ID: "alpha", Name: "Alpha"}, {ID: "echo", Name: "Echo"}}, lifecycleResult: api.LifecycleResult{OK: true}}}
+	initial := New(client, context.Background()).(model)
+	updated, _ := initial.Update(loadedMsg{services: client.services})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	if !strings.Contains(updated.(model).View(), "Confirm start for echo") {
+		t.Fatalf("confirmation did not name frozen target: %s", updated.(model).View())
+	}
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	for _, key := range []rune{'a', 'l', 'p', 'h', 'a'} {
+		updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
+	}
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, command := updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if command == nil {
+		t.Fatal("confirmation did not dispatch frozen target")
+	}
+	_ = command()
+	if client.serviceID != "echo" {
+		t.Fatalf("lifecycle service = %q, want frozen echo", client.serviceID)
+	}
+}
+
+func TestPendingConfirmationCancelsWhenServiceDisappears(t *testing.T) {
+	initial := New(fakeClient{services: []api.Service{{ID: "echo", Name: "Echo"}}}, context.Background()).(model)
+	updated, _ := initial.Update(loadedMsg{services: []api.Service{{ID: "echo", Name: "Echo"}}})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	updated, _ = updated.(model).Update(loadedMsg{services: nil})
+	if strings.Contains(updated.(model).View(), "Confirm start") || !strings.Contains(updated.(model).View(), "confirmation cancelled") {
+		t.Fatalf("missing cancellation: %s", updated.(model).View())
+	}
+}
+
 func TestDashboardSanitizesTerminalTextAndShowsOptionalReadFailure(t *testing.T) {
 	initial := New(fakeClient{}, context.Background()).(model)
 	updated, _ := initial.Update(loadedMsg{services: []api.Service{{ID: "echo", Name: "Echo\x1b[31m\nINJECT", Description: "line\r\nnext"}}})

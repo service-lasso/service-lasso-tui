@@ -11,18 +11,40 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: ${{ matrix.name }} test and build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            runner: ubuntu-latest
+          - name: Windows
+            runner: windows-latest
+          - name: macOS
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - run: go test ./...
-      - name: Build Windows, Linux, and macOS executables
+      - run: go build ./cmd/service-lasso-tui
+  release-asset-compile:
+    name: Release asset cross-compilation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Compile declared release targets
         shell: bash
         run: |
-          for target in windows linux darwin; do
+          for target in windows/amd64 linux/amd64 darwin/amd64 darwin/arm64; do
+            os="${target%/*}"
+            arch="${target#*/}"
             extension=""
-            if [ "$target" = windows ]; then extension=.exe; fi
-            GOOS="$target" GOARCH=amd64 go build -o "service-lasso-tui-${target}-amd64${extension}" ./cmd/service-lasso-tui
+            if [ "$os" = windows ]; then extension=.exe; fi
+            GOOS="$os" GOARCH="$arch" go build -o "service-lasso-tui-${os}-${arch}${extension}" ./cmd/service-lasso-tui
           done

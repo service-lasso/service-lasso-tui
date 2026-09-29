@@ -17,6 +17,7 @@ platform assets:
 | `service-lasso-tui-<version>-win32-amd64.zip` | `service-lasso-tui.exe` | `tools/service-lasso-tui/win32-amd64/service-lasso-tui.exe` |
 | `service-lasso-tui-<version>-linux-amd64.tar.gz` | `service-lasso-tui` | `tools/service-lasso-tui/linux-amd64/service-lasso-tui` |
 | `service-lasso-tui-<version>-darwin-amd64.tar.gz` | `service-lasso-tui` | `tools/service-lasso-tui/darwin-amd64/service-lasso-tui` |
+| `service-lasso-tui-<version>-darwin-arm64.tar.gz` | `service-lasso-tui` | `tools/service-lasso-tui/darwin-arm64/service-lasso-tui` |
 
 The embedding package copies the exact matching asset unchanged, records its
 version and SHA-256 with the Core release evidence, and never puts it under a
@@ -40,6 +41,7 @@ TLS verification.
 
 An integrated release needs the exact Core and TUI asset identities, checksum
 verification, and a real Core runtime exercise of authenticated service listing
-plus a confirmed lifecycle result. TUI unit tests and mocked HTTP contracts are
-surrogate evidence only. Platform resize, reconnect, and all workflow coverage
-remain separate validation work.
+plus a confirmed lifecycle result. CI runs native Go test/build jobs on hosted
+Windows and macOS, while the release-asset compile job checks declared target
+architectures. Both are surrogate evidence: platform resize, reconnect, and
+real packaged interactive-terminal acceptance remain separate validation work.

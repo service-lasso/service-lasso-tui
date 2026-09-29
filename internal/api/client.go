@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -60,10 +61,24 @@ func NewClient(baseURL string, client *http.Client, operatorToken string) (*Clie
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return nil, fmt.Errorf("invalid Service Lasso API URL %q", baseURL)
 	}
+	if parsed.User != nil {
+		return nil, fmt.Errorf("Service Lasso API URL must not contain userinfo")
+	}
+	if operatorToken != "" && parsed.Scheme != "https" && !isLoopbackHost(parsed.Hostname()) {
+		return nil, fmt.Errorf("operator token requires HTTPS for a non-loopback Service Lasso API URL")
+	}
 	if client == nil {
 		client = &http.Client{Timeout: requestTimeout}
 	}
 	return &Client{baseURL: strings.TrimRight(parsed.String(), "/"), http: client, operatorToken: operatorToken}, nil
+}
+
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (c *Client) Health(ctx context.Context) (Health, error) {

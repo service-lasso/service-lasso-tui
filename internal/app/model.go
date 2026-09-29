@@ -23,18 +23,19 @@ const (
 )
 
 type model struct {
-	client        runtimeClient
-	ctx           context.Context
-	screen        screen
-	services      []api.Service
-	selected      int
-	health        api.Health
-	loading       bool
-	err           error
-	pendingAction string
-	lastResult    string
-	width         int
-	height        int
+	client           runtimeClient
+	ctx              context.Context
+	screen           screen
+	services         []api.Service
+	selected         int
+	health           api.Health
+	loading          bool
+	err              error
+	pendingAction    string
+	submittingAction bool
+	lastResult       string
+	width            int
+	height           int
 }
 
 type loadedMsg struct {
@@ -45,6 +46,7 @@ type loadedMsg struct {
 
 type lifecycleMsg struct {
 	result api.LifecycleResult
+	action string
 	err    error
 }
 
@@ -70,7 +72,7 @@ func (m model) runLifecycle() tea.Cmd {
 	action := m.pendingAction
 	return func() tea.Msg {
 		result, err := m.client.Lifecycle(m.ctx, service.ID, action)
-		return lifecycleMsg{result: result, err: err}
+		return lifecycleMsg{result: result, action: action, err: err}
 	}
 }
 
@@ -90,12 +92,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case lifecycleMsg:
 		m.loading = false
 		m.pendingAction = ""
+		m.submittingAction = false
 		if message.err != nil {
 			m.err = message.err
 			m.lastResult = ""
 		} else {
 			m.err = nil
-			m.lastResult = message.result.Message
+			outcome := "failed"
+			if message.result.OK {
+				outcome = "completed"
+			}
+			m.lastResult = fmt.Sprintf("Core %s %s.", outcome, message.action)
 		}
 	case tea.KeyMsg:
 		switch message.String() {
@@ -114,8 +121,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.screen = servicesScreen
 			}
 		case "y":
-			if m.pendingAction != "" {
+			if m.pendingAction != "" && !m.submittingAction {
 				m.loading, m.err = true, nil
+				m.submittingAction = true
 				return m, m.runLifecycle()
 			}
 		case "i", "c", "s", "x", "R", "l":
@@ -184,7 +192,9 @@ func (m model) detailView(b *strings.Builder) string {
 		service := m.services[m.selected]
 		fmt.Fprintf(b, "%s (%s)\n\n%s\n\nLifecycle: %s\nHealth: %s\nEnabled: %t\n", service.Name, service.ID, service.Description, service.Lifecycle.State, service.Health.Status, service.Enabled)
 	}
-	if m.pendingAction != "" {
+	if m.submittingAction {
+		b.WriteString("\nSubmitting one confirmed request to Core…\n")
+	} else if m.pendingAction != "" {
 		fmt.Fprintf(b, "\nConfirm %s for the selected service? y confirm • esc cancel\n", m.pendingAction)
 	} else {
 		b.WriteString("\ni install • c config • s start • x stop • R restart • l reload\n")

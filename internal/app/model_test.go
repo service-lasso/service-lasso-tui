@@ -53,8 +53,41 @@ func TestLifecycleRequiresKeyboardConfirmation(t *testing.T) {
 	_, command := pending.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	message := command()
 	completed, _ := pending.Update(message)
-	if !strings.Contains(completed.(model).View(), "Last runtime result: started") {
+	if !strings.Contains(completed.(model).View(), "Last runtime result: Core completed start.") {
 		t.Fatalf("runtime result not rendered: %s", completed.(model).View())
+	}
+}
+
+type countingClient struct {
+	fakeClient
+	calls int
+}
+
+func (f *countingClient) Lifecycle(context.Context, string, string) (api.LifecycleResult, error) {
+	f.calls++
+	return f.lifecycleResult, f.lifecycleErr
+}
+
+func TestLifecycleDoubleConfirmDispatchesOnce(t *testing.T) {
+	client := &countingClient{fakeClient: fakeClient{
+		services:        []api.Service{{ID: "echo", Name: "Echo"}},
+		lifecycleResult: api.LifecycleResult{OK: true, Message: "started"},
+	}}
+	initial := New(client, context.Background()).(model)
+	updated, _ := initial.Update(loadedMsg{services: client.services})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	submitted, command := updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if command == nil {
+		t.Fatal("first confirmation did not dispatch")
+	}
+	_, second := submitted.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if second != nil {
+		t.Fatal("second confirmation dispatched another command")
+	}
+	_ = command()
+	if client.calls != 1 {
+		t.Fatalf("lifecycle request count = %d, want 1", client.calls)
 	}
 }
 
@@ -65,6 +98,21 @@ func TestLifecycleFailureDoesNotExposeSensitiveMarker(t *testing.T) {
 	view := updated.(model).View()
 	if strings.Contains(view, marker) || !strings.Contains(view, "403 Forbidden") {
 		t.Fatalf("unexpected lifecycle error rendering: %s", view)
+	}
+}
+
+func TestLifecycleSuccessMessageDoesNotExposeSensitiveMarker(t *testing.T) {
+	const marker = "SYNTHETIC_SENSITIVE_MARKER_DO_NOT_DISPLAY"
+	initial := New(fakeClient{services: []api.Service{{ID: "echo", Name: "Echo"}}}, context.Background()).(model)
+	updated, _ := initial.Update(loadedMsg{services: []api.Service{{ID: "echo", Name: "Echo"}}})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = updated.(model).Update(lifecycleMsg{
+		action: "start",
+		result: api.LifecycleResult{OK: true, Message: marker},
+	})
+	view := updated.(model).View()
+	if strings.Contains(view, marker) || !strings.Contains(view, "Core completed start.") {
+		t.Fatalf("unexpected lifecycle success rendering: %s", view)
 	}
 }
 

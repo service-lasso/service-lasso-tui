@@ -96,3 +96,18 @@ func TestClientRejectsInvalidBaseURL(t *testing.T) {
 		t.Fatal("expected URL validation error")
 	}
 }
+
+func TestClientProtectsTokenTransport(t *testing.T) {
+	if _, err := NewClient("http://runtime.example.test", nil, "token"); err == nil {
+		t.Fatal("expected non-loopback HTTP token transport to be rejected")
+	}
+	if _, err := NewClient("http://127.0.0.1:17883", nil, "token"); err != nil {
+		t.Fatalf("expected loopback HTTP token transport to be allowed: %v", err)
+	}
+	if _, err := NewClient("https://runtime.example.test", nil, "token"); err != nil {
+		t.Fatalf("expected HTTPS token transport to be allowed: %v", err)
+	}
+	if _, err := NewClient("https://operator:secret@runtime.example.test", nil, ""); err == nil {
+		t.Fatal("expected URL userinfo to be rejected")
+	}
+}

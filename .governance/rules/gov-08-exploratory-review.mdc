@@ -1,0 +1,7 @@
+# GOV-08 Exploratory Review
+
+Exploration may inspect supported contracts and document findings. It must not
+claim unsupported behavior, alter release state, or use production branches as
+development input. Promote verified findings into the active specification,
+capability matrix, tests, or a tracked dependency before implementation relies
+on them.

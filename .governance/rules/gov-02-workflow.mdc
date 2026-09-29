@@ -1,0 +1,10 @@
+# GOV-02 Workflow
+
+Use GitHub Issues for delivery scope and map each issue to active specification
+sections. Make intentional changes in small commits, push every commit, and
+open a pull request to `develop`. Do not merge, deploy, publish, or make GA
+claims from a development branch.
+
+Before code changes, ensure project intent, an active specification, backlog
+mapping, `INIT-TODO.md`, and strict Git workflow artifacts exist. Record
+unavailable external dependencies as blockers rather than imitating them.

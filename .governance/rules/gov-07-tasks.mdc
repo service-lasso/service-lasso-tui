@@ -1,0 +1,6 @@
+# GOV-07 Tasks
+
+Keep tasks narrow and reviewable. Record checkpoints when a decision, blocker,
+phase change, or external contract affects delivery. Preserve other workers'
+branches and worktrees. A task completes with a pushed branch, pull request,
+and truthful evidence of what was and was not validated.

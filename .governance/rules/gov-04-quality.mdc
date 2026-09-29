@@ -1,0 +1,7 @@
+# GOV-04 Quality
+
+Keep the runtime API client separate from UI state and rendering. Preserve
+keyboard access for every implemented workflow. A displayed result is not proof
+of a completed mutation: render the runtime's durable result or safe error.
+Do not introduce direct host control, filesystem mutation, or a parallel
+service engine.

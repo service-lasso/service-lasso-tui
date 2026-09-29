@@ -6,8 +6,9 @@
 - [x] Install strict pull-request and branch-protection guidance.
 - [ ] Core: publish a stable asynchronous operation status and cancellation
   contract before the TUI can meet the operation-progress acceptance criteria.
-- [ ] Core: publish safe, permission-scoped inbox and history API contracts
-  before the TUI can meet the corresponding operator-coverage criteria.
+- [x] Issue #7 verified Core `develop` GET routes for capability/setup metadata,
+  authenticated runtime identity, inbox list, and service health history. The
+  TUI consumes only bounded display fields and no inbox detail or mutation.
 - [ ] Validate Windows, Linux, and macOS release executables against a real
   supported Core runtime, including resize and reconnect scenarios.
 - [x] Issue #6 defines a develop-dispatched, checksum-bound four-asset

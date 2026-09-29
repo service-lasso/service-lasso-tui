@@ -11,8 +11,11 @@ the operator token cannot reach another origin or a downgraded transport.
 
 ## TUI-DASHBOARD
 
-The client retrieves `/api/services`, renders a keyboard-navigable service list
-and detail view, and presents safe lifecycle and health summaries.
+The client retrieves `/api/services`, `/api/runtime/capabilities`, and
+`/api/setup/status`, renders a keyboard-navigable dashboard, service list, and
+detail view, and presents safe lifecycle and health summaries. It may show the
+status and phase from authenticated `GET /api/runtime/instance`, but never
+renders runtime paths, host identity, source identity, or generation IDs.
 
 ## TUI-LIFECYCLE
 
@@ -24,16 +27,20 @@ runtime's returned action result. A rejected request must create no retry.
 ## TUI-KEYBOARD
 
 Arrow keys and `j`/`k` navigate; Enter opens a detail; Escape returns; `r`
-refreshes; `?` shows contextual help; lifecycle shortcuts are visible in the
-detail screen and require `y` to confirm or Escape to cancel.
+refreshes; `?` shows contextual help; `/` filters locally; `n` narrows the
+layout; and resize preserves the current view. Lifecycle shortcuts are visible
+in the detail screen and require `y` to confirm or Escape to cancel.
 
 ## TUI-OPERATIONS
 
 The Core action-run API is available but exposes server-side completed action
 runs rather than a stable asynchronous operation polling contract. The client
 may show its returned result for lifecycle work but cannot claim long-running
-operation progress, cancellation, inbox, or history coverage until Core
-publishes suitable contracts.
+operation progress or cancellation until Core publishes suitable contracts.
+The dashboard may read authenticated `GET /api/operator/inbox` and
+`GET /api/services/:serviceId/health/history`; it displays a bounded inbox
+summary (title, severity, state, timestamp) and health transition count only.
+It does not fetch inbox details or invoke any inbox mutation route.
 
 ## TUI-DISTRIBUTION
 

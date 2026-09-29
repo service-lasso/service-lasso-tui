@@ -22,6 +22,19 @@ func (f fakeClient) Health(context.Context) (api.Health, error) { return f.healt
 func (f fakeClient) Services(context.Context) ([]api.Service, error) {
 	return f.services, nil
 }
+func (f fakeClient) Capabilities(context.Context) (api.Capabilities, error) {
+	return api.Capabilities{ContractVersion: "service-lasso.runtime-capabilities.v1"}, nil
+}
+func (f fakeClient) SetupStatus(context.Context) (api.SetupStatus, error) {
+	return api.SetupStatus{State: "setup_complete"}, nil
+}
+func (f fakeClient) RuntimeIdentity(context.Context) (api.RuntimeIdentity, error) {
+	return api.RuntimeIdentity{Status: "active", Phase: "running"}, nil
+}
+func (f fakeClient) Inbox(context.Context, string) (api.Inbox, error) { return api.Inbox{}, nil }
+func (f fakeClient) HealthHistory(context.Context, string) (api.HealthHistory, error) {
+	return api.HealthHistory{}, nil
+}
 func (f fakeClient) Lifecycle(context.Context, string, string) (api.LifecycleResult, error) {
 	return f.lifecycleResult, f.lifecycleErr
 }
@@ -30,6 +43,7 @@ func TestNavigationShowsServiceDetails(t *testing.T) {
 	client := fakeClient{services: []api.Service{{ID: "echo", Name: "Echo", Description: "test service", Enabled: true}}}
 	initial := New(client, context.Background()).(model)
 	updated, _ := initial.Update(loadedMsg{services: client.services})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
 	view := updated.(model).View()
 	if !strings.Contains(view, "Echo (echo)") || !strings.Contains(view, "esc back") {
@@ -44,6 +58,7 @@ func TestLifecycleRequiresKeyboardConfirmation(t *testing.T) {
 	}
 	initial := New(client, context.Background()).(model)
 	updated, _ := initial.Update(loadedMsg{services: client.services})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
 	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	pending := updated.(model)
@@ -75,6 +90,7 @@ func TestLifecycleDoubleConfirmDispatchesOnce(t *testing.T) {
 	}}
 	initial := New(client, context.Background()).(model)
 	updated, _ := initial.Update(loadedMsg{services: client.services})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
 	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	submitted, command := updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
@@ -105,6 +121,7 @@ func TestLifecycleSuccessMessageDoesNotExposeSensitiveMarker(t *testing.T) {
 	const marker = "SYNTHETIC_SENSITIVE_MARKER_DO_NOT_DISPLAY"
 	initial := New(fakeClient{services: []api.Service{{ID: "echo", Name: "Echo"}}}, context.Background()).(model)
 	updated, _ := initial.Update(loadedMsg{services: []api.Service{{ID: "echo", Name: "Echo"}}})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
 	updated, _ = updated.(model).Update(lifecycleMsg{
 		action: "start",
@@ -122,5 +139,33 @@ func TestErrorStateShowsRetryPath(t *testing.T) {
 	view := updated.(model).View()
 	if !strings.Contains(view, "Runtime API unavailable") || !strings.Contains(view, "Press r to retry") {
 		t.Fatalf("error view omitted retry path: %s", view)
+	}
+}
+
+func TestDashboardKeepsLastServiceSnapshotAsStale(t *testing.T) {
+	initial := New(fakeClient{}, context.Background()).(model)
+	updated, _ := initial.Update(loadedMsg{services: []api.Service{{ID: "echo", Name: "Echo"}}})
+	updated, _ = updated.(model).Update(loadedMsg{err: errors.New("connection refused")})
+	view := updated.(model).View()
+	if !strings.Contains(view, "stale") || !strings.Contains(view, "Echo") {
+		t.Fatalf("stale snapshot missing: %s", view)
+	}
+}
+
+func TestDashboardKeyboardViewsSearchResizeAndInbox(t *testing.T) {
+	initial := New(fakeClient{}, context.Background()).(model)
+	updated, _ := initial.Update(loadedMsg{services: []api.Service{{ID: "echo", Name: "Echo"}, {ID: "other", Name: "Other"}}})
+	updated, _ = updated.(model).Update(tea.WindowSizeMsg{Width: 60, Height: 20})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	filtered := updated.(model)
+	if !filtered.narrow || strings.Contains(filtered.View(), "Other") {
+		t.Fatalf("search or resize not applied: %s", filtered.View())
+	}
+	updated, _ = filtered.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
+	if !strings.Contains(updated.(model).View(), "Operator inbox") {
+		t.Fatalf("inbox view missing: %s", updated.(model).View())
 	}
 }

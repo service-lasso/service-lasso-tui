@@ -9,12 +9,15 @@ accepted on the command line, rendered, or included in errors.
 | Connectivity | `GET /api/health` | Implemented |
 | Service list and detail | `GET /api/services` | Implemented |
 | Install/config/start/stop/restart/reload | `POST /api/services/:serviceId/:action` with `{"confirm":true}` | Implemented after an explicit `y` confirmation |
-| API capability discovery | `GET /api/runtime/capabilities` | Core contract available; TUI implementation pending |
+| API capability discovery | `GET /api/runtime/capabilities` | Implemented; public Core metadata route |
+| Setup status | `GET /api/setup/status` | Implemented; public Core metadata route, bounded display only |
+| Runtime identity | `GET /api/runtime/instance` | Implemented; regular runtime authentication, status and phase only |
 | Completed declared action runs | `GET /api/services/:serviceId/actions` | Core contract available; TUI implementation pending |
 | Action run | `POST /api/services/:serviceId/actions/:actionId/runs` | Core contract available; TUI implementation pending |
 | Durable operation progress/cancellation | No stable TUI-ready contract | Blocked on Core |
 | Permission-aware action availability | No per-service action-availability contract | Blocked on Core |
-| Inbox and history | No stable TUI-ready contract selected | Blocked on Core |
+| Operator inbox | `GET /api/operator/inbox?limit=20` | Implemented; regular runtime authentication, title/severity/state/timestamp only; no detail or mutation route |
+| Service health history | `GET /api/services/:serviceId/health/history` | Implemented; regular runtime authentication, transition count only |
 
 Set `SERVICE_LASSO_API_URL` or pass `--api` to target a runtime. The default is
 `http://127.0.0.1:17883`. Connection errors are displayed in the TUI and can be

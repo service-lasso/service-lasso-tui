@@ -37,6 +37,53 @@ func TestClientReadsRuntimeSurfaces(t *testing.T) {
 	}
 }
 
+func TestClientReadsBoundedDashboardSurfaces(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/runtime/capabilities":
+			_, _ = w.Write([]byte(`{"capabilities":{"runtime":{"version":"test"},"api":{"contractVersion":"service-lasso.runtime-capabilities.v1"}}}`))
+		case "/api/setup/status":
+			_, _ = w.Write([]byte(`{"setup":{"state":"setup_complete","setupMode":false,"vault":{"ready":true}}}`))
+		case "/api/runtime/instance":
+			_, _ = w.Write([]byte(`{"instance":{"status":"active","phase":"running","workspaceRoot":"SENSITIVE"}}`))
+		case "/api/operator/inbox":
+			if r.URL.Query().Get("limit") != "20" {
+				t.Fatalf("inbox limit = %q", r.URL.Query().Get("limit"))
+			}
+			_, _ = w.Write([]byte(`{"inbox":{"items":[{"id":"one","title":"Needs attention","severity":"warning","state":"unread","createdAt":"now","details":"SENSITIVE"}],"pagination":{"total":1,"nextCursor":null}}}`))
+		case "/api/services/echo/health/history":
+			_, _ = w.Write([]byte(`{"serviceId":"echo","history":{"transitions":[{},{}]}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client, err := NewClient(server.URL, server.Client(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	capabilities, err := client.Capabilities(context.Background())
+	if err != nil || capabilities.ContractVersion == "" {
+		t.Fatalf("capabilities = %#v, %v", capabilities, err)
+	}
+	setup, err := client.SetupStatus(context.Background())
+	if err != nil || setup.State != "setup_complete" {
+		t.Fatalf("setup = %#v, %v", setup, err)
+	}
+	identity, err := client.RuntimeIdentity(context.Background())
+	if err != nil || identity.Status != "active" {
+		t.Fatalf("identity = %#v, %v", identity, err)
+	}
+	inbox, err := client.Inbox(context.Background(), "")
+	if err != nil || len(inbox.Items) != 1 || inbox.Items[0].Title != "Needs attention" {
+		t.Fatalf("inbox = %#v, %v", inbox, err)
+	}
+	history, err := client.HealthHistory(context.Background(), "echo")
+	if err != nil || history.Entries != 2 {
+		t.Fatalf("history = %#v, %v", history, err)
+	}
+}
+
 func TestClientDoesNotExposeRuntimeErrorBody(t *testing.T) {
 	const marker = "SYNTHETIC_SENSITIVE_MARKER_DO_NOT_DISPLAY"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

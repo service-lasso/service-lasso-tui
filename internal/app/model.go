@@ -255,16 +255,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loading, m.err = true, nil
 			return m, tea.Batch(m.refresh(), m.refreshDashboard())
 		case "d":
+			m.cancelPendingOnNavigation()
 			m.screen = dashboardScreen
 		case "v":
+			m.cancelPendingOnNavigation()
 			m.screen = servicesScreen
 		case "i":
 			if m.screen == detailScreen && m.hasSelectedService() && m.pendingAction == "" {
 				m.beginPendingAction("install")
 			} else {
+				m.cancelPendingOnNavigation()
 				m.screen = inboxScreen
 			}
 		case "?":
+			m.cancelPendingOnNavigation()
 			m.screen = helpScreen
 		case "/":
 			m.searching = true
@@ -277,7 +281,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.screen = dashboardScreen
 			}
 		case "y":
-			if m.pendingAction != "" && !m.submittingAction && m.hasServiceID(m.pendingServiceID) {
+			if m.screen == detailScreen && m.pendingAction != "" && !m.submittingAction && m.hasServiceID(m.pendingServiceID) {
 				m.loading, m.err = true, nil
 				m.submittingAction = true
 				return m, m.runLifecycle()
@@ -357,6 +361,13 @@ func (m *model) beginPendingAction(action string) {
 		return
 	}
 	m.pendingAction, m.pendingServiceID = action, service.ID
+}
+
+func (m *model) cancelPendingOnNavigation() {
+	if m.screen == detailScreen && m.pendingAction != "" {
+		m.pendingAction, m.pendingServiceID = "", ""
+		m.lastResult = "Confirmation cancelled after navigation."
+	}
 }
 
 func (m model) hasSelectedService() bool { _, ok := m.selectedService(); return ok }

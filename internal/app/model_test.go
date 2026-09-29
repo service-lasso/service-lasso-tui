@@ -248,6 +248,23 @@ func TestPendingConfirmationCancelsWhenServiceDisappears(t *testing.T) {
 	}
 }
 
+func TestPendingConfirmationCannotDispatchAfterNavigationAway(t *testing.T) {
+	client := &countingClient{fakeClient: fakeClient{services: []api.Service{{ID: "echo", Name: "Echo"}}, lifecycleResult: api.LifecycleResult{OK: true}}}
+	initial := New(client, context.Background()).(model)
+	updated, _ := initial.Update(loadedMsg{services: client.services})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	_, command := updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if command != nil || client.calls != 0 {
+		t.Fatalf("hidden confirmation dispatched: command=%v calls=%d", command != nil, client.calls)
+	}
+	if updated.(model).lastResult != "Confirmation cancelled after navigation." {
+		t.Fatalf("navigation cancellation not retained: %#v", updated.(model))
+	}
+}
+
 func TestDashboardSanitizesTerminalTextAndShowsOptionalReadFailure(t *testing.T) {
 	initial := New(fakeClient{}, context.Background()).(model)
 	updated, _ := initial.Update(loadedMsg{services: []api.Service{{ID: "echo", Name: "Echo\x1b[31m\nINJECT", Description: "line\r\nnext"}}})

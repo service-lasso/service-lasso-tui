@@ -9,11 +9,14 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
 
 const requestTimeout = 5 * time.Second
+
+var serviceIDPattern = regexp.MustCompile(`^@?[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
 // Client consumes documented Service Lasso runtime HTTP contracts.
 type Client struct {
@@ -61,8 +64,14 @@ func NewClient(baseURL string, client *http.Client, operatorToken string) (*Clie
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return nil, fmt.Errorf("invalid Service Lasso API URL %q", baseURL)
 	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, fmt.Errorf("Service Lasso API URL must use HTTP or HTTPS")
+	}
 	if parsed.User != nil {
 		return nil, fmt.Errorf("Service Lasso API URL must not contain userinfo")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return nil, fmt.Errorf("Service Lasso API URL must not contain a query or fragment")
 	}
 	if operatorToken != "" && parsed.Scheme != "https" && !isLoopbackHost(parsed.Hostname()) {
 		return nil, fmt.Errorf("operator token requires HTTPS for a non-loopback Service Lasso API URL")
@@ -70,11 +79,15 @@ func NewClient(baseURL string, client *http.Client, operatorToken string) (*Clie
 	if client == nil {
 		client = &http.Client{Timeout: requestTimeout}
 	}
-	return &Client{baseURL: strings.TrimRight(parsed.String(), "/"), http: client, operatorToken: operatorToken}, nil
+	isolatedClient := *client
+	isolatedClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return &Client{baseURL: strings.TrimRight(parsed.String(), "/"), http: &isolatedClient, operatorToken: operatorToken}, nil
 }
 
 func isLoopbackHost(host string) bool {
-	if host == "localhost" {
+	if strings.EqualFold(host, "localhost") {
 		return true
 	}
 	ip := net.ParseIP(host)
@@ -99,6 +112,9 @@ func (c *Client) Services(ctx context.Context) ([]Service, error) {
 // actual mutation. This client never retries a mutation automatically.
 func (c *Client) Lifecycle(ctx context.Context, serviceID, action string) (LifecycleResult, error) {
 	var result LifecycleResult
+	if !serviceIDPattern.MatchString(serviceID) {
+		return result, fmt.Errorf("invalid service ID")
+	}
 	allowed := map[string]bool{
 		"install": true, "config": true, "start": true, "stop": true, "restart": true, "reload": true,
 	}

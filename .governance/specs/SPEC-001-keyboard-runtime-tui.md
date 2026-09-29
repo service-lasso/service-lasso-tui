@@ -4,8 +4,10 @@ Status: active
 
 ## TUI-CONNECTION
 
-The client validates a runtime URL, retrieves `/api/health`, and clearly shows
-connected, unavailable, and retry states without replaying mutations.
+The client validates an HTTP(S) runtime URL, retrieves `/api/health`, and clearly
+shows connected, unavailable, and retry states without replaying mutations.
+It never follows redirects: a redirect response is a failed runtime request, so
+the operator token cannot reach another origin or a downgraded transport.
 
 ## TUI-DASHBOARD
 

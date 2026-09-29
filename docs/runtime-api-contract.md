@@ -20,7 +20,9 @@ Set `SERVICE_LASSO_API_URL` or pass `--api` to target a runtime. The default is
 `http://127.0.0.1:17883`. Connection errors are displayed in the TUI and can be
 retried with `r`; they are never presented as healthy runtime state. On a
 non-2xx response the client retains only the method, path, and HTTP status; it
-does not parse, render, or retain the server response body.
+does not parse, render, or retain the server response body. Redirect responses
+also fail closed and are never followed, so an operator token cannot be sent to
+another origin or a downgraded transport.
 
 Core is authoritative for authentication, permissions, confirmation, auditing,
 idempotency, and lifecycle execution. The TUI sends no automatic lifecycle

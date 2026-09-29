@@ -14,6 +14,8 @@ type fakeClient struct {
 	health          api.Health
 	services        []api.Service
 	healthErr       error
+	inbox           api.Inbox
+	inboxErr        error
 	lifecycleResult api.LifecycleResult
 	lifecycleErr    error
 }
@@ -31,7 +33,7 @@ func (f fakeClient) SetupStatus(context.Context) (api.SetupStatus, error) {
 func (f fakeClient) RuntimeIdentity(context.Context) (api.RuntimeIdentity, error) {
 	return api.RuntimeIdentity{Status: "active", Phase: "running"}, nil
 }
-func (f fakeClient) Inbox(context.Context, string) (api.Inbox, error) { return api.Inbox{}, nil }
+func (f fakeClient) Inbox(context.Context, string) (api.Inbox, error) { return f.inbox, f.inboxErr }
 func (f fakeClient) HealthHistory(context.Context, string) (api.HealthHistory, error) {
 	return api.HealthHistory{}, nil
 }
@@ -75,11 +77,13 @@ func TestLifecycleRequiresKeyboardConfirmation(t *testing.T) {
 
 type countingClient struct {
 	fakeClient
-	calls int
+	calls     int
+	serviceID string
 }
 
-func (f *countingClient) Lifecycle(context.Context, string, string) (api.LifecycleResult, error) {
+func (f *countingClient) Lifecycle(_ context.Context, serviceID, _ string) (api.LifecycleResult, error) {
 	f.calls++
+	f.serviceID = serviceID
 	return f.lifecycleResult, f.lifecycleErr
 }
 
@@ -167,5 +171,51 @@ func TestDashboardKeyboardViewsSearchResizeAndInbox(t *testing.T) {
 	updated, _ = filtered.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}})
 	if !strings.Contains(updated.(model).View(), "Operator inbox") {
 		t.Fatalf("inbox view missing: %s", updated.(model).View())
+	}
+}
+
+func TestResizeRecomputesAutomaticNarrowLayout(t *testing.T) {
+	initial := New(fakeClient{}, context.Background()).(model)
+	updated, _ := initial.Update(tea.WindowSizeMsg{Width: 60, Height: 20})
+	if !updated.(model).narrow {
+		t.Fatal("narrow layout was not enabled")
+	}
+	updated, _ = updated.(model).Update(tea.WindowSizeMsg{Width: 120, Height: 20})
+	if updated.(model).narrow {
+		t.Fatal("narrow layout was not cleared after resize")
+	}
+}
+
+func TestFilteredServiceConfirmationTargetsDisplayedService(t *testing.T) {
+	client := &countingClient{fakeClient: fakeClient{services: []api.Service{{ID: "alpha", Name: "Alpha"}, {ID: "echo", Name: "Echo"}}, lifecycleResult: api.LifecycleResult{OK: true}}}
+	initial := New(client, context.Background()).(model)
+	updated, _ := initial.Update(loadedMsg{services: client.services})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	for _, key := range []rune{'e', 'c', 'h', 'o'} {
+		updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
+	}
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !strings.Contains(updated.(model).View(), "Echo (echo)") {
+		t.Fatalf("filtered detail mismatch: %s", updated.(model).View())
+	}
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	_, command := updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if command == nil {
+		t.Fatal("confirmation did not dispatch")
+	}
+	_ = command()
+	if client.serviceID != "echo" {
+		t.Fatalf("lifecycle service = %q, want echo", client.serviceID)
+	}
+}
+
+func TestDashboardSanitizesTerminalTextAndShowsOptionalReadFailure(t *testing.T) {
+	initial := New(fakeClient{}, context.Background()).(model)
+	updated, _ := initial.Update(loadedMsg{services: []api.Service{{ID: "echo", Name: "Echo\x1b[31m\nINJECT", Description: "line\r\nnext"}}})
+	updated, _ = updated.(model).Update(dashboardMsg{identity: api.RuntimeIdentity{Status: "active\x1b[2J"}, inbox: api.Inbox{Items: []api.InboxItem{{Title: "alert\nitem"}}}, failures: []string{"operator inbox"}})
+	view := updated.(model).View()
+	if strings.Contains(view, "\x1b") || strings.Contains(view, "\x1b[31m") || !strings.Contains(view, "Unavailable optional reads: operator inbox") {
+		t.Fatalf("unsafe terminal text or missing optional failure: %q", view)
 	}
 }

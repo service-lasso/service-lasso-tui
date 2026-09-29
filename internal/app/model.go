@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/service-lasso/service-lasso-tui/internal/api"
@@ -33,28 +34,30 @@ const (
 )
 
 type model struct {
-	client           runtimeClient
-	ctx              context.Context
-	screen           screen
-	services         []api.Service
-	selected         int
-	health           api.Health
-	capabilities     api.Capabilities
-	setup            api.SetupStatus
-	identity         api.RuntimeIdentity
-	inbox            api.Inbox
-	history          api.HealthHistory
-	stale            bool
-	searching        bool
-	search           string
-	narrow           bool
-	loading          bool
-	err              error
-	pendingAction    string
-	submittingAction bool
-	lastResult       string
-	width            int
-	height           int
+	client             runtimeClient
+	ctx                context.Context
+	screen             screen
+	services           []api.Service
+	selectedServiceID  string
+	health             api.Health
+	capabilities       api.Capabilities
+	setup              api.SetupStatus
+	identity           api.RuntimeIdentity
+	inbox              api.Inbox
+	optionalFailures   []string
+	historyUnavailable bool
+	history            api.HealthHistory
+	stale              bool
+	searching          bool
+	search             string
+	narrow             bool
+	loading            bool
+	err                error
+	pendingAction      string
+	submittingAction   bool
+	lastResult         string
+	width              int
+	height             int
 }
 
 type loadedMsg struct {
@@ -91,6 +94,7 @@ type dashboardMsg struct {
 	setup        api.SetupStatus
 	identity     api.RuntimeIdentity
 	inbox        api.Inbox
+	failures     []string
 }
 type historyMsg struct {
 	history api.HealthHistory
@@ -107,22 +111,52 @@ func (m model) refreshDashboard() tea.Cmd {
 		var setup api.SetupStatus
 		var identity api.RuntimeIdentity
 		var inbox api.Inbox
+		var failures []string
+		var failuresMu sync.Mutex
+		addFailure := func(name string, err error) {
+			if err != nil {
+				failuresMu.Lock()
+				failures = append(failures, name)
+				failuresMu.Unlock()
+			}
+		}
 		var wait sync.WaitGroup
 		wait.Add(4)
-		go func() { defer wait.Done(); capabilities, _ = m.client.Capabilities(ctx) }()
-		go func() { defer wait.Done(); setup, _ = m.client.SetupStatus(ctx) }()
-		go func() { defer wait.Done(); identity, _ = m.client.RuntimeIdentity(ctx) }()
-		go func() { defer wait.Done(); inbox, _ = m.client.Inbox(ctx, "") }()
+		go func() {
+			defer wait.Done()
+			var err error
+			capabilities, err = m.client.Capabilities(ctx)
+			addFailure("capabilities", err)
+		}()
+		go func() {
+			defer wait.Done()
+			var err error
+			setup, err = m.client.SetupStatus(ctx)
+			addFailure("setup status", err)
+		}()
+		go func() {
+			defer wait.Done()
+			var err error
+			identity, err = m.client.RuntimeIdentity(ctx)
+			addFailure("runtime identity", err)
+		}()
+		go func() {
+			defer wait.Done()
+			var err error
+			inbox, err = m.client.Inbox(ctx, "")
+			addFailure("operator inbox", err)
+		}()
 		wait.Wait()
-		return dashboardMsg{capabilities: capabilities, setup: setup, identity: identity, inbox: inbox}
+		return dashboardMsg{capabilities: capabilities, setup: setup, identity: identity, inbox: inbox, failures: failures}
 	}
 }
 
 func (m model) loadHistory() tea.Cmd {
-	if len(m.services) == 0 {
+	service, ok := m.selectedService()
+	if !ok {
 		return nil
 	}
-	id := m.services[m.selected].ID
+	id := service.ID
 	return func() tea.Msg {
 		history, err := m.client.HealthHistory(m.ctx, id)
 		return historyMsg{history: history, err: err}
@@ -130,7 +164,10 @@ func (m model) loadHistory() tea.Cmd {
 }
 
 func (m model) runLifecycle() tea.Cmd {
-	service := m.services[m.selected]
+	service, ok := m.selectedService()
+	if !ok {
+		return nil
+	}
 	action := m.pendingAction
 	return func() tea.Msg {
 		result, err := m.client.Lifecycle(m.ctx, service.ID, action)
@@ -142,24 +179,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = message.Width, message.Height
-		m.narrow = m.narrow || message.Width > 0 && message.Width < 72
+		m.narrow = message.Width > 0 && message.Width < 72
 	case loadedMsg:
 		m.loading = false
 		m.err = message.err
 		if message.err == nil {
 			m.health, m.services = message.health, message.services
 			m.stale = false
-			if m.selected >= len(m.services) {
-				m.selected = max(0, len(m.services)-1)
-			}
+			m.ensureSelectedService()
 		} else if len(m.services) > 0 {
 			m.stale = true
 		}
 	case dashboardMsg:
-		m.capabilities, m.setup, m.identity, m.inbox = message.capabilities, message.setup, message.identity, message.inbox
+		m.capabilities, m.setup, m.identity, m.inbox, m.optionalFailures = message.capabilities, message.setup, message.identity, message.inbox, message.failures
 	case historyMsg:
 		if message.err == nil {
 			m.history = message.history
+			m.historyUnavailable = false
+		} else {
+			m.historyUnavailable = true
 		}
 	case lifecycleMsg:
 		m.loading = false
@@ -196,7 +234,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if len(message.Runes) > 0 {
-				m.search += string(message.Runes)
+				m.search = safeTerminalText(m.search+string(message.Runes), 80)
+				m.ensureSelectedService()
 			}
 			return m, nil
 		}
@@ -214,7 +253,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "v":
 			m.screen = servicesScreen
 		case "i":
-			if m.screen == detailScreen && len(m.services) > 0 && m.pendingAction == "" {
+			if m.screen == detailScreen && m.hasSelectedService() && m.pendingAction == "" {
 				m.pendingAction = "install"
 			} else {
 				m.screen = inboxScreen
@@ -238,21 +277,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.runLifecycle()
 			}
 		case "c", "s", "x", "R", "l":
-			if m.screen == detailScreen && len(m.services) > 0 && m.pendingAction == "" {
+			if m.screen == detailScreen && m.hasSelectedService() && m.pendingAction == "" {
 				m.pendingAction = map[string]string{
 					"c": "config", "s": "start", "x": "stop", "R": "restart", "l": "reload",
 				}[message.String()]
 			}
 		case "down", "j":
-			if (m.screen == servicesScreen || m.screen == dashboardScreen) && m.selected < len(m.filteredServices())-1 {
-				m.selected++
-			}
+			m.moveSelected(1)
 		case "up", "k":
-			if (m.screen == servicesScreen || m.screen == dashboardScreen) && m.selected > 0 {
-				m.selected--
-			}
+			m.moveSelected(-1)
 		case "enter":
-			if (m.screen == servicesScreen || m.screen == dashboardScreen) && len(m.services) > 0 {
+			if (m.screen == servicesScreen || m.screen == dashboardScreen) && m.hasSelectedService() {
 				m.screen = detailScreen
 				return m, m.loadHistory()
 			}
@@ -267,11 +302,87 @@ func (m model) filteredServices() []api.Service {
 	}
 	var filtered []api.Service
 	for _, service := range m.services {
-		if strings.Contains(strings.ToLower(service.Name+" "+service.ID), strings.ToLower(m.search)) {
+		if strings.Contains(strings.ToLower(safeTerminalText(service.Name, 120)+" "+safeTerminalText(service.ID, 128)), strings.ToLower(safeTerminalText(m.search, 80))) {
 			filtered = append(filtered, service)
 		}
 	}
 	return filtered
+}
+
+func (m *model) ensureSelectedService() {
+	if _, ok := m.selectedService(); ok {
+		return
+	}
+	filtered := m.filteredServices()
+	if len(filtered) > 0 {
+		m.selectedServiceID = filtered[0].ID
+	} else {
+		m.selectedServiceID = ""
+	}
+}
+
+func (m model) selectedService() (api.Service, bool) {
+	for _, service := range m.filteredServices() {
+		if service.ID == m.selectedServiceID {
+			return service, true
+		}
+	}
+	return api.Service{}, false
+}
+
+func (m model) hasSelectedService() bool { _, ok := m.selectedService(); return ok }
+
+func (m *model) moveSelected(direction int) {
+	if m.screen != servicesScreen && m.screen != dashboardScreen {
+		return
+	}
+	services := m.filteredServices()
+	if len(services) == 0 {
+		m.selectedServiceID = ""
+		return
+	}
+	current := 0
+	for i, service := range services {
+		if service.ID == m.selectedServiceID {
+			current = i
+			break
+		}
+	}
+	next := current + direction
+	if next >= 0 && next < len(services) {
+		m.selectedServiceID = services[next].ID
+	}
+}
+
+func safeTerminalText(value string, limit int) string {
+	var b strings.Builder
+	ansi := false
+	written := 0
+	for _, r := range value {
+		if ansi {
+			if r >= '@' && r <= '~' {
+				ansi = false
+			}
+			continue
+		}
+		if r == '\x1b' {
+			ansi = true
+			continue
+		}
+		if unicode.IsControl(r) {
+			if r == '\n' || r == '\r' || r == '\t' {
+				b.WriteByte(' ')
+			}
+			continue
+		}
+		b.WriteRune(r)
+		written++
+		if written >= limit {
+			b.WriteString("…")
+			break
+		}
+	}
+	return strings.TrimSpace(b.String())
 }
 
 func (m model) View() string {
@@ -285,7 +396,7 @@ func (m model) View() string {
 			b.WriteString("Showing last successful service snapshot (stale).\n")
 		}
 	} else {
-		b.WriteString(fmt.Sprintf("Runtime: %s (API %s)\n", m.health.Status, m.health.API.Status))
+		b.WriteString(fmt.Sprintf("Runtime: %s (API %s)\n", safeTerminalText(m.health.Status, 40), safeTerminalText(m.health.API.Status, 40)))
 		if m.stale {
 			b.WriteString("Showing last successful service snapshot (stale).\n")
 		}
@@ -302,12 +413,16 @@ func (m model) View() string {
 		return m.detailView(&b)
 	}
 	if m.screen == dashboardScreen {
-		fmt.Fprintf(&b, "Runtime identity: %s (%s)\nCapabilities: %s\nSetup: %s\nInbox: %d item(s)\n\n", m.identity.Status, m.identity.Phase, m.capabilities.ContractVersion, m.setup.State, m.inbox.Total)
+		fmt.Fprintf(&b, "Runtime identity: %s (%s)\nCapabilities: %s\nSetup: %s\nInbox: %d item(s)\n", safeTerminalText(m.identity.Status, 40), safeTerminalText(m.identity.Phase, 40), safeTerminalText(m.capabilities.ContractVersion, 80), safeTerminalText(m.setup.State, 40), m.inbox.Total)
+		if len(m.optionalFailures) > 0 {
+			b.WriteString("Unavailable optional reads: " + strings.Join(m.optionalFailures, ", ") + "\n")
+		}
+		b.WriteString("\n")
 		b.WriteString("Services needing attention\n")
 	}
-	for index, service := range m.filteredServices() {
+	for _, service := range m.filteredServices() {
 		cursor := " "
-		if index == m.selected {
+		if service.ID == m.selectedServiceID {
 			cursor = ">"
 		}
 		state := service.Lifecycle.State
@@ -318,13 +433,13 @@ func (m model) View() string {
 		if health == "" {
 			health = "unknown"
 		}
-		fmt.Fprintf(&b, "%s %-24s %-12s %-12s %s\n", cursor, service.Name, state, health, service.ID)
+		fmt.Fprintf(&b, "%s %-24s %-12s %-12s %s\n", cursor, safeTerminalText(service.Name, 80), safeTerminalText(state, 40), safeTerminalText(health, 40), safeTerminalText(service.ID, 128))
 	}
 	if len(m.services) == 0 && !m.loading && m.err == nil {
 		b.WriteString("No services returned by the runtime.\n")
 	}
 	if m.searching {
-		b.WriteString("\nSearch: " + m.search + "\n")
+		b.WriteString("\nSearch: " + safeTerminalText(m.search, 80) + "\n")
 	}
 	b.WriteString("\n↑/k ↓/j navigate • enter details • d dashboard • v services • i inbox • / search • ? help • r reconnect • q quit\n")
 	return b.String()
@@ -334,8 +449,11 @@ func (m model) detailView(b *strings.Builder) string {
 	if len(m.services) == 0 {
 		b.WriteString("No service selected.\n")
 	} else {
-		service := m.services[m.selected]
-		fmt.Fprintf(b, "%s (%s)\n\n%s\n\nLifecycle: %s\nHealth: %s\nEnabled: %t\nHistory transitions: %d\n", service.Name, service.ID, service.Description, service.Lifecycle.State, service.Health.Status, service.Enabled, m.history.Entries)
+		service, _ := m.selectedService()
+		fmt.Fprintf(b, "%s (%s)\n\n%s\n\nLifecycle: %s\nHealth: %s\nEnabled: %t\nHistory transitions: %d\n", safeTerminalText(service.Name, 120), safeTerminalText(service.ID, 128), safeTerminalText(service.Description, 240), safeTerminalText(service.Lifecycle.State, 40), safeTerminalText(service.Health.Status, 40), service.Enabled, m.history.Entries)
+		if m.historyUnavailable {
+			b.WriteString("Health history is unavailable.\n")
+		}
 	}
 	if m.submittingAction {
 		b.WriteString("\nSubmitting one confirmed request to Core…\n")
@@ -355,7 +473,7 @@ func (m model) detailView(b *strings.Builder) string {
 func (m model) inboxView(b *strings.Builder) string {
 	b.WriteString(fmt.Sprintf("Operator inbox: %d item(s)\n", m.inbox.Total))
 	for _, item := range m.inbox.Items {
-		fmt.Fprintf(b, "%s %-9s %-8s %s\n", item.CreatedAt, item.Severity, item.State, item.Title)
+		fmt.Fprintf(b, "%s %-9s %-8s %s\n", safeTerminalText(item.CreatedAt, 40), safeTerminalText(item.Severity, 40), safeTerminalText(item.State, 40), safeTerminalText(item.Title, 120))
 	}
 	if len(m.inbox.Items) == 0 {
 		b.WriteString("No readable inbox items returned.\n")

@@ -10,3 +10,7 @@
   before the TUI can meet the corresponding operator-coverage criteria.
 - [ ] Validate Windows, Linux, and macOS release executables against a real
   supported Core runtime, including resize and reconnect scenarios.
+- [x] Issue #6 defines a develop-dispatched, checksum-bound four-asset
+  prerelease-candidate workflow. Its source/platform smoke and structural
+  checks are not real terminal/Core acceptance, which remains the open item
+  above.

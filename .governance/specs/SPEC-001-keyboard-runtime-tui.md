@@ -40,3 +40,22 @@ publishes suitable contracts.
 Release packaging emits an attached-terminal executable for Windows, Linux, and
 macOS. It is distributed beside a Core archive or as a separate release asset;
 it is never declared as a managed Core service or an autostarted daemon.
+
+`TUI-DISTRIBUTION-001`: A Core-packaging candidate is created only by an
+explicit workflow dispatch on `develop`, with a caller-supplied exact version
+whose source SHA suffix matches the dispatched `develop` commit. It creates
+`win32-amd64`, `linux-amd64`, `darwin-amd64`, and `darwin-arm64` archives plus
+an exact `SHA256SUMS.txt` and versioned candidate manifest. The workflow must
+test source, build all targets, verify every checksum, and structurally smoke
+the extracted executable path before uploading the retained candidate
+artifact. It never runs automatically and never creates a deployment or GA
+claim.
+After its source and native Windows, Linux, and macOS smoke jobs pass, the
+manual dispatch creates a prerelease candidate tag and release for those exact
+assets. It is not the latest release and does not establish GA, deployment, or
+publication acceptance. The hosted macOS runner directly smokes only its host
+architecture; the other macOS archive is cross-built and structurally checked
+as surrogate evidence until native hardware acceptance is available.
+Core #1461 may consume a candidate only after independent release review pins
+the candidate version, full source SHA, manifest, assets, and digests; a
+mutable release selector or incomplete asset set is rejected.

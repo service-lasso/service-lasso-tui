@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -20,7 +22,7 @@ func TestClientReadsRuntimeSurfaces(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(server.URL, server.Client())
+	client, err := NewClient(server.URL, server.Client(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,8 +36,63 @@ func TestClientReadsRuntimeSurfaces(t *testing.T) {
 	}
 }
 
+func TestClientDoesNotExposeRuntimeErrorBody(t *testing.T) {
+	const marker = "SYNTHETIC_SENSITIVE_MARKER_DO_NOT_DISPLAY"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":"permission_denied","message":"` + marker + `"}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, server.Client(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Services(context.Background())
+	if err == nil {
+		t.Fatal("expected runtime error")
+	}
+	if strings.Contains(err.Error(), marker) {
+		t.Fatalf("runtime error body leaked through client: %v", err)
+	}
+	if !strings.Contains(err.Error(), "403 Forbidden") {
+		t.Fatalf("runtime status was not retained: %v", err)
+	}
+}
+
+func TestClientPostsConfirmedLifecycleAction(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/services/echo/start" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Content-Type"); got != "application/json" {
+			t.Fatalf("content type %q", got)
+		}
+		if got := r.Header.Get("x-service-lasso-admin-token"); got != "test-token" {
+			t.Fatalf("operator token header %q", got)
+		}
+		var body struct {
+			Confirm bool `json:"confirm"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !body.Confirm {
+			t.Fatalf("expected explicit confirmation, body=%#v err=%v", body, err)
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"action":"start","serviceId":"echo","message":"started"}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, server.Client(), "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.Lifecycle(context.Background(), "echo", "start")
+	if err != nil || !result.OK || result.Message != "started" {
+		t.Fatalf("unexpected lifecycle result %#v, %v", result, err)
+	}
+}
+
 func TestClientRejectsInvalidBaseURL(t *testing.T) {
-	if _, err := NewClient("not a URL", nil); err == nil {
+	if _, err := NewClient("not a URL", nil, ""); err == nil {
 		t.Fatal("expected URL validation error")
 	}
 }

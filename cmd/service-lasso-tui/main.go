@@ -20,7 +20,7 @@ func main() {
 	apiURL := flag.String("api", defaultURL, "Service Lasso runtime API base URL")
 	flag.Parse()
 
-	client, err := api.NewClient(*apiURL, nil)
+	client, err := api.NewClient(*apiURL, nil, os.Getenv("SERVICE_LASSO_API_TOKEN"))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)

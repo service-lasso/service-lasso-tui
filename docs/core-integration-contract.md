@@ -23,6 +23,15 @@ The embedding package copies the exact matching asset unchanged, records its
 version and SHA-256 with the Core release evidence, and never puts it under a
 `services/` manifest or `services/*/.state` archive path.
 
+## Develop candidate handoff
+
+Issue #6 creates retained candidate artifacts only through an explicit
+`develop` workflow dispatch. The dispatch requires an exact version tied to
+the checked-out source SHA, produces all four assets and `SHA256SUMS.txt`, and
+uploads a candidate manifest that records the immutable source identity and
+asset digests. It does not create a tag or GitHub release. Core must reject a
+candidate that is incomplete, mutable, or checksum-mismatched.
+
 ## Launch
 
 Windows:

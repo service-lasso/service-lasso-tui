@@ -1,49 +1,120 @@
-name: Release TUI
+name: Qualify develop TUI candidate
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      candidate_version:
+        description: Exact yyyy.m.d-shortsha candidate version for this develop commit
+        required: true
+        type: string
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
-    if: github.ref == 'refs/heads/main'
+  candidate:
+    if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
+    env:
+      CANDIDATE_VERSION: ${{ inputs.candidate_version }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.26.0'
-      - name: Test
+          go-version-file: go.mod
+      - name: Bind the explicit version to develop source
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/develop"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "${#GITHUB_SHA}" = 40
+          [[ "$CANDIDATE_VERSION" =~ ^[0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2}-[0-9a-f]{7}$ ]]
+          test "${CANDIDATE_VERSION##*-}" = "${GITHUB_SHA:0:7}"
+          printf 'sha=%s\n' "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Test source
         run: go test ./...
-      - name: Build release archives
+      - name: Build and archive exact platform assets
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p release-assets/stage
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o release-assets/stage/service-lasso-tui.exe ./cmd/service-lasso-tui
-          (cd release-assets/stage && zip ../service-lasso-tui-windows-amd64.zip service-lasso-tui.exe)
-          rm -f release-assets/stage/service-lasso-tui.exe
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o release-assets/stage/service-lasso-tui ./cmd/service-lasso-tui
-          (cd release-assets/stage && tar -czf ../service-lasso-tui-linux-amd64.tar.gz service-lasso-tui)
-          rm -f release-assets/stage/service-lasso-tui
-          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o release-assets/stage/service-lasso-tui ./cmd/service-lasso-tui
-          (cd release-assets/stage && tar -czf ../service-lasso-tui-darwin-arm64.tar.gz service-lasso-tui)
+          declare -a targets=(
+            "windows amd64 zip service-lasso-tui.exe win32-amd64"
+            "linux amd64 tar service-lasso-tui linux-amd64"
+            "darwin amd64 tar service-lasso-tui darwin-amd64"
+            "darwin arm64 tar service-lasso-tui darwin-arm64"
+          )
+          for target in "${targets[@]}"; do
+            read -r goos goarch archive_kind executable suffix <<< "$target"
+            staged="release-assets/stage/$executable"
+            asset_base="service-lasso-tui-${CANDIDATE_VERSION}-${suffix}"
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags='-s -w' -o "$staged" ./cmd/service-lasso-tui
+            test -s "$staged"
+            go tool buildid "$staged" >/dev/null
+            if [ "$archive_kind" = zip ]; then
+              (cd release-assets/stage && zip -q "../${asset_base}.zip" "$executable")
+            else
+              (cd release-assets/stage && tar -czf "../${asset_base}.tar.gz" "$executable")
+            fi
+            rm -f "$staged"
+          done
           rm -rf release-assets/stage
-          (cd release-assets && sha256sum service-lasso-tui-windows-amd64.zip service-lasso-tui-linux-amd64.tar.gz service-lasso-tui-darwin-arm64.tar.gz > SHA256SUMS.txt)
-      - name: Compute release version
-        id: version
-        run: echo "version=$(date -u +%Y.%-m.%-d)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-      - uses: softprops/action-gh-release@v2
+          (cd release-assets && sha256sum service-lasso-tui-"$CANDIDATE_VERSION"-* > SHA256SUMS.txt)
+      - name: Verify checksums and extracted executable paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          sha256sum --check --strict SHA256SUMS.txt
+          test "$(unzip -Z1 "service-lasso-tui-${CANDIDATE_VERSION}-win32-amd64.zip")" = "service-lasso-tui.exe"
+          unzip -t "service-lasso-tui-${CANDIDATE_VERSION}-win32-amd64.zip" >/dev/null
+          for suffix in linux-amd64 darwin-amd64 darwin-arm64; do
+            asset="service-lasso-tui-${CANDIDATE_VERSION}-${suffix}.tar.gz"
+            test "$(tar -tzf "$asset")" = "service-lasso-tui"
+            extraction_root="$(mktemp -d)"
+            tar -xzf "$asset" -C "$extraction_root"
+            test -s "$extraction_root/service-lasso-tui"
+            go tool buildid "$extraction_root/service-lasso-tui" >/dev/null
+            rm -rf "$extraction_root"
+          done
+      - name: Write Core packaging handoff manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          checksum_manifest_sha256="$(sha256sum SHA256SUMS.txt | cut -d ' ' -f1)"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg sourceRef "$GITHUB_REF" \
+            --arg sourceCommit "$GITHUB_SHA" \
+            --arg version "$CANDIDATE_VERSION" \
+            --arg checksumManifestSha256 "$checksum_manifest_sha256" \
+            --arg win32 "service-lasso-tui-${CANDIDATE_VERSION}-win32-amd64.zip" \
+            --arg linux "service-lasso-tui-${CANDIDATE_VERSION}-linux-amd64.tar.gz" \
+            --arg darwinAmd64 "service-lasso-tui-${CANDIDATE_VERSION}-darwin-amd64.tar.gz" \
+            --arg darwinArm64 "service-lasso-tui-${CANDIDATE_VERSION}-darwin-arm64.tar.gz" \
+            --arg win32Sha256 "$(sha256sum "service-lasso-tui-${CANDIDATE_VERSION}-win32-amd64.zip" | cut -d ' ' -f1)" \
+            --arg linuxSha256 "$(sha256sum "service-lasso-tui-${CANDIDATE_VERSION}-linux-amd64.tar.gz" | cut -d ' ' -f1)" \
+            --arg darwinAmd64Sha256 "$(sha256sum "service-lasso-tui-${CANDIDATE_VERSION}-darwin-amd64.tar.gz" | cut -d ' ' -f1)" \
+            --arg darwinArm64Sha256 "$(sha256sum "service-lasso-tui-${CANDIDATE_VERSION}-darwin-arm64.tar.gz" | cut -d ' ' -f1)" \
+            '{schemaVersion: 1, kind: "develop-candidate", source: {repository: $repository, ref: $sourceRef, commit: $sourceCommit}, version: $version, checksumManifest: {name: "SHA256SUMS.txt", sha256: $checksumManifestSha256}, assets: [{platform: "win32-amd64", name: $win32, sha256: $win32Sha256, executable: "service-lasso-tui.exe"}, {platform: "linux-amd64", name: $linux, sha256: $linuxSha256, executable: "service-lasso-tui"}, {platform: "darwin-amd64", name: $darwinAmd64, sha256: $darwinAmd64Sha256, executable: "service-lasso-tui"}, {platform: "darwin-arm64", name: $darwinArm64, sha256: $darwinArm64Sha256, executable: "service-lasso-tui"}], corePackagingIssue: "service-lasso/service-lasso#1461"}' > candidate-manifest.json
+          jq -e '
+            .schemaVersion == 1 and
+            .kind == "develop-candidate" and
+            (.source.commit | test("^[0-9a-f]{40}$")) and
+            (.assets | length == 4) and
+            ([.assets[].platform] | sort == ["darwin-amd64", "darwin-arm64", "linux-amd64", "win32-amd64"]) and
+            all(.assets[]; (.sha256 | test("^[0-9a-f]{64}$")))
+          ' candidate-manifest.json >/dev/null
+      - name: Upload exact candidate handoff
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ steps.version.outputs.version }}
-          name: ${{ steps.version.outputs.version }}
-          target_commitish: ${{ github.sha }}
-          files: |
-            release-assets/service-lasso-tui-windows-amd64.zip
-            release-assets/service-lasso-tui-linux-amd64.tar.gz
-            release-assets/service-lasso-tui-darwin-arm64.tar.gz
-            release-assets/SHA256SUMS.txt
-          generate_release_notes: true
+          name: service-lasso-tui-candidate-${{ inputs.candidate_version }}-${{ steps.source.outputs.sha }}
+          path: release-assets
+          if-no-files-found: error
+          retention-days: 90

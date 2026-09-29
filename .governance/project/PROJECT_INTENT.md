@@ -8,3 +8,7 @@ The client consumes documented HTTP APIs and keeps Service Lasso authoritative
 for authentication, permissions, confirmation, lifecycle execution, auditing,
 and durable result state. It must never expose credentials or raw sensitive
 server error bodies.
+
+Distribution candidates are immutable, explicitly dispatched from `develop`,
+and checksum-bound to their source commit. Candidate artifacts support later
+Core packaging review; they do not publish a release or establish GA.

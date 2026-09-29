@@ -50,6 +50,44 @@ type servicesResponse struct {
 	Services []Service `json:"services"`
 }
 
+// Dashboard surfaces contain only the bounded fields rendered by the TUI.
+// The full Core payloads can contain paths, identities, and operator content
+// which are deliberately not retained by this attached-terminal client.
+type Capabilities struct {
+	RuntimeVersion  string
+	ContractVersion string
+}
+
+type SetupStatus struct {
+	State      string
+	SetupMode  bool
+	VaultReady bool
+}
+
+type RuntimeIdentity struct {
+	Status string
+	Phase  string
+}
+
+type InboxItem struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	Severity  string `json:"severity"`
+	State     string `json:"state"`
+	CreatedAt string `json:"createdAt"`
+}
+
+type Inbox struct {
+	Items      []InboxItem
+	Total      int
+	NextCursor string
+}
+
+type HealthHistory struct {
+	ServiceID string
+	Entries   int
+}
+
 // LifecycleResult is the durable result returned by Core after a lifecycle
 // request completes. The detailed state remains Core-owned.
 type LifecycleResult struct {
@@ -105,6 +143,85 @@ func (c *Client) Services(ctx context.Context) ([]Service, error) {
 		return nil, err
 	}
 	return result.Services, nil
+}
+
+func (c *Client) Capabilities(ctx context.Context) (Capabilities, error) {
+	var result struct {
+		Capabilities struct {
+			Runtime struct {
+				Version string `json:"version"`
+			} `json:"runtime"`
+			API struct {
+				ContractVersion string `json:"contractVersion"`
+			} `json:"api"`
+		} `json:"capabilities"`
+	}
+	err := c.get(ctx, "/api/runtime/capabilities", &result)
+	return Capabilities{RuntimeVersion: result.Capabilities.Runtime.Version, ContractVersion: result.Capabilities.API.ContractVersion}, err
+}
+
+func (c *Client) SetupStatus(ctx context.Context) (SetupStatus, error) {
+	var result struct {
+		Setup struct {
+			State     string `json:"state"`
+			SetupMode bool   `json:"setupMode"`
+			Vault     struct {
+				Ready bool `json:"ready"`
+			} `json:"vault"`
+		} `json:"setup"`
+	}
+	err := c.get(ctx, "/api/setup/status", &result)
+	return SetupStatus{State: result.Setup.State, SetupMode: result.Setup.SetupMode, VaultReady: result.Setup.Vault.Ready}, err
+}
+
+func (c *Client) RuntimeIdentity(ctx context.Context) (RuntimeIdentity, error) {
+	var result struct {
+		Instance *struct {
+			Status string `json:"status"`
+			Phase  string `json:"phase"`
+		} `json:"instance"`
+	}
+	err := c.get(ctx, "/api/runtime/instance", &result)
+	if result.Instance == nil {
+		return RuntimeIdentity{Status: "unknown", Phase: "unknown"}, err
+	}
+	return RuntimeIdentity{Status: result.Instance.Status, Phase: result.Instance.Phase}, err
+}
+
+func (c *Client) Inbox(ctx context.Context, cursor string) (Inbox, error) {
+	path := "/api/operator/inbox?limit=20"
+	if cursor != "" {
+		path += "&cursor=" + url.QueryEscape(cursor)
+	}
+	var result struct {
+		Inbox struct {
+			Items      []InboxItem `json:"items"`
+			Pagination struct {
+				Total      int     `json:"total"`
+				NextCursor *string `json:"nextCursor"`
+			} `json:"pagination"`
+		} `json:"inbox"`
+	}
+	err := c.get(ctx, path, &result)
+	next := ""
+	if result.Inbox.Pagination.NextCursor != nil {
+		next = *result.Inbox.Pagination.NextCursor
+	}
+	return Inbox{Items: result.Inbox.Items, Total: result.Inbox.Pagination.Total, NextCursor: next}, err
+}
+
+func (c *Client) HealthHistory(ctx context.Context, serviceID string) (HealthHistory, error) {
+	if !serviceIDPattern.MatchString(serviceID) {
+		return HealthHistory{}, fmt.Errorf("invalid service ID")
+	}
+	var result struct {
+		ServiceID string `json:"serviceId"`
+		History   struct {
+			Transitions []json.RawMessage `json:"transitions"`
+		} `json:"history"`
+	}
+	err := c.get(ctx, "/api/services/"+url.PathEscape(serviceID)+"/health/history", &result)
+	return HealthHistory{ServiceID: result.ServiceID, Entries: len(result.History.Transitions)}, err
 }
 
 // Lifecycle asks Core to perform one documented lifecycle action. Core remains

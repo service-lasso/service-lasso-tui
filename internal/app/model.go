@@ -12,6 +12,7 @@ import (
 type runtimeClient interface {
 	Health(context.Context) (api.Health, error)
 	Services(context.Context) ([]api.Service, error)
+	Lifecycle(context.Context, string, string) (api.LifecycleResult, error)
 }
 
 type screen int
@@ -22,22 +23,31 @@ const (
 )
 
 type model struct {
-	client   runtimeClient
-	ctx      context.Context
-	screen   screen
-	services []api.Service
-	selected int
-	health   api.Health
-	loading  bool
-	err      error
-	width    int
-	height   int
+	client           runtimeClient
+	ctx              context.Context
+	screen           screen
+	services         []api.Service
+	selected         int
+	health           api.Health
+	loading          bool
+	err              error
+	pendingAction    string
+	submittingAction bool
+	lastResult       string
+	width            int
+	height           int
 }
 
 type loadedMsg struct {
 	health   api.Health
 	services []api.Service
 	err      error
+}
+
+type lifecycleMsg struct {
+	result api.LifecycleResult
+	action string
+	err    error
 }
 
 func New(client runtimeClient, ctx context.Context) tea.Model {
@@ -57,6 +67,15 @@ func (m model) refresh() tea.Cmd {
 	}
 }
 
+func (m model) runLifecycle() tea.Cmd {
+	service := m.services[m.selected]
+	action := m.pendingAction
+	return func() tea.Msg {
+		result, err := m.client.Lifecycle(m.ctx, service.ID, action)
+		return lifecycleMsg{result: result, action: action, err: err}
+	}
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -70,15 +89,49 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selected = max(0, len(m.services)-1)
 			}
 		}
+	case lifecycleMsg:
+		m.loading = false
+		m.pendingAction = ""
+		m.submittingAction = false
+		if message.err != nil {
+			m.err = message.err
+			m.lastResult = ""
+		} else {
+			m.err = nil
+			outcome := "failed"
+			if message.result.OK {
+				outcome = "completed"
+			}
+			m.lastResult = fmt.Sprintf("Core %s %s.", outcome, message.action)
+		}
 	case tea.KeyMsg:
 		switch message.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 		case "r":
+			if m.pendingAction != "" {
+				return m, nil
+			}
 			m.loading, m.err = true, nil
 			return m, m.refresh()
 		case "esc", "backspace":
-			m.screen = servicesScreen
+			if m.pendingAction != "" {
+				m.pendingAction = ""
+			} else {
+				m.screen = servicesScreen
+			}
+		case "y":
+			if m.pendingAction != "" && !m.submittingAction {
+				m.loading, m.err = true, nil
+				m.submittingAction = true
+				return m, m.runLifecycle()
+			}
+		case "i", "c", "s", "x", "R", "l":
+			if m.screen == detailScreen && len(m.services) > 0 && m.pendingAction == "" {
+				m.pendingAction = map[string]string{
+					"i": "install", "c": "config", "s": "start", "x": "stop", "R": "restart", "l": "reload",
+				}[message.String()]
+			}
 		case "down", "j":
 			if m.screen == servicesScreen && m.selected < len(m.services)-1 {
 				m.selected++
@@ -139,6 +192,17 @@ func (m model) detailView(b *strings.Builder) string {
 		service := m.services[m.selected]
 		fmt.Fprintf(b, "%s (%s)\n\n%s\n\nLifecycle: %s\nHealth: %s\nEnabled: %t\n", service.Name, service.ID, service.Description, service.Lifecycle.State, service.Health.Status, service.Enabled)
 	}
-	b.WriteString("\nesc back • r refresh • q quit\n")
+	if m.submittingAction {
+		b.WriteString("\nSubmitting one confirmed request to Core…\n")
+	} else if m.pendingAction != "" {
+		fmt.Fprintf(b, "\nConfirm %s for the selected service? y confirm • esc cancel\n", m.pendingAction)
+	} else {
+		b.WriteString("\ni install • c config • s start • x stop • R restart • l reload\n")
+		b.WriteString("Each action asks Core to enforce permission and confirmation.\n")
+	}
+	if m.lastResult != "" {
+		b.WriteString("Last runtime result: " + m.lastResult + "\n")
+	}
+	b.WriteString("esc back • r refresh • q quit\n")
 	return b.String()
 }

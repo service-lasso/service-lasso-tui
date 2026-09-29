@@ -1,0 +1,6 @@
+# GOV-06 Issues
+
+An issue states the intended outcome and acceptance criteria. Each active
+backlog item must name the issue and the specification sections it implements.
+When Core lacks a required HTTP contract, record an owning Core dependency;
+never create an undocumented substitute in the terminal client.

@@ -1,14 +1,30 @@
 # Runtime API contract
 
-The initial TUI reads Service Lasso Core's documented runtime API:
+The client targets Service Lasso Core `develop` HTTP contracts. It sends
+`SERVICE_LASSO_API_TOKEN` only as `x-service-lasso-admin-token`; no token is
+accepted on the command line, rendered, or included in errors.
 
-- `GET /api/health` for connectivity and API status.
-- `GET /api/services` for the keyboard-navigable service list.
+| Workflow | Core route | TUI status |
+| --- | --- | --- |
+| Connectivity | `GET /api/health` | Implemented |
+| Service list and detail | `GET /api/services` | Implemented |
+| Install/config/start/stop/restart/reload | `POST /api/services/:serviceId/:action` with `{"confirm":true}` | Implemented after an explicit `y` confirmation |
+| API capability discovery | `GET /api/runtime/capabilities` | Core contract available; TUI implementation pending |
+| Completed declared action runs | `GET /api/services/:serviceId/actions` | Core contract available; TUI implementation pending |
+| Action run | `POST /api/services/:serviceId/actions/:actionId/runs` | Core contract available; TUI implementation pending |
+| Durable operation progress/cancellation | No stable TUI-ready contract | Blocked on Core |
+| Permission-aware action availability | No per-service action-availability contract | Blocked on Core |
+| Inbox and history | No stable TUI-ready contract selected | Blocked on Core |
 
 Set `SERVICE_LASSO_API_URL` or pass `--api` to target a runtime. The default is
 `http://127.0.0.1:17883`. Connection errors are displayed in the TUI and can be
-retried with `r`; they are never presented as healthy runtime state.
+retried with `r`; they are never presented as healthy runtime state. On a
+non-2xx response the client retains only the method, path, and HTTP status; it
+does not parse, render, or retain the server response body. Redirect responses
+also fail closed and are never followed, so an operator token cannot be sent to
+another origin or a downgraded transport.
 
-The first slice does not call mutation endpoints. Future keyboard actions must
-model the runtime's confirmation, permission, audit, and error responses before
-they can invoke lifecycle APIs.
+Core is authoritative for authentication, permissions, confirmation, auditing,
+idempotency, and lifecycle execution. The TUI sends no automatic lifecycle
+retry and does not substitute direct host control when a Core capability is
+missing.

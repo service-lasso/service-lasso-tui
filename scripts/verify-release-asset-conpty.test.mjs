@@ -5,7 +5,7 @@ import { access, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promise
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertCandidateManifest, assertReceiptPath, cleanupOutcome, cleanupResources, closeReceiptSinks, createReceiptSinks, finalizeReconnectExit, npmCommand, parseArgs, persistNodeExitReceipt, prepareCoreRuntime, prepareSourceBuiltCore, publishReceipt, stopProbe, validateReceipt } from "./verify-release-asset-conpty.mjs";
+import { assertCandidateManifest, cleanupOutcome, cleanupResources, closeReceiptSinks, createReceiptSinks, finalizeReconnectExit, npmCommand, parseArgs, parseProbe, persistNodeExitReceipt, prepareCoreRuntime, prepareSourceBuiltCore, stopProbe, validateReceipt } from "./verify-release-asset-conpty.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -44,7 +44,7 @@ test("requires the isolated source-built Core preflight and retains packaged sel
   );
 });
 
-test("source Core preparation fetches only the pinned develop ref into an isolated runtime", async () => {
+test("source Core preparation admits only the exact pinned commit and never trusts a local develop tracking ref", async () => {
   const tempRoot = path.join(os.tmpdir(), `tui-core-preflight-${process.pid}-${Date.now()}`);
   await mkdir(tempRoot, { recursive: true });
   const commands = [];
@@ -71,13 +71,46 @@ test("source Core preparation fetches only the pinned develop ref into an isolat
     assert.deepEqual(commands.map(({ program, args }) => [program, args]), [
       ["git", ["-C", "supplied-core", "rev-parse", "HEAD"]],
       ["git", ["init", isolatedRoot]],
-      ["git", ["-C", isolatedRoot, "fetch", "--no-tags", "--depth=1", "supplied-core", "refs/heads/develop:refs/remotes/supplied/develop"]],
+      ["git", ["-C", isolatedRoot, "fetch", "--no-tags", "--depth=1", "supplied-core", "10e4d72b75c66977ad1dd629991a27443ffc0fd3"]],
       ["git", ["-C", isolatedRoot, "rev-parse", "FETCH_HEAD"]],
       ["git", ["-C", isolatedRoot, "checkout", "--detach", "10e4d72b75c66977ad1dd629991a27443ffc0fd3"]],
       ["git", ["-C", isolatedRoot, "rev-parse", "HEAD"]],
       ["npm", ["ci"]],
       ["npm", ["run", "build"]],
     ]);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("source Core preparation never inspects a supplied origin/develop tracking ref", async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-core-preflight-ancestry-${process.pid}-${Date.now()}`);
+  await mkdir(tempRoot, { recursive: true });
+  try {
+    const commands = [];
+    await prepareSourceBuiltCore({
+      coreRoot: "supplied-core", tempRoot, platform: "linux",
+      command: async (_program, args) => {
+        commands.push(args);
+        if (args.join(" ") === "run build") {
+          await Promise.all([mkdir(path.join(tempRoot, "core-source", "packages", "core"), { recursive: true }), mkdir(path.join(tempRoot, "core-source", "dist", "server"), { recursive: true })]);
+          await Promise.all([writeFile(path.join(tempRoot, "core-source", "package.json"), "{}"), writeFile(path.join(tempRoot, "core-source", "packages", "core", "index.js"), ""), writeFile(path.join(tempRoot, "core-source", "dist", "server", "index.js"), "")]);
+        }
+        return { stdout: args.includes("rev-parse") ? "10e4d72b75c66977ad1dd629991a27443ffc0fd3\n" : "" };
+      },
+    });
+    assert.equal(commands.flat().some(argument => argument.includes("origin/develop")), false);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Windows receipt construction rejects a reparse-point base before creating an attempt root", { skip: process.platform !== "win32" }, async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-receipt-reparse-${process.pid}-${Date.now()}`);
+  const target = path.join(tempRoot, "target"); const alias = path.join(tempRoot, "alias");
+  await mkdir(target, { recursive: true }); await symlink(target, alias, "junction");
+  try {
+    await assert.rejects(() => createReceiptSinks(alias), /native receipt writer/u);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -243,6 +276,21 @@ test("reconnect receipts are closed schema and reject terminal sentinel text", (
   assert.throws(() => validateReceipt({ stage: "reconnect", outcome: "SENTINEL_SECRET", closedReason: "timed_out" }), /invalid reconnect receipt/u);
 });
 
+test("probe success rejects extra or incomplete terminal metadata", async () => {
+  const receipt = { stage: "exit", outcome: "normal", closedReason: "completed" };
+  const success = JSON.stringify({ ok: true, mode: "reconnect", reconnect: "r", navigation: ["d", "?"], narrowResize: "help-screen-rendered-after-50-columns", exit: "q", receipt });
+  assert.deepEqual(await finalizeReconnectExit({ helper: { writeFile: async () => undefined, sync: async () => undefined }, node: { writeFile: async () => undefined, sync: async () => undefined } }, 0, null, success), JSON.parse(success));
+  const foreign = JSON.stringify({ ok: true, mode: "reconnect", reconnect: "r", navigation: ["d", "?"], narrowResize: "help-screen-rendered-after-50-columns", exit: "q", receipt, terminal: "SENTINEL_SECRET" });
+  await assert.rejects(() => finalizeReconnectExit({ helper: { writeFile: async () => undefined, sync: async () => undefined }, node: { writeFile: async () => undefined, sync: async () => undefined } }, 0, null, foreign), /bounded assertions/u);
+});
+
+test("probe parser closes unavailable and failure schemas as well as reconnect success", () => {
+  assert.deepEqual(parseProbe(JSON.stringify({ ok: true, mode: "unavailable", exit: "q" }), "unavailable"), { ok: true, mode: "unavailable", exit: "q" });
+  assert.throws(() => parseProbe(JSON.stringify({ ok: true, mode: "unavailable", exit: "q", terminal: "SENTINEL_SECRET" }), "unavailable"), /bounded assertions/u);
+  assert.throws(() => parseProbe(JSON.stringify({ ok: false, stage: "startup", receipt: { stage: "startup", outcome: "timeout", closedReason: "timed_out" }, terminal: "SENTINEL_SECRET" }), "reconnect"), /bounded assertions/u);
+  assert.throws(() => parseProbe(JSON.stringify({ ok: false, stage: "startup", receipt: { stage: "exit", outcome: "timeout", closedReason: "timed_out" } }), "reconnect"), /bounded assertions/u);
+});
+
 test("held receipt handles bind publication despite attempt-root substitution", async () => {
   const tempRoot = path.join(os.tmpdir(), `tui-reconnect-receipt-path-${process.pid}-${Date.now()}`);
   await mkdir(tempRoot, { recursive: true });
@@ -250,14 +298,16 @@ test("held receipt handles bind publication despite attempt-root substitution", 
     const sinks = await createReceiptSinks(tempRoot);
     const displacedRoot = `${tempRoot}-owned`;
     await rm(displacedRoot, { recursive: true, force: true });
-    // On Windows the owned receipt handles deny deletion/rename of their
-    // parent while the helper runs. That is the root-substitution race that
-    // path validation alone could not prevent.
     const { rename } = await import("node:fs/promises");
-    await assert.rejects(() => rename(tempRoot, displacedRoot), /EPERM|EACCES/u);
+    if (process.platform === "win32") {
+      await assert.rejects(() => rename(tempRoot, displacedRoot), /EPERM|EACCES/u);
+    } else {
+      await rename(tempRoot, displacedRoot);
+    }
     assert.deepEqual(await persistNodeExitReceipt(sinks.node, 1, null), { stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero" });
     await closeReceiptSinks(sinks);
-    assert.deepEqual(JSON.parse(await readFile(path.join(tempRoot, "node-exit-outcome.json"), "utf8")), { stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero" });
+    const receiptDirectory = process.platform === "win32" ? sinks.root : path.join(displacedRoot, path.basename(sinks.root));
+    assert.deepEqual(JSON.parse(await readFile(path.join(receiptDirectory, "node-exit-outcome.json"), "utf8")), { stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero" });
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
     await rm(`${tempRoot}-owned`, { recursive: true, force: true });

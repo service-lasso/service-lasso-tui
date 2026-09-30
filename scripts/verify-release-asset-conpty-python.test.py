@@ -35,6 +35,13 @@ class ReceiptTests(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertEqual(json.loads(output.getvalue()), {"ok": False, "stage": "startup", "receipt": {"stage": "startup", "outcome": "timeout", "closedReason": "timed_out"}})
 
+    def test_failures_have_only_the_closed_metadata_schema(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = probe_module.probe("candidate.exe", "unavailable", "http://127.0.0.1:1", None, None, None, None, None, None)
+        self.assertEqual(result, 1)
+        self.assertEqual(json.loads(output.getvalue()), {"ok": False, "stage": "launch", "receipt": {"stage": "launch", "outcome": "error", "closedReason": "stage_failed"}})
+
     def test_helper_has_no_receipt_path_writer(self):
         self.assertFalse(hasattr(probe_module, "write_receipt"))
 

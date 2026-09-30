@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
-import { lstat, mkdtemp, mkdir, open, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, open, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const helper = path.join(repoRoot, "scripts", "verify-release-asset-conpty.py");
+const nativeReceiptWriter = path.join(repoRoot, "scripts", "verify-release-asset-receipts.py");
 const candidate = Object.freeze({
   version: "2026.9.30-97fafb0",
   sourceCommit: "97fafb04c69fce8efdd245eb186e6dfb9915485d",
@@ -26,7 +27,6 @@ const candidate = Object.freeze({
 const coreDevelop = "10e4d72b75c66977ad1dd629991a27443ffc0fd3";
 const helperReceiptName = "helper-outcome.json";
 const nodeReceiptName = "node-exit-outcome.json";
-const receiptNames = new Set([helperReceiptName, nodeReceiptName]);
 const receiptStages = new Set(["launch", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit", "helper-exit"]);
 const receiptOutcomes = new Set(["normal", "error", "timeout"]);
 const receiptReasons = new Set(["completed", "stage_failed", "timed_out", "shutdown_requested", "helper_exit_nonzero", "helper_exit_signal", "helper_exit_spawn_error"]);
@@ -120,11 +120,12 @@ export async function prepareSourceBuiltCore({ coreRoot, tempRoot, command = run
   if (suppliedHead.trim() !== coreDevelop) throw new CorePreflightFailure("source_identity_mismatch");
 
   const isolatedRoot = path.join(tempRoot, "core-source");
-  // Build in an isolated repository, without cloning its default branch or
-  // tags.  The only remote object admitted is the explicitly governed
-  // develop ref; its fetched tip must equal the already-pinned commit.
+  // Build in an isolated repository, without cloning a default branch or
+  // tags. The only admitted object is the exact pinned commit; the supplied
+  // checkout's governed, exact detached HEAD is the admitted source identity;
+  // never consult a possibly stale local origin/develop tracking ref.
   await preflightStep("source_clone_failed", () => command("git", ["init", isolatedRoot]));
-  await preflightStep("source_clone_failed", () => command("git", ["-C", isolatedRoot, "fetch", "--no-tags", "--depth=1", coreRoot, "refs/heads/develop:refs/remotes/supplied/develop"]));
+  await preflightStep("source_clone_failed", () => command("git", ["-C", isolatedRoot, "fetch", "--no-tags", "--depth=1", coreRoot, coreDevelop]));
   const { stdout: fetchedHead } = await preflightStep("isolated_identity_unavailable", () => command("git", ["-C", isolatedRoot, "rev-parse", "FETCH_HEAD"]));
   if (fetchedHead.trim() !== coreDevelop) throw new CorePreflightFailure("isolated_identity_mismatch");
   await preflightStep("isolated_checkout_failed", () => command("git", ["-C", isolatedRoot, "checkout", "--detach", coreDevelop]));
@@ -164,25 +165,37 @@ async function reserveUnavailableLoopbackURL() {
   };
 }
 
-function parseProbe(stdout, mode) {
+export function parseProbe(stdout, mode) {
   try {
     const result = JSON.parse(stdout.trim());
-    if (result?.ok === true && result.mode === mode && result.exit === "q") return result;
-    if (result?.ok === false && typeof result.stage === "string") {
+    const expectedKeys = mode === "unavailable"
+      ? ["exit", "mode", "ok"]
+      : ["exit", "mode", "narrowResize", "navigation", "ok", "receipt", "reconnect"];
+    const actualKeys = Object.keys(result ?? {}).sort();
+    const successReceipt = result?.receipt;
+    if (
+      result?.ok === true && result.mode === mode &&
+      actualKeys.length === expectedKeys.length && actualKeys.every((key, index) => key === expectedKeys[index]) &&
+      mode === "unavailable" && result.exit === "q"
+    ) return result;
+    if (
+      result?.ok === true && result.mode === mode &&
+      actualKeys.length === expectedKeys.length && actualKeys.every((key, index) => key === expectedKeys[index]) &&
+      mode === "reconnect" &&
+      result.reconnect === "r" && Array.isArray(result.navigation) && result.navigation.length === 2 &&
+      result.navigation[0] === "d" && result.navigation[1] === "?" &&
+      result.narrowResize === "help-screen-rendered-after-50-columns" && result.exit === "q" &&
+      validateReceipt(successReceipt).stage === "exit" && successReceipt.outcome === "normal" && successReceipt.closedReason === "completed"
+    ) return result;
+    if (
+      result?.ok === false && typeof result.stage === "string" &&
+      Object.keys(result).length === 3 && ["ok", "receipt", "stage"].every(key => Object.hasOwn(result, key)) &&
+      validateReceipt(result.receipt).stage === result.stage
+    ) {
       stage = `${mode}-${result.stage}`;
     }
   } catch {}
   throw new Error("release-asset ConPTY probe did not complete its bounded assertions");
-}
-
-export async function assertReceiptPath(tempRoot, receiptPath, receiptName) {
-  const root = path.resolve(tempRoot);
-  if (!receiptNames.has(receiptName)) throw new Error("invalid reconnect receipt path");
-  const expected = path.join(root, receiptName);
-  if (path.resolve(receiptPath) !== expected) throw new Error("invalid reconnect receipt path");
-  const rootEntry = await lstat(root);
-  if (!rootEntry.isDirectory() || rootEntry.isSymbolicLink()) throw new Error("invalid reconnect receipt owner");
-  return expected;
 }
 
 export function validateReceipt(receipt) {
@@ -192,18 +205,85 @@ export function validateReceipt(receipt) {
   return receipt;
 }
 
-export async function createReceiptSinks(tempRoot, { openFile = open } = {}) {
-  const root = path.resolve(tempRoot);
-  // These capabilities are created before the helper starts.  Publication
-  // below never resolves the attempt-root pathname again, so replacing that
-  // directory after setup cannot redirect either receipt into another tree.
-  await assertReceiptPath(root, path.join(root, helperReceiptName), helperReceiptName);
-  await assertReceiptPath(root, path.join(root, nodeReceiptName), nodeReceiptName);
-  const [helper, node] = await Promise.all([
-    openFile(path.join(root, helperReceiptName), "wx", 0o600),
-    openFile(path.join(root, nodeReceiptName), "wx", 0o600),
-  ]);
-  return { helper, node };
+function startWriterRequest(writer, message) {
+  return new Promise((resolve, reject) => {
+    writer.requests.push({ resolve, reject });
+    writer.child.stdin.write(`${JSON.stringify(message)}\n`, error => {
+      if (!error) return;
+      const request = writer.requests.shift();
+      request?.reject(error);
+    });
+  });
+}
+
+async function startNativeReceiptWriter(baseRoot) {
+  const child = spawn("python", [nativeReceiptWriter, "--base-root", baseRoot], { windowsHide: true, stdio: ["pipe", "pipe", "ignore"] });
+  const writer = { child, requests: [], buffer: "" };
+  const rejectPending = error => {
+    while (writer.requests.length) writer.requests.shift().reject(error);
+  };
+  child.once("error", rejectPending);
+  let rejectReady;
+  child.once("close", code => {
+    const error = new Error(`native receipt writer exited (${code ?? "signal"})`);
+    rejectReady?.(error); rejectPending(error);
+  });
+  child.stdout.setEncoding("utf8");
+  const ready = new Promise((resolve, reject) => {
+    rejectReady = reject;
+    const timer = setTimeout(() => reject(new Error("native receipt writer did not initialise")), 5_000);
+    const onLine = line => {
+      let result;
+      try { result = JSON.parse(line); } catch { return; }
+      if (!writer.ready && result?.event === "ready" && result.ok === true && typeof result.root === "string" && Object.keys(result).length === 3) {
+        clearTimeout(timer); writer.ready = true; resolve(result.root); return;
+      }
+      if (writer.ready) writer.onLine(result);
+    };
+    writer.onLine = result => {
+      const request = writer.requests.shift();
+      if (!request) return;
+      if (result?.ok !== true || typeof result.event !== "string") request.reject(new Error("native receipt writer rejected request"));
+      else request.resolve(result);
+    };
+    writer.acceptLine = onLine;
+  });
+  child.stdout.on("data", chunk => {
+    writer.buffer += chunk;
+    for (;;) {
+      const newline = writer.buffer.indexOf("\n");
+      if (newline < 0) break;
+      const line = writer.buffer.slice(0, newline); writer.buffer = writer.buffer.slice(newline + 1);
+      writer.acceptLine(line);
+    }
+  });
+  writer.root = await ready;
+  rejectReady = undefined;
+  return writer;
+}
+
+export async function createReceiptSinks(tempRoot, { createDirectory = mkdtemp, openFile = open, platform = process.platform } = {}) {
+  if (platform === "win32") {
+    // The writer creates the attempt directory and both receipts with
+    // NtCreateFile relative to a held parent handle. It rejects reparse
+    // points while walking and keeps the root non-delete-shareable until
+    // cleanup. JavaScript pathname checks are deliberately not used as proof.
+    const writer = await startNativeReceiptWriter(path.resolve(tempRoot));
+    return { root: writer.root, helper: { writer, sink: "helper" }, node: { writer, sink: "node" } };
+  }
+  // Allocate a new unpredictable directory owned by this attempt before a
+  // helper starts. Each receipt is then atomically CREATE_NEW-created beneath
+  // that directory and only its held handle is used for publication.
+  const root = await createDirectory(path.join(path.resolve(tempRoot), "receipts-"));
+  const helper = await openFile(path.join(root, helperReceiptName), "wx", 0o600);
+  let node;
+  try {
+    node = await openFile(path.join(root, nodeReceiptName), "wx", 0o600);
+  } catch (error) {
+    await helper.close().catch(() => undefined);
+    throw error;
+  }
+  return { root, helper, node };
 }
 
 export async function publishReceipt(handle, receipt) {
@@ -212,6 +292,11 @@ export async function publishReceipt(handle, receipt) {
   // final receipt pathname here: a later root-name substitution cannot change
   // the object receiving these bytes, and cleanup never unlinks a receipt.
   try {
+    if (handle?.writer && typeof handle.sink === "string") {
+      const result = await startWriterRequest(handle.writer, { op: "write", sink: handle.sink, receipt: finalReceipt });
+      if (result.event !== "written" || result.sink !== handle.sink || Object.keys(result).length !== 3) throw new Error("native receipt writer returned invalid acknowledgement");
+      return finalReceipt;
+    }
     await handle.writeFile(JSON.stringify(finalReceipt));
     await handle.sync();
     return finalReceipt;
@@ -219,6 +304,12 @@ export async function publishReceipt(handle, receipt) {
 }
 
 export async function closeReceiptSinks(sinks) {
+  const writer = sinks?.helper?.writer ?? sinks?.node?.writer;
+  if (writer) {
+    try { await startWriterRequest(writer, { op: "close" }); } catch {}
+    await Promise.race([new Promise(resolve => writer.child.once("close", resolve)), new Promise(resolve => setTimeout(resolve, 5_000))]);
+    return;
+  }
   await Promise.allSettled([sinks?.helper?.close(), sinks?.node?.close()]);
 }
 
@@ -380,9 +471,10 @@ async function main() {
   }
   const { coreRoot: suppliedCoreRoot, coreKind } = parseArgs(process.argv.slice(2));
 
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "service-lasso-tui-release-asset-"));
-  let apiServer; let unavailable; let probe; let receiptSinks; let primaryError;
+  let tempRoot; let apiServer; let unavailable; let probe; let receiptSinks; let primaryError;
   try {
+    receiptSinks = await createReceiptSinks(os.tmpdir());
+    tempRoot = receiptSinks.root;
     stage = "core-runtime-preflight";
     const coreRuntime = await prepareCoreRuntime({ coreKind, coreRoot: suppliedCoreRoot, tempRoot });
     stage = "download";
@@ -409,7 +501,6 @@ async function main() {
     const reconnectPath = path.join(tempRoot, "probe-reconnect");
     const shutdownRequestPath = path.join(tempRoot, "probe-shutdown-request");
     const shutdownAcknowledgementPath = path.join(tempRoot, "probe-shutdown-acknowledgement");
-    receiptSinks = await createReceiptSinks(tempRoot);
     probe = startReconnectProbe(executable, unavailable.url, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath, randomUUID(), receiptSinks);
     await waitForFile(readyPath);
     const loopbackPort = unavailable.port;
@@ -431,7 +522,7 @@ async function main() {
     throw error;
   } finally {
     await closeReceiptSinks(receiptSinks);
-    const cleanupConfirmed = await cleanupResources({ probe, apiServer, unavailable, tempRoot });
+    const cleanupConfirmed = tempRoot ? await cleanupResources({ probe, apiServer, unavailable, tempRoot }) : false;
     const cleanupError = cleanupOutcome(primaryError, cleanupConfirmed);
     if (cleanupError && cleanupError !== primaryError) {
       stage = "cleanup-unconfirmed";

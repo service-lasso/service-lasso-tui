@@ -22,11 +22,10 @@ def emit(result): print(json.dumps(result, separators=(",", ":")))
 def receipt(stage, outcome, closed_reason):
     return {"stage": stage, "outcome": outcome, "closedReason": closed_reason}
 def fail(stage, reason=None, outcome_receipt=None):
-    result = {"ok": False, "stage": stage}
-    if reason:
-        result["reason"] = reason
-    if outcome_receipt:
-        result["receipt"] = outcome_receipt
+    # The harness deliberately exposes no terminal text, path, or exception.
+    # Every failure has the same closed metadata-only schema.
+    safe_stage = stage if stage in RECEIPT_STAGES else "launch"
+    result = {"ok": False, "stage": safe_stage, "receipt": outcome_receipt or receipt(safe_stage, "error", "stage_failed")}
     emit(result)
     return 1
 
@@ -132,7 +131,7 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
         emit({"ok": True, "mode": mode, "reconnect": "r", "navigation": ["d", "?"], "narrowResize": narrow_resize, "exit": "q", "receipt": receipt(stage, "normal", "completed")}); return 0
     except ShutdownRequested:
         receipt_stage = stage if stage in RECEIPT_STAGES else "exit"
-        return fail("cleanup", "shutdown-requested", receipt(receipt_stage, "error", "shutdown_requested"))
+        return fail(receipt_stage, "shutdown-requested", receipt(receipt_stage, "error", "shutdown_requested"))
     except Exception:
         receipt_stage = stage if stage in RECEIPT_STAGES else "launch"
         return fail(stage, "pty-operation-failed" if stage == "reconnect" else None, receipt(receipt_stage, "error", "stage_failed"))

@@ -221,7 +221,7 @@ jobs:
           elif grep -Fq 'HTTP 404' existing-release.err; then
             echo 'recovered=false' >> "$GITHUB_OUTPUT"
           else
-            cat existing-release.err >&2
+            echo "existing candidate lookup failed with an unexpected provider status" >&2
             exit 1
           fi
       - name: Create a new draft candidate once, upload its exact inventory, then publish it

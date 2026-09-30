@@ -176,7 +176,7 @@ export async function holdVerifiedLocalAssets({ assetDirectory, manifest, localA
   return { inventory: actual, bytes: held, totalBytes };
 }
 
-export function assertReleaseReceipt(release, manifest, localAssets) {
+function assertReleaseAssetMetadata(release, manifest, localAssets, draft) {
   const requiredNames = fixedInventoryNames(manifest?.version);
   assertLocalAssets(localAssets, requiredNames);
   for (const expected of fixedArchiveAssets(manifest?.version)) {
@@ -185,7 +185,7 @@ export function assertReleaseReceipt(release, manifest, localAssets) {
   }
   if (manifest?.checksumManifest?.name !== "SHA256SUMS.txt" || localAssets["SHA256SUMS.txt"].sha256 !== manifest.checksumManifest.sha256) fail("local candidate checksum manifest does not match the manifest");
   object(release, "release");
-  if (release.tag_name !== manifest.release.tag || release.target_commitish !== manifest.source.commit || release.draft !== false || release.prerelease !== true || release.immutable !== true) fail("release does not prove the immutable exact candidate identity");
+  if (release.tag_name !== manifest.release.tag || release.target_commitish !== manifest.source.commit || release.draft !== draft || release.prerelease !== true || (!draft && release.immutable !== true)) fail(draft ? "release does not prove the exact draft candidate identity" : "release does not prove the immutable exact candidate identity");
   if (!Array.isArray(release.assets)) fail("release assets are missing");
   const names = release.assets.map(asset => asset?.name).sort();
   if (names.length !== requiredNames.length || names.some((name, index) => name !== requiredNames[index])) fail("release asset inventory is incomplete or unexpected");
@@ -198,10 +198,13 @@ export function assertReleaseReceipt(release, manifest, localAssets) {
     const assetURL = new URL(remote.url);
     if (assetURL.protocol !== "https:" || assetURL.hostname !== "api.github.com" || assetURL.port || assetURL.username || assetURL.password || assetURL.hash || assetURL.search || assetURL.pathname !== `/repos/service-lasso/service-lasso-tui/releases/assets/${remote.id}`) fail(`release asset record URL is invalid for ${name}`);
     if (remote?.digest !== `sha256:${local.sha256}` || positiveBoundedSize(remote?.size, `release ${name}`) !== local.size || typeof remote.browser_download_url !== "string") fail(`release asset receipt is invalid for ${name}`);
-    assertInitialAssetURL(remote.browser_download_url, release, name);
+    if (!draft) assertInitialAssetURL(remote.browser_download_url, release, name);
   }
-  return { tag: release.tag_name, commit: release.target_commitish, immutable: release.immutable, assets: requiredNames };
+  return { tag: release.tag_name, commit: release.target_commitish, immutable: release.immutable === true, assets: requiredNames };
 }
+
+export function assertReleaseReceipt(release, manifest, localAssets) { return assertReleaseAssetMetadata(release, manifest, localAssets, false); }
+export function assertDraftReleaseReceipt(release, manifest, localAssets) { return assertReleaseAssetMetadata(release, manifest, localAssets, true); }
 
 export function assertExistingCandidateRecovery(release, manifest, localAssets) { return assertReleaseReceipt(release, manifest, localAssets); }
 
@@ -211,6 +214,14 @@ export function assertTransportPolicy({ uploadURL, downloadURL, authorization, r
   if (upload.protocol !== "https:" || upload.hostname !== "uploads.github.com" || upload.port || explicitPort(uploadURL) || upload.username || upload.password || upload.hash || authorization !== "Bearer") fail("release upload must use GitHub's Bearer-authenticated upload host");
   if (download.protocol !== "https:" || !PUBLIC_DOWNLOAD_HOSTS.has(download.hostname) || download.port || explicitPort(downloadURL) || download.username || download.password || download.hash) fail("release download host is not approved for headerless public retrieval");
   if (["github.com", "github-releases.githubusercontent.com"].includes(download.hostname) && (download.search || !/^\/[^/]+\/[^/]+\/releases\/download\/[^/]+\/[^/]+$/u.test(download.pathname))) fail("GitHub release download URL is malformed");
+  if (["objects.githubusercontent.com", "release-assets.githubusercontent.com"].includes(download.hostname)) {
+    if (!/^\/github-production-release-asset-2e65be\/[1-9][0-9]{0,18}\/[A-Za-z0-9._~-]{1,256}$/u.test(download.pathname)) fail("signed release asset path is malformed");
+    const permitted = new Set(["X-Amz-Algorithm", "X-Amz-Credential", "X-Amz-Date", "X-Amz-Expires", "X-Amz-SignedHeaders", "X-Amz-Signature"]);
+    const entries = [...download.searchParams.entries()];
+    if (entries.length !== permitted.size || new Set(entries.map(([key]) => key)).size !== permitted.size || entries.some(([key]) => !permitted.has(key))) fail("signed release asset query is malformed");
+    const query = Object.fromEntries(entries);
+    if (query["X-Amz-Algorithm"] !== "AWS4-HMAC-SHA256" || !/^[A-Z0-9]{16,32}\/20[0-9]{6}\/us-(east|west)-[12]\/s3\/aws4_request$/u.test(query["X-Amz-Credential"]) || !/^20[0-9]{6}T[0-9]{6}Z$/u.test(query["X-Amz-Date"]) || !/^[1-9][0-9]{0,2}$/u.test(query["X-Amz-Expires"]) || Number(query["X-Amz-Expires"]) > 300 || query["X-Amz-SignedHeaders"] !== "host" || !/^[a-f0-9]{64}$/u.test(query["X-Amz-Signature"])) fail("signed release asset query is malformed");
+  }
   return true;
 }
 
@@ -245,6 +256,46 @@ async function fetchPublicAsset(initialURL, expectedSize, destination, fetchImpl
     url = new URL(location);
   }
   fail("public asset download redirect limit exceeded");
+}
+
+function assertDraftAssetAPIURL(value, id) {
+  const url = new URL(value);
+  if (url.protocol !== "https:" || url.hostname !== "api.github.com" || url.port || url.username || url.password || url.hash || url.search || url.pathname !== `/repos/service-lasso/service-lasso-tui/releases/assets/${id}`) fail("draft release asset record URL is invalid");
+  return url;
+}
+
+async function fetchDraftAsset(asset, expectedSize, destination, token, fetchImpl) {
+  let url = assertDraftAssetAPIURL(asset.url, asset.id); let authenticated = true;
+  for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
+    const headers = authenticated ? { Accept: "application/octet-stream", Authorization: `Bearer ${token}` } : {};
+    const response = await fetchImpl(url, { method: "GET", redirect: "manual", headers });
+    if (response.status === 200) return streamResponse(response, destination, expectedSize);
+    if (![301, 302, 303, 307, 308].includes(response.status)) fail(`draft asset download failed with HTTP ${response.status}`);
+    if (redirects === MAX_REDIRECTS) fail("draft asset download redirect limit exceeded");
+    const location = response.headers?.get?.("location");
+    if (!location || !/^https:\/\//iu.test(location)) fail("draft asset download redirect is malformed");
+    assertTransportPolicy({ uploadURL: "https://uploads.github.com/", downloadURL: location, authorization: "Bearer", redirect: true });
+    url = new URL(location); authenticated = false;
+  }
+  fail("draft asset download redirect limit exceeded");
+}
+
+export async function verifyDraftAssetBytes({ release, manifest, localAssets, heldBytes, downloadDir, token, fetchImpl = fetch }) {
+  if (typeof token !== "string" || token.length < 1) fail("draft release read authority is invalid");
+  const receipt = assertDraftReleaseReceipt(release, manifest, localAssets);
+  if (!heldBytes || typeof heldBytes !== "object") fail("draft held candidate bytes are missing");
+  await mkdir(downloadDir, { recursive: true }); let total = 0; const verified = [];
+  try {
+    for (let index = 0; index < receipt.assets.length; index += 1) {
+      const name = receipt.assets[index]; const remote = release.assets.find(asset => asset.name === name); const expected = heldBytes[name];
+      if (!Buffer.isBuffer(expected) || expected.length !== localAssets[name].size || createHash("sha256").update(expected).digest("hex") !== localAssets[name].sha256) fail(`draft held candidate bytes are invalid for ${name}`);
+      if (total + remote.size > MAX_TOTAL_BYTES) fail("draft asset inventory exceeds temporary storage bound");
+      const result = await fetchDraftAsset(remote, remote.size, `${downloadDir}/draft-asset-${index}`, token, fetchImpl);
+      if (result.sha256 !== localAssets[name].sha256 || result.sha256 !== remote.digest.slice("sha256:".length) || result.size !== expected.length) fail(`draft asset byte receipt is invalid for ${name}`);
+      total += result.size; verified.push({ name, ...result });
+    }
+  } finally { await rm(downloadDir, { recursive: true, force: true }); }
+  return { ...receipt, totalBytes: total, verified };
 }
 
 export async function verifyPublicAssetBytes({ release, manifest, localAssets, assetDirectory, downloadDir, fetchImpl = fetch }) {

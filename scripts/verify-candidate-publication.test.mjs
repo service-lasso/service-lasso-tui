@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { assertExistingCandidateRecovery, assertManifest, assertPreflight, assertPublicationDirectory, assertReleaseReceipt, assertTransportPolicy, candidateIdentity, readBoundedRegularLocalAsset, verifyPublicAssetBytes } from "./verify-candidate-publication.mjs";
+import { assertDraftReleaseReceipt, assertExistingCandidateRecovery, assertManifest, assertPreflight, assertPublicationDirectory, assertReleaseReceipt, assertTransportPolicy, candidateIdentity, readBoundedRegularLocalAsset, verifyPublicAssetBytes } from "./verify-candidate-publication.mjs";
 import { uploadVerifiedCandidateAssets } from "./upload-verified-candidate-assets.mjs";
 
 const identity = candidateIdentity({ sourceRef: "refs/heads/develop", sourceCommit: "0123456789abcdef0123456789abcdef01234567", version: "2026.10.1-0123456", tag: "candidate-2026.10.1-0123456" });
@@ -19,14 +19,15 @@ const localAssets = Object.fromEntries(names.map(name => { const body = localBod
 const release = { tag_name: identity.tag, target_commitish: identity.sourceCommit, draft: false, prerelease: true, immutable: true, assets: names.map((name, index) => ({ id: index + 101, url: `https://api.github.com/repos/service-lasso/service-lasso-tui/releases/assets/${index + 101}`, name, digest: `sha256:${localAssets[name].sha256}`, size: localAssets[name].size, browser_download_url: `https://github.com/service-lasso/service-lasso-tui/releases/download/${identity.tag}/${name}` })) };
 const preflight = { immutableReleases: { enabled: true }, environment: { name: "development-candidate", protection_rules: [{ type: "wait_timer", wait_timer: 10 }], deployment_branch_policy: { protected_branches: true, custom_branch_policies: false } }, branchProtection: { required_status_checks: { strict: true, contexts: ["Linux test and build", "Windows test and build", "macOS test and build", "Release asset cross-compilation"] }, required_pull_request_reviews: { required_approving_review_count: 0 }, allow_force_pushes: { enabled: false } } };
 
-function response(status, headers = {}, body) { return { status, headers: { get: key => headers[key.toLowerCase()] ?? null }, body: body === undefined ? undefined : (async function* () { yield body; })() }; }
+function response(status, headers = {}, body) { return { status, headers: { get: key => headers[key.toLowerCase()] ?? null }, body: body === undefined ? undefined : (async function* () { yield body; })(), text: async () => body === undefined ? "" : Buffer.from(body).toString("utf8") }; }
+function signedRedirect(name) { return `https://release-assets.githubusercontent.com/github-production-release-asset-2e65be/123/${encodeURIComponent(name)}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ABCDEFGHIJKLMNOP%2F20261001%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261001T000000Z&X-Amz-Expires=300&X-Amz-SignedHeaders=host&X-Amz-Signature=${"a".repeat(64)}`; }
 function publicFetch({ bodies = localBodies, redirect = true, calls = [] } = {}) {
   return async (url, options) => {
     calls.push({ url: String(url), options }); const parsed = new URL(url);
     if (parsed.hostname === "github.com") {
       const name = decodeURIComponent(parsed.pathname.split("/").at(-1));
       if (!bodies[name]) return response(404);
-      if (redirect) return response(302, { location: `https://release-assets.githubusercontent.com/public/${encodeURIComponent(name)}?signature=bounded` });
+      if (redirect) return response(302, { location: signedRedirect(name) });
       return response(200, { "content-length": String(bodies[name].length) }, bodies[name]);
     }
     const name = decodeURIComponent(parsed.pathname.split("/").at(-1));
@@ -75,6 +76,7 @@ test("validates complete immutable metadata inventory before reading public byte
   assert.throws(() => assertReleaseReceipt({ ...release, assets: release.assets.slice(1) }, manifest, localAssets), /inventory/u);
   assert.throws(() => assertReleaseReceipt(release, { ...manifest, assets: manifest.assets.map((asset, index) => index === 0 ? { ...asset, sha256: "f".repeat(64) } : asset) }, localAssets), /does not match the manifest/u);
   assert.throws(() => assertReleaseReceipt(release, { ...manifest, checksumManifest: { ...manifest.checksumManifest, sha256: "e".repeat(64) } }, localAssets), /checksum manifest does not match/u);
+  assert.throws(() => assertDraftReleaseReceipt(release, manifest, localAssets), /draft candidate/u);
 });
 test("recovers a complete existing candidate only after all six public bodies match", async () => {
   const calls = []; const receipt = await verify({ calls });
@@ -102,6 +104,8 @@ test("rejects malformed public URLs and redirect escapes or loops", async () => 
   await assert.rejects(() => verify({ release: { ...release, assets: release.assets.map(asset => asset.name === names[0] ? { ...asset, browser_download_url: "https://evil.example/file" } : asset) } }), /download host/u);
   await assert.rejects(() => verify({ fetchImpl: async () => response(302, { location: "https://evil.example/file" }) }), /download host/u);
   await assert.rejects(() => verify({ fetchImpl: async () => response(302, { location: "https://release-assets.githubusercontent.com:443/file" }) }), /download host/u);
+  await assert.rejects(() => verify({ fetchImpl: async () => response(302, { location: "https://release-assets.githubusercontent.com/github-production-release-asset-2e65be/123/opaque-value-long-enough?signature=unbounded" }) }), /signed release asset/u);
+  await assert.rejects(() => verify({ fetchImpl: async () => response(302, { location: `https://objects.githubusercontent.com/github-production-release-asset-2e65be/123/opaque-value-long-enough?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ABCDEFGHIJKLMNOP%2F20261001%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261001T000000Z&X-Amz-Expires=301&X-Amz-SignedHeaders=host&X-Amz-Signature=${"a".repeat(64)}` }) }), /signed release asset/u);
   await assert.rejects(() => verify({ fetchImpl: async url => response(302, { location: String(url) }) }), /redirect limit/u);
 });
 test("keeps authenticated uploads separate from headerless public downloads", () => {
@@ -135,16 +139,31 @@ test("rejects an external same-size file swapped in through a symlink", async ()
   } finally { await rm(directory, { recursive: true, force: true }); await rm(external, { recursive: true, force: true }); }
 });
 
-test("uploads the original held bytes if every source path is coherently replaced after verification", async () => {
+test("uploads and draft-verifies the original held bytes while dropping auth on every redirect", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "candidate-held-upload-")); const previousRepository = process.env.GITHUB_REPOSITORY; const previousToken = process.env.GH_TOKEN; const uploaded = [];
   try {
     await Promise.all(names.map(name => writeFile(path.join(directory, name), localBodies[name])));
     await writeFile(path.join(directory, "candidate-local-assets.json"), JSON.stringify(localAssets));
     process.env.GITHUB_REPOSITORY = "service-lasso/service-lasso-tui"; process.env.GH_TOKEN = "test-token";
-    await uploadVerifiedCandidateAssets({ assetDirectory: directory, localAssets: path.join(directory, "candidate-local-assets.json"), identity, releaseID: "123", upload: async (_url, bytes) => {
-      if (uploaded.length === 0) await Promise.all(names.map(name => writeFile(path.join(directory, name), Buffer.from(`replacement-${name}`, "utf8"))));
-      uploaded.push(Buffer.from(bytes));
+    const draft = { ...release, draft: true, immutable: false };
+    const calls = [];
+    await uploadVerifiedCandidateAssets({ assetDirectory: directory, localAssets: path.join(directory, "candidate-local-assets.json"), identity, releaseID: "123", fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), options }); const parsed = new URL(url);
+      if (options.method === "POST") { if (uploaded.length === 0) await Promise.all(names.map(name => writeFile(path.join(directory, name), Buffer.from(`replacement-${name}`, "utf8")))); uploaded.push(Buffer.from(options.body)); return response(201); }
+      if (parsed.pathname === "/repos/service-lasso/service-lasso-tui/releases/123") return response(200, { "content-length": String(Buffer.byteLength(JSON.stringify(draft))) }, Buffer.from(JSON.stringify(draft)));
+      if (parsed.hostname === "api.github.com") return response(302, { location: signedRedirect(draft.assets.find(asset => asset.url === String(url)).name) });
+      const name = decodeURIComponent(parsed.pathname.split("/").at(-1)); return response(200, { "content-length": String(localBodies[name].length) }, localBodies[name]);
     } });
     assert.deepEqual(uploaded, names.map(name => localBodies[name]));
+    const redirected = calls.filter(call => new URL(call.url).hostname === "release-assets.githubusercontent.com");
+    assert.equal(redirected.length, 6); assert.ok(redirected.every(call => Object.keys(call.options.headers).length === 0));
   } finally { previousRepository === undefined ? delete process.env.GITHUB_REPOSITORY : process.env.GITHUB_REPOSITORY = previousRepository; previousToken === undefined ? delete process.env.GH_TOKEN : process.env.GH_TOKEN = previousToken; await rm(directory, { recursive: true, force: true }); }
+});
+
+test("keeps the draft patch after the failing draft receipt gate", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
+  const gate = workflow.indexOf("node scripts/upload-verified-candidate-assets.mjs");
+  const patch = workflow.indexOf('gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" -f draft=false');
+  assert.ok(gate >= 0 && patch > gate);
+  assert.match(workflow.slice(workflow.lastIndexOf("set -euo pipefail", gate), patch), /set -euo pipefail/u);
 });

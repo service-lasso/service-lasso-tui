@@ -47,23 +47,26 @@ test("fresh job binds checked source before consuming its artifact and runs the 
     "SHA256SUMS.txt",
     "candidate-manifest.json",
   ];
-  const bodies = Object.fromEntries(names.map(name => [name, Buffer.from(`fresh-job-${name}`, "utf8")]));
-  const localAssets = Object.fromEntries(names.map(name => [name, { sha256: digest(bodies[name]), size: bodies[name].length }]));
+  const archiveNames = names.slice(0, 4);
+  const archiveBodies = Object.fromEntries(archiveNames.map(name => [name, Buffer.from(`fresh-job-${name}`, "utf8")]));
+  const checksumBody = Buffer.from(archiveNames.map(name => `${digest(archiveBodies[name])}  ${name}`).join("\n") + "\n", "utf8");
   const manifest = {
     schemaVersion: 2,
     kind: "develop-prerelease-candidate",
     source: { repository: "service-lasso/service-lasso-tui", ref: "refs/heads/develop", commit: sha },
     release: { tag, prerelease: true, draft: false, immutable: true },
     version,
-    checksumManifest: { name: "SHA256SUMS.txt", sha256: localAssets["SHA256SUMS.txt"].sha256 },
+    checksumManifest: { name: "SHA256SUMS.txt", sha256: digest(checksumBody) },
     corePackagingIssue: "service-lasso/service-lasso#1461",
     assets: [
-      { platform: "win32-amd64", name: names[0], sha256: localAssets[names[0]].sha256, executable: "service-lasso-tui.exe" },
-      { platform: "linux-amd64", name: names[1], sha256: localAssets[names[1]].sha256, executable: "service-lasso-tui" },
-      { platform: "darwin-amd64", name: names[2], sha256: localAssets[names[2]].sha256, executable: "service-lasso-tui" },
-      { platform: "darwin-arm64", name: names[3], sha256: localAssets[names[3]].sha256, executable: "service-lasso-tui" },
+      { platform: "win32-amd64", name: names[0], sha256: digest(archiveBodies[names[0]]), executable: "service-lasso-tui.exe" },
+      { platform: "linux-amd64", name: names[1], sha256: digest(archiveBodies[names[1]]), executable: "service-lasso-tui" },
+      { platform: "darwin-amd64", name: names[2], sha256: digest(archiveBodies[names[2]]), executable: "service-lasso-tui" },
+      { platform: "darwin-arm64", name: names[3], sha256: digest(archiveBodies[names[3]]), executable: "service-lasso-tui" },
     ],
   };
+  const bodies = { ...archiveBodies, "SHA256SUMS.txt": checksumBody, "candidate-manifest.json": Buffer.from(JSON.stringify(manifest), "utf8") };
+  const localAssets = Object.fromEntries(names.map(name => [name, { sha256: digest(bodies[name]), size: bodies[name].length }]));
   const release = {
     tag_name: tag, target_commitish: sha, draft: false, prerelease: true, immutable: true,
     assets: names.map((name, index) => ({
@@ -82,9 +85,10 @@ test("fresh job binds checked source before consuming its artifact and runs the 
     writeFile(path.join(artifact, "immutable-releases.json"), JSON.stringify(preflight.immutableReleases)),
     writeFile(path.join(artifact, "development-candidate.json"), JSON.stringify(preflight.environment)),
     writeFile(path.join(artifact, "develop-protection.json"), JSON.stringify(preflight.branchProtection)),
-    writeFile(path.join(artifact, "candidate-manifest.json"), JSON.stringify(manifest)),
+    writeFile(path.join(artifact, "candidate-manifest.json"), bodies["candidate-manifest.json"]),
     writeFile(path.join(artifact, "candidate-local-assets.json"), JSON.stringify(localAssets)),
     writeFile(path.join(artifact, "release.json"), JSON.stringify(release)),
+    ...names.map(name => writeFile(path.join(artifact, name), bodies[name])),
     ...names.map(name => writeFile(path.join(artifact, "provider-bodies", name), bodies[name])),
   ]);
   const fixtureFetch = path.join(jobRoot, "fixture-fetch.mjs");
@@ -117,10 +121,22 @@ test("fresh job binds checked source before consuming its artifact and runs the 
   const retrievedArtifact = retrieveArtifact();
   const preflightResult = await run(process.execPath, [verifier, "--mode", "preflight", "--source-ref", "refs/heads/develop", "--source-commit", sha, "--version", version, "--tag", tag, "--immutable-releases", path.join(retrievedArtifact, "immutable-releases.json"), "--environment", path.join(retrievedArtifact, "development-candidate.json"), "--branch-protection", path.join(retrievedArtifact, "develop-protection.json")], { cwd: source });
   assert.equal(JSON.parse(preflightResult.stdout).environment, "development-candidate");
-  const receiptResult = await run(process.execPath, ["--import", pathToFileURL(fixtureFetch).href, verifier, "--mode", "receipt", "--source-ref", "refs/heads/develop", "--source-commit", sha, "--version", version, "--tag", tag, "--manifest", path.join(artifact, "candidate-manifest.json"), "--release", path.join(artifact, "release.json"), "--local-assets", path.join(artifact, "candidate-local-assets.json"), "--download-dir", path.join(jobRoot, "public-receipt")], { cwd: source, env: { ...process.env, FRESH_JOB_ARTIFACT_DIR: artifact } });
+  const receiptResult = await run(process.execPath, ["--import", pathToFileURL(fixtureFetch).href, verifier, "--mode", "receipt", "--source-ref", "refs/heads/develop", "--source-commit", sha, "--version", version, "--tag", tag, "--manifest", path.join(artifact, "candidate-manifest.json"), "--release", path.join(artifact, "release.json"), "--local-assets", path.join(artifact, "candidate-local-assets.json"), "--asset-directory", artifact, "--download-dir", path.join(jobRoot, "public-receipt")], { cwd: source, env: { ...process.env, FRESH_JOB_ARTIFACT_DIR: artifact } });
   assert.equal(JSON.parse(receiptResult.stdout).verified.length, 6);
   const calls = (await readFile(path.join(artifact, "fetch-calls.ndjson"), "utf8")).trim().split("\n").map(JSON.parse);
   assert.equal(calls.length, 12);
   assert.ok(calls.every(call => call.options.method === "GET" && call.options.redirect === "manual" && Object.keys(call.options.headers).length === 0));
+  const assertLocalFailureBeforeProviderRead = async mutate => {
+    await mutate();
+    await assert.rejects(() => run(process.execPath, [verifier, "--mode", "local-assets", "--source-ref", "refs/heads/develop", "--source-commit", sha, "--version", version, "--tag", tag, "--manifest", path.join(artifact, "candidate-manifest.json"), "--local-assets", path.join(artifact, "candidate-local-assets.json"), "--asset-directory", artifact], { cwd: source }), /actual local|checksum manifest|inventory|candidate manifest/u);
+    assert.equal((await readFile(path.join(artifact, "fetch-calls.ndjson"), "utf8")).trim().split("\n").length, 12);
+  };
+  await assertLocalFailureBeforeProviderRead(() => writeFile(path.join(artifact, names[0]), Buffer.from("substituted archive", "utf8")));
+  await writeFile(path.join(artifact, names[0]), bodies[names[0]]);
+  await assertLocalFailureBeforeProviderRead(() => writeFile(path.join(artifact, "SHA256SUMS.txt"), Buffer.from("0".repeat(64) + `  ${names[0]}\n`, "utf8")));
+  await writeFile(path.join(artifact, "SHA256SUMS.txt"), bodies["SHA256SUMS.txt"]);
+  await assertLocalFailureBeforeProviderRead(() => writeFile(path.join(artifact, "candidate-manifest.json"), Buffer.from("{}", "utf8")));
+  await writeFile(path.join(artifact, "candidate-manifest.json"), bodies["candidate-manifest.json"]);
+  await assertLocalFailureBeforeProviderRead(() => writeFile(path.join(artifact, "candidate-local-assets.json"), JSON.stringify({ ...localAssets, [names[1]]: { ...localAssets[names[1]], sha256: "f".repeat(64) } })));
   assert.notEqual(path.resolve(verifier), path.resolve(scriptsDirectory, "verify-candidate-publication.mjs"));
 });

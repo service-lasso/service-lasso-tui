@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -8,15 +8,18 @@ import { assertExistingCandidateRecovery, assertManifest, assertPreflight, asser
 
 const identity = candidateIdentity({ sourceRef: "refs/heads/develop", sourceCommit: "0123456789abcdef0123456789abcdef01234567", version: "2026.10.1-0123456", tag: "candidate-2026.10.1-0123456" });
 const names = ["service-lasso-tui-2026.10.1-0123456-win32-amd64.zip", "service-lasso-tui-2026.10.1-0123456-linux-amd64.tar.gz", "service-lasso-tui-2026.10.1-0123456-darwin-amd64.tar.gz", "service-lasso-tui-2026.10.1-0123456-darwin-arm64.tar.gz", "SHA256SUMS.txt", "candidate-manifest.json"];
-const bodyFor = name => Buffer.from(`published-${name}`, "utf8");
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
+const bodyFor = name => name === "SHA256SUMS.txt"
+  ? Buffer.from(names.slice(0, 4).map(asset => `${digest(bodyFor(asset))}  ${asset}`).join("\n") + "\n", "utf8")
+  : Buffer.from(`published-${name}`, "utf8");
 const manifest = { schemaVersion: 2, kind: "develop-prerelease-candidate", source: { repository: "service-lasso/service-lasso-tui", ref: identity.sourceRef, commit: identity.sourceCommit }, release: { tag: identity.tag, prerelease: true, draft: false, immutable: true }, version: identity.version, checksumManifest: { name: "SHA256SUMS.txt", sha256: digest(bodyFor("SHA256SUMS.txt")) }, corePackagingIssue: "service-lasso/service-lasso#1461", assets: [{ platform: "win32-amd64", name: names[0], sha256: digest(bodyFor(names[0])), executable: "service-lasso-tui.exe" }, { platform: "linux-amd64", name: names[1], sha256: digest(bodyFor(names[1])), executable: "service-lasso-tui" }, { platform: "darwin-amd64", name: names[2], sha256: digest(bodyFor(names[2])), executable: "service-lasso-tui" }, { platform: "darwin-arm64", name: names[3], sha256: digest(bodyFor(names[3])), executable: "service-lasso-tui" }] };
-const localAssets = Object.fromEntries(names.map(name => { const body = bodyFor(name); return [name, { sha256: digest(body), size: body.length }]; }));
+const localBodies = Object.fromEntries(names.map(name => [name, name === "candidate-manifest.json" ? Buffer.from(JSON.stringify(manifest), "utf8") : bodyFor(name)]));
+const localAssets = Object.fromEntries(names.map(name => { const body = localBodies[name]; return [name, { sha256: digest(body), size: body.length }]; }));
 const release = { tag_name: identity.tag, target_commitish: identity.sourceCommit, draft: false, prerelease: true, immutable: true, assets: names.map((name, index) => ({ id: index + 101, url: `https://api.github.com/repos/service-lasso/service-lasso-tui/releases/assets/${index + 101}`, name, digest: `sha256:${localAssets[name].sha256}`, size: localAssets[name].size, browser_download_url: `https://github.com/service-lasso/service-lasso-tui/releases/download/${identity.tag}/${name}` })) };
 const preflight = { immutableReleases: { enabled: true }, environment: { name: "development-candidate", protection_rules: [{ type: "wait_timer", wait_timer: 10 }], deployment_branch_policy: { protected_branches: true, custom_branch_policies: false } }, branchProtection: { required_status_checks: { strict: true, contexts: ["Linux test and build", "Windows test and build", "macOS test and build", "Release asset cross-compilation"] }, required_pull_request_reviews: { required_approving_review_count: 0 }, allow_force_pushes: { enabled: false } } };
 
 function response(status, headers = {}, body) { return { status, headers: { get: key => headers[key.toLowerCase()] ?? null }, body: body === undefined ? undefined : (async function* () { yield body; })() }; }
-function publicFetch({ bodies = Object.fromEntries(names.map(name => [name, bodyFor(name)])), redirect = true, calls = [] } = {}) {
+function publicFetch({ bodies = localBodies, redirect = true, calls = [] } = {}) {
   return async (url, options) => {
     calls.push({ url: String(url), options }); const parsed = new URL(url);
     if (parsed.hostname === "github.com") {
@@ -29,7 +32,14 @@ function publicFetch({ bodies = Object.fromEntries(names.map(name => [name, body
     return response(200, { "content-length": String(bodies[name].length) }, bodies[name]);
   };
 }
-async function verify(overrides = {}) { return verifyPublicAssetBytes({ release: overrides.release ?? release, manifest, localAssets: overrides.localAssets ?? localAssets, downloadDir: await mkdtemp(path.join(os.tmpdir(), "candidate-public-bytes-")), fetchImpl: overrides.fetchImpl ?? publicFetch(overrides) }); }
+async function verify(overrides = {}) {
+  const assetDirectory = await mkdtemp(path.join(os.tmpdir(), "candidate-local-bytes-"));
+  try {
+    await Promise.all(names.map(name => writeFile(path.join(assetDirectory, name), localBodies[name])));
+    await writeFile(path.join(assetDirectory, "candidate-local-assets.json"), JSON.stringify(localAssets));
+    return await verifyPublicAssetBytes({ release: overrides.release ?? release, manifest, localAssets: overrides.localAssets ?? localAssets, assetDirectory, downloadDir: await mkdtemp(path.join(os.tmpdir(), "candidate-public-bytes-")), fetchImpl: overrides.fetchImpl ?? publicFetch(overrides) });
+  } finally { await rm(assetDirectory, { recursive: true, force: true }); }
+}
 
 test("accepts a complete protected preflight without inventing a review count", () => assert.equal(assertPreflight(preflight).environment, "development-candidate"));
 test("rejects disabled immutable releases and unbounded environment waits", () => {
@@ -68,12 +78,12 @@ test("recovers a complete existing candidate only after all six public bodies ma
   assert.ok(calls.some(call => new URL(call.url).hostname === "release-assets.githubusercontent.com"));
 });
 test("rejects public body mismatch, truncation, missing inventory, and over-bound bodies", async () => {
-  const mismatched = { ...Object.fromEntries(names.map(name => [name, bodyFor(name)])), [names[0]]: Buffer.from("x".repeat(bodyFor(names[0]).length)) };
+  const mismatched = { ...localBodies, [names[0]]: Buffer.from("x".repeat(localBodies[names[0]].length)) };
   await assert.rejects(() => verify({ bodies: mismatched }), /byte receipt/u);
-  const truncated = { ...Object.fromEntries(names.map(name => [name, bodyFor(name)])), [names[1]]: bodyFor(names[1]).subarray(0, -1) };
+  const truncated = { ...localBodies, [names[1]]: localBodies[names[1]].subarray(0, -1) };
   await assert.rejects(() => verify({ bodies: truncated }), /body size|truncated/u);
   await assert.rejects(() => verify({ release: { ...release, assets: release.assets.slice(1) } }), /inventory/u);
-  const oversized = { ...Object.fromEntries(names.map(name => [name, bodyFor(name)])), [names[2]]: Buffer.concat([bodyFor(names[2]), Buffer.from("more")]) };
+  const oversized = { ...localBodies, [names[2]]: Buffer.concat([localBodies[names[2]], Buffer.from("more")]) };
   await assert.rejects(() => verify({ bodies: oversized }), /body size|exceeds/u);
 });
 test("rejects missing, duplicate, and malformed asset IDs in the complete receipt pipeline", async () => {

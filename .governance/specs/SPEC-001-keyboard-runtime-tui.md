@@ -98,7 +98,10 @@ identity, `source_clone_failed`, `isolated_checkout_failed`,
 `runtime_dist_unavailable`, or `packaged_runtime_invalid`). It never includes
 command output, paths, environment values, or credentials in that record.
 When the reconnect helper has started, it atomically records only `stage`,
-`outcome`, and `closedReason` in its attempt-owned temporary root. On Windows,
+`outcome`, and `closedReason` in its attempt-owned temporary root. EOF is not
+an exit result: while its owned PTY remains live the helper retains its existing
+bounded wait, and after exit it records only one of `terminal_exited_zero`,
+`terminal_exited_nonzero`, `terminal_signaled`, or `terminal_unknown`. On Windows,
 a native receipt-writer reaches the requested temporary base from a held volume
 root one directory component at a time, keeps that base and every ancestor
 handle live, and creates that root and both receipt files relative to held

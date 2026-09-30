@@ -30,12 +30,37 @@ def fail(stage, reason=None, outcome_receipt=None):
     return 1
 
 class ShutdownRequested(Exception): pass
-class TerminalClosed(Exception): pass
+
+
+class TerminalClosed(Exception):
+    def __init__(self, reason="terminal_unknown"):
+        self.reason = reason if reason in RECEIPT_REASONS else "terminal_unknown"
+        super().__init__(self.reason)
 
 RECEIPT_NAME = "helper-outcome.json"
 RECEIPT_STAGES = {"launch", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit"}
 RECEIPT_OUTCOMES = {"normal", "error", "timeout"}
-RECEIPT_REASONS = {"completed", "stage_failed", "timed_out", "terminal_closed", "shutdown_requested"}
+RECEIPT_REASONS = {"completed", "stage_failed", "timed_out", "shutdown_requested", "terminal_exited_zero", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown"}
+
+
+def terminal_close_reason(process):
+    # EOF is a stream observation, not a process-exit observation. Query only
+    # the owned PTY's bounded lifecycle fields; never retain terminal output.
+    try:
+        if process.isalive():
+            return None
+        signal_status = getattr(process, "signalstatus", None)
+        exit_status = getattr(process, "exitstatus", None)
+    except Exception:
+        return "terminal_unknown"
+    if isinstance(signal_status, int) and not isinstance(signal_status, bool):
+        if signal_status != 0:
+            return "terminal_signaled"
+    elif signal_status is not None:
+        return "terminal_unknown"
+    if isinstance(exit_status, int) and not isinstance(exit_status, bool):
+        return "terminal_exited_zero" if exit_status == 0 else "terminal_exited_nonzero"
+    return "terminal_unknown"
 
 def acknowledge_shutdown(process, acknowledgement_file, token):
     try:
@@ -55,7 +80,7 @@ def check_shutdown(process, request_file, acknowledgement_file, token):
         if requested == token + "\n" and acknowledge_shutdown(process, acknowledgement_file, token): raise ShutdownRequested()
         raise RuntimeError("cleanup-unconfirmed")
 
-def wait_for(process, expected, timeout, request_file=None, acknowledgement_file=None, token=None, clock=time.monotonic, select_fn=select.select):
+def wait_for(process, expected, timeout, request_file=None, acknowledgement_file=None, token=None, clock=time.monotonic, select_fn=select.select, sleeper=time.sleep):
     deadline, text = clock() + timeout, ""
     while clock() < deadline:
         check_shutdown(process, request_file, acknowledgement_file, token)
@@ -63,7 +88,14 @@ def wait_for(process, expected, timeout, request_file=None, acknowledgement_file
         readable, _, _ = select_fn([process], [], [], min(0.1, max(0, deadline - clock())))
         if readable:
             try: text += process.read()
-            except EOFError: raise TerminalClosed()
+            except EOFError:
+                closed_reason = terminal_close_reason(process)
+                if closed_reason is not None:
+                    raise TerminalClosed(closed_reason)
+                # pywinpty can surface a transient EOF while the owned process
+                # is live. Preserve the existing deadline and sleep briefly so
+                # a readable EOF cannot turn this bounded wait into a spin.
+                sleeper(min(0.05, max(0, deadline - clock())))
     return text if all(value in text for value in expected) else None
 
 def wait_for_file(file_name, timeout, process=None, request_file=None, acknowledgement_file=None, token=None, clock=time.monotonic, sleeper=time.sleep):
@@ -137,9 +169,9 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
     except ShutdownRequested:
         receipt_stage = stage if stage in RECEIPT_STAGES else "exit"
         return fail(receipt_stage, "shutdown-requested", receipt(receipt_stage, "error", "shutdown_requested"))
-    except TerminalClosed:
+    except TerminalClosed as closed:
         receipt_stage = stage if stage in RECEIPT_STAGES else "launch"
-        return fail(receipt_stage, outcome_receipt=receipt(receipt_stage, "error", "terminal_closed"))
+        return fail(receipt_stage, outcome_receipt=receipt(receipt_stage, "error", closed.reason))
     except Exception:
         receipt_stage = stage if stage in RECEIPT_STAGES else "launch"
         return fail(stage, "pty-operation-failed" if stage == "reconnect" else None, receipt(receipt_stage, "error", "stage_failed"))

@@ -29,7 +29,7 @@ const helperReceiptName = "helper-outcome.json";
 const nodeReceiptName = "node-exit-outcome.json";
 const receiptStages = new Set(["launch", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit", "helper-exit"]);
 const receiptOutcomes = new Set(["normal", "error", "timeout"]);
-const receiptReasons = new Set(["completed", "stage_failed", "timed_out", "terminal_closed", "shutdown_requested", "helper_exit_nonzero", "helper_exit_signal", "helper_exit_spawn_error"]);
+const receiptReasons = new Set(["completed", "stage_failed", "timed_out", "shutdown_requested", "terminal_exited_zero", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown", "helper_exit_nonzero", "helper_exit_signal", "helper_exit_spawn_error"]);
 let stage = "setup";
 let failureReason;
 

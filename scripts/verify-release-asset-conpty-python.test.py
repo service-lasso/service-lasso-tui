@@ -41,6 +41,26 @@ class EarlyClosingPty(FakePty):
         raise EOFError()
 
 
+class ExitedPty(EarlyClosingPty):
+    def __init__(self, exitstatus=None, signalstatus=None):
+        self.exitstatus = exitstatus
+        self.signalstatus = signalstatus
+
+
+class LiveEofThenOutputPty(FakePty):
+    def __init__(self):
+        self.reads = 0
+
+    def isalive(self):
+        return True
+
+    def read(self):
+        self.reads += 1
+        if self.reads == 1:
+            raise EOFError()
+        return "ready"
+
+
 class ReceiptTests(unittest.TestCase):
     def test_reconnect_timeout_reports_a_closed_receipt_over_the_controlled_stdout_channel(self):
         output = io.StringIO()
@@ -63,17 +83,54 @@ class ReceiptTests(unittest.TestCase):
     def test_helper_has_no_receipt_path_writer(self):
         self.assertFalse(hasattr(probe_module, "write_receipt"))
 
-    def test_early_terminal_eof_has_a_distinct_closed_receipt(self):
+    def test_live_eof_retains_the_existing_bounded_wait_without_spinning(self):
+        process = LiveEofThenOutputPty()
+        delays = []
+        observed = probe_module.wait_for(
+            process, ("ready",), 1,
+            select_fn=lambda *_args: ([process], [], []),
+            sleeper=delays.append,
+        )
+        self.assertEqual(observed, "ready")
+        self.assertEqual(process.reads, 2)
+        self.assertEqual(len(delays), 1)
+        self.assertGreater(delays[0], 0)
+        self.assertLessEqual(delays[0], 0.05)
+
+    def test_eof_classifies_only_owned_process_lifecycle_metadata(self):
+        cases = (
+            (ExitedPty(exitstatus=0), "terminal_exited_zero"),
+            (ExitedPty(exitstatus=4), "terminal_exited_nonzero"),
+            (ExitedPty(exitstatus=0, signalstatus=9), "terminal_signaled"),
+            (ExitedPty(exitstatus="SENTINEL_SECRET"), "terminal_unknown"),
+        )
+        for process, expected_reason in cases:
+            with self.subTest(expected_reason=expected_reason):
+                with self.assertRaises(probe_module.TerminalClosed) as closed:
+                    probe_module.wait_for(process, ("ready",), 1, select_fn=lambda *_args: ([process], [], []))
+                self.assertEqual(closed.exception.reason, expected_reason)
+
+    def test_liveness_probe_failure_is_closed_as_unknown(self):
+        class BrokenLivenessPty(EarlyClosingPty):
+            def isalive(self):
+                raise RuntimeError("SENTINEL_SECRET")
+
+        with self.assertRaises(probe_module.TerminalClosed) as closed:
+            probe_module.wait_for(BrokenLivenessPty(), ("ready",), 1, select_fn=lambda *_args: ([object()], [], []))
+        self.assertEqual(closed.exception.reason, "terminal_unknown")
+        self.assertNotIn("SENTINEL_SECRET", str(closed.exception))
+
+    def test_exited_terminal_eof_has_a_closed_lifecycle_receipt(self):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             result = probe_module.probe(
                 "candidate.exe", "unavailable", "http://127.0.0.1:1", None, None, None, None, None,
                 pty_process=EarlyClosingPty,
-                wait=lambda *_args: (_ for _ in ()).throw(probe_module.TerminalClosed()),
+                wait=lambda *_args: (_ for _ in ()).throw(probe_module.TerminalClosed("terminal_exited_zero")),
                 backend=None,
             )
         self.assertEqual(result, 1)
-        self.assertEqual(json.loads(output.getvalue()), {"ok": False, "stage": "startup", "receipt": {"stage": "startup", "outcome": "error", "closedReason": "terminal_closed"}})
+        self.assertEqual(json.loads(output.getvalue()), {"ok": False, "stage": "startup", "receipt": {"stage": "startup", "outcome": "error", "closedReason": "terminal_exited_zero"}})
 
     def test_launch_resolves_a_relative_candidate_before_passing_it_to_pywinpty(self):
         output = io.StringIO()

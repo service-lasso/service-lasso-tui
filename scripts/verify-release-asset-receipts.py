@@ -114,7 +114,7 @@ def secure_root(base_root):
         raise
 
 def valid(receipt):
-    return isinstance(receipt, dict) and set(receipt) == {"stage", "outcome", "closedReason"} and receipt["stage"] in {"launch", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit", "helper-exit"} and receipt["outcome"] in {"normal", "error", "timeout"} and receipt["closedReason"] in {"completed", "stage_failed", "timed_out", "terminal_closed", "shutdown_requested", "helper_exit_nonzero", "helper_exit_signal", "helper_exit_spawn_error"}
+    return isinstance(receipt, dict) and set(receipt) == {"stage", "outcome", "closedReason"} and receipt["stage"] in {"launch", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit", "helper-exit"} and receipt["outcome"] in {"normal", "error", "timeout"} and receipt["closedReason"] in {"completed", "stage_failed", "timed_out", "shutdown_requested", "terminal_exited_zero", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown", "helper_exit_nonzero", "helper_exit_signal", "helper_exit_spawn_error"}
 
 def write(handle, receipt):
     data = json.dumps(receipt, separators=(",", ":")).encode("utf-8")

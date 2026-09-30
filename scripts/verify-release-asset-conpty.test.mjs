@@ -330,6 +330,8 @@ test("native-owned receipt roots are retained instead of path-recursive deletion
 
 test("reconnect receipts are closed schema and reject terminal sentinel text", () => {
   assert.deepEqual(validateReceipt({ stage: "reconnect", outcome: "timeout", closedReason: "timed_out" }), { stage: "reconnect", outcome: "timeout", closedReason: "timed_out" });
+  assert.deepEqual(validateReceipt({ stage: "startup", outcome: "error", closedReason: "terminal_exited_nonzero" }), { stage: "startup", outcome: "error", closedReason: "terminal_exited_nonzero" });
+  assert.throws(() => validateReceipt({ stage: "startup", outcome: "error", closedReason: "terminal_closed" }), /invalid reconnect receipt/u);
   assert.throws(() => validateReceipt({ stage: "reconnect", outcome: "timeout", closedReason: "timed_out", terminal: "SENTINEL_SECRET" }), /invalid reconnect receipt/u);
   assert.throws(() => validateReceipt({ stage: "reconnect", outcome: "SENTINEL_SECRET", closedReason: "timed_out" }), /invalid reconnect receipt/u);
 });
@@ -347,6 +349,7 @@ test("probe parser closes unavailable and failure schemas as well as reconnect s
   assert.throws(() => parseProbe(JSON.stringify({ ok: true, mode: "unavailable", exit: "q", terminal: "SENTINEL_SECRET" }), "unavailable"), /bounded assertions/u);
   assert.throws(() => parseProbe(JSON.stringify({ ok: false, stage: "startup", receipt: { stage: "startup", outcome: "timeout", closedReason: "timed_out" }, terminal: "SENTINEL_SECRET" }), "reconnect"), /bounded assertions/u);
   assert.throws(() => parseProbe(JSON.stringify({ ok: false, stage: "startup", receipt: { stage: "exit", outcome: "timeout", closedReason: "timed_out" } }), "reconnect"), /bounded assertions/u);
+  assert.throws(() => parseProbe(JSON.stringify({ ok: false, stage: "startup", receipt: { stage: "startup", outcome: "error", closedReason: "terminal_exited_nonzero", terminal: "SENTINEL_SECRET" } }), "reconnect"), /bounded assertions/u);
 });
 
 test("held receipt handles bind publication despite attempt-root substitution", async () => {

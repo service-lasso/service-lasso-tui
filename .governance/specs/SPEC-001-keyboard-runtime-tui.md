@@ -87,9 +87,12 @@ Every source test and build path first requires a clean checkout, explicitly
 clears `GOFLAGS`, sets `GOWORK=off`, verifies the effective module and Go
 environment, and uses `-mod=readonly`. It builds with `-buildvcs=true`; the
 release workflow verifies each staged binary's `vcs.revision` and
-`vcs.modified=false` before archiving. This rejects ambient overlays and
-workspaces: a clean VCS stamp and self-hash alone do not prove that imported Go
-source was not replaced during compilation.
+`vcs.modified=false` before archiving, then extracts every candidate archive
+and repeats those checks against the candidate SHA before upload. The direct
+real-Core ConPTY script applies the same admission and post-build checks before
+it starts the executable. This rejects ambient overlays and workspaces: a clean
+VCS stamp and self-hash alone do not prove that imported Go source was not
+replaced during compilation.
 
 `TUI-DISTRIBUTION-002`: Windows candidate-asset ConPTY acceptance must prepare
 an isolated Core source checkout at the pinned commit with `npm ci` and

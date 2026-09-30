@@ -39,6 +39,8 @@ and its Core dependencies, then run:
 ```powershell
 python -m pip install --require-hashes --only-binary=:all: --no-deps -r scripts/requirements-conpty.txt
 npm ci --prefix <path-to-pinned-core>
+$env:GOFLAGS = ""
+$env:GOWORK = "off"
 node scripts/verify-real-core-conpty.mjs --core-root <path-to-pinned-core>
 ```
 
@@ -47,6 +49,10 @@ process, and Python/ConPTY helper each report AMD64. This remains a local
 direct-only check: bounded Windows CI can prepare the pinned source but its
 dependency installation changes that checkout, so it cannot satisfy the
 probe's exact clean-Core precondition without weakening the evidence boundary.
+The probe refuses ambient Go build flags and requires `GOWORK=off`; it runs the
+same clean-source admission gate as CI, builds with readonly module resolution
+and VCS metadata enabled, then verifies the executable's revision and clean
+VCS flag before ConPTY starts it.
 The result is a closed-schema, direct-read record. It is not evidence of
 release asset qualification, lifecycle behavior, cross-platform support,
 deployment, or GA.

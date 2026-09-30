@@ -139,21 +139,36 @@ jobs:
           done
           rm -rf release-assets/stage
           (cd release-assets && sha256sum service-lasso-tui-"$CANDIDATE_VERSION"-* > SHA256SUMS.txt)
-      - name: Verify checksums and extracted executable paths
+      - name: Verify checksums, extracted executable paths, and candidate build identities
         shell: bash
         run: |
           set -euo pipefail
           cd release-assets
           sha256sum --check --strict SHA256SUMS.txt
-          test "$(unzip -Z1 "service-lasso-tui-${CANDIDATE_VERSION}-win32-amd64.zip")" = "service-lasso-tui.exe"
-          unzip -t "service-lasso-tui-${CANDIDATE_VERSION}-win32-amd64.zip" >/dev/null
-          for suffix in linux-amd64 darwin-amd64 darwin-arm64; do
-            asset="service-lasso-tui-${CANDIDATE_VERSION}-${suffix}.tar.gz"
-            test "$(tar -tzf "$asset")" = "service-lasso-tui"
+          declare -a extracted_targets=(
+            "win32-amd64 zip service-lasso-tui.exe"
+            "linux-amd64 tar service-lasso-tui"
+            "darwin-amd64 tar service-lasso-tui"
+            "darwin-arm64 tar service-lasso-tui"
+          )
+          for target in "${extracted_targets[@]}"; do
+            read -r suffix archive_kind executable <<< "$target"
+            asset_base="service-lasso-tui-${CANDIDATE_VERSION}-${suffix}"
             extraction_root="$(mktemp -d)"
-            tar -xzf "$asset" -C "$extraction_root"
-            test -s "$extraction_root/service-lasso-tui"
-            go tool buildid "$extraction_root/service-lasso-tui" >/dev/null
+            if [ "$archive_kind" = zip ]; then
+              asset="$asset_base.zip"
+              test "$(unzip -Z1 "$asset")" = "$executable"
+              unzip -t "$asset" >/dev/null
+              unzip -q "$asset" -d "$extraction_root"
+            else
+              asset="$asset_base.tar.gz"
+              test "$(tar -tzf "$asset")" = "$executable"
+              tar -xzf "$asset" -C "$extraction_root"
+            fi
+            test -s "$extraction_root/$executable"
+            go tool buildid "$extraction_root/$executable" >/dev/null
+            go version -m "$extraction_root/$executable" | grep -F "vcs.revision=$CANDIDATE_SHA" >/dev/null
+            go version -m "$extraction_root/$executable" | grep -F 'vcs.modified=false' >/dev/null
             rm -rf "$extraction_root"
           done
       - name: Write Core packaging handoff manifest

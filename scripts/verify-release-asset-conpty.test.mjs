@@ -5,13 +5,19 @@ import { access, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promise
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertCandidateManifest, cleanupOutcome, cleanupResources, closeReceiptSinks, createReceiptSinks, finalizeReconnectExit, npmCommand, parseArgs, parseProbe, persistNodeExitReceipt, prepareCoreRuntime, prepareSourceBuiltCore, publishReceipt, stopProbe, validateReceipt } from "./verify-release-asset-conpty.mjs";
+import { assertCandidateManifest, assertExtractedCandidateBuildMetadata, cleanupOutcome, cleanupResources, closeReceiptSinks, createReceiptSinks, finalizeReconnectExit, npmCommand, parseArgs, parseProbe, persistNodeExitReceipt, prepareCoreRuntime, prepareSourceBuiltCore, publishReceipt, stopProbe, validateReceipt } from "./verify-release-asset-conpty.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const manifest = { schemaVersion: 1, kind: "develop-prerelease-candidate", source: { repository: "service-lasso/service-lasso-tui", ref: "refs/heads/develop", commit: "97fafb04c69fce8efdd245eb186e6dfb9915485d" }, release: { tag: "candidate-2026.9.30-97fafb0", prerelease: true }, version: "2026.9.30-97fafb0", checksumManifest: { name: "SHA256SUMS.txt", sha256: "638ad5e54e06dcb894a4579872e788ddc4521cd3ffca46fb06574c8b78de1cf5" }, assets: [{ platform: "darwin-amd64", name: "service-lasso-tui-2026.9.30-97fafb0-darwin-amd64.tar.gz", sha256: "5d6df8cfa18771e159b7af34c1c5c00d70ae5eef1ddf727896ae2afb30b63638", executable: "service-lasso-tui" }, { platform: "darwin-arm64", name: "service-lasso-tui-2026.9.30-97fafb0-darwin-arm64.tar.gz", sha256: "a9523555416a1b332107a9a92cfecc2aa3b7cdd23caab1063540496e4e20b33c", executable: "service-lasso-tui" }, { platform: "linux-amd64", name: "service-lasso-tui-2026.9.30-97fafb0-linux-amd64.tar.gz", sha256: "238a8e3f92ae5f9cf28c5cd29af91b698addb9bfa546a7b31c7f7a71b7c33e70", executable: "service-lasso-tui" }, { platform: "win32-amd64", name: "service-lasso-tui-2026.9.30-97fafb0-win32-amd64.zip", sha256: "b8838f245d4b1d39cac0b51ed2ad14ffd0237779f1a5e9d3e61358066370e479", executable: "service-lasso-tui.exe" }] };
 
 test("accepts only the pinned Windows candidate manifest binding", () => assert.doesNotThrow(() => assertCandidateManifest(manifest)));
+test("requires the extracted candidate executable to retain its clean candidate VCS identity", () => {
+  const metadata = `build\tvcs.revision=${manifest.source.commit}\nbuild\tvcs.modified=false\n`;
+  assert.doesNotThrow(() => assertExtractedCandidateBuildMetadata(metadata));
+  assert.throws(() => assertExtractedCandidateBuildMetadata(`build\tvcs.revision=${manifest.source.commit}\nbuild\tvcs.modified=true\n`), /clean candidate VCS identity/u);
+  assert.throws(() => assertExtractedCandidateBuildMetadata("build\tvcs.revision=foreign\nbuild\tvcs.modified=false\n"), /clean candidate VCS identity/u);
+});
 test("rejects a mutable or mismatched Windows archive binding", () => {
   const changed = structuredClone(manifest); changed.assets[0].sha256 = "0".repeat(64);
   assert.throws(() => assertCandidateManifest(changed), /candidate manifest/);
@@ -406,4 +412,11 @@ test("Windows CI executes the pinned Python ConPTY helper against a safe unavail
   assert.match(workflow, /\$metadata = \(go version -m \$binary\) -join "`n"/u);
   assert.match(workflow, /python -m pip install --require-hashes --only-binary=:all: --no-deps -r scripts\/requirements-conpty\.txt/u);
   assert.match(workflow, /verify-release-asset-conpty\.py --executable \$binary --mode unavailable --api-url http:\/\/127\.0\.0\.1:1/u);
+});
+
+test("candidate packaging re-verifies every extracted executable VCS identity", async () => {
+  const workflow = await readFile(path.join(repoRoot, ".github", "workflows", "release.yml"), "utf8");
+  assert.match(workflow, /"win32-amd64 zip service-lasso-tui\.exe"[\s\S]*?"linux-amd64 tar service-lasso-tui"[\s\S]*?"darwin-amd64 tar service-lasso-tui"[\s\S]*?"darwin-arm64 tar service-lasso-tui"/u);
+  assert.match(workflow, /go version -m "\$extraction_root\/\$executable" \| grep -F "vcs\.revision=\$CANDIDATE_SHA"/u);
+  assert.match(workflow, /go version -m "\$extraction_root\/\$executable" \| grep -F 'vcs\.modified=false'/u);
 });

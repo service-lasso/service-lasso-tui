@@ -88,6 +88,13 @@ export function assertCandidateManifest(manifest) {
   ) throw new Error("candidate manifest does not bind the expected Windows release asset");
 }
 
+export function assertExtractedCandidateBuildMetadata(metadata, sourceCommit = candidate.sourceCommit) {
+  if (typeof metadata !== "string" || !/^[a-f0-9]{40}$/u.test(sourceCommit) ||
+    !metadata.includes(`vcs.revision=${sourceCommit}`) || !metadata.includes("vcs.modified=false")) {
+    throw new Error("extracted candidate executable does not carry the clean candidate VCS identity");
+  }
+}
+
 export function parseArgs(argv) {
   let coreRoot;
   let coreKind = "source-built";
@@ -521,6 +528,7 @@ async function main() {
     await run("tar", ["-xf", archivePath, "-C", extractRoot]);
     const executable = path.join(extractRoot, candidate.executable);
     await stat(executable);
+    assertExtractedCandidateBuildMetadata((await run("go", ["version", "-m", executable])).stdout);
     stage = "unavailable";
     unavailable = await reserveUnavailableLoopbackURL();
     const readyPath = path.join(tempRoot, "probe-unavailable-ready");

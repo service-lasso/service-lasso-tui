@@ -43,7 +43,9 @@ jobs:
           go build -o service-lasso-tui.exe ./cmd/service-lasso-tui
           python scripts/verify-release-asset-conpty.py --executable service-lasso-tui.exe --mode unavailable --api-url http://127.0.0.1:1
       - name: Test direct-probe evidence guards
-        run: node --test scripts/verify-real-core-conpty.test.mjs scripts/verify-release-asset-conpty.test.mjs
+        run: |
+          python scripts/verify-release-asset-conpty-python.test.py
+          node --test scripts/verify-real-core-conpty.test.mjs scripts/verify-release-asset-conpty.test.mjs
   release-asset-compile:
     name: Release asset cross-compilation
     runs-on: ubuntu-latest

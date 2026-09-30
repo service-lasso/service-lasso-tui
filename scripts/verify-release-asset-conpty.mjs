@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
-import { lstat, mkdtemp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { link, lstat, mkdtemp, mkdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -24,10 +24,12 @@ const candidate = Object.freeze({
   ]),
 });
 const coreDevelop = "10e4d72b75c66977ad1dd629991a27443ffc0fd3";
-const receiptName = "reconnect-outcome.json";
+const helperReceiptName = "helper-outcome.json";
+const nodeReceiptName = "node-exit-outcome.json";
+const receiptNames = new Set([helperReceiptName, nodeReceiptName]);
 const receiptStages = new Set(["launch", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit", "helper-exit"]);
 const receiptOutcomes = new Set(["normal", "error", "timeout"]);
-const receiptReasons = new Set(["completed", "stage_failed", "timed_out", "shutdown_requested", "helper_exit_nonzero", "helper_exit_signal"]);
+const receiptReasons = new Set(["completed", "stage_failed", "timed_out", "shutdown_requested", "helper_exit_nonzero", "helper_exit_signal", "helper_exit_spawn_error"]);
 let stage = "setup";
 let failureReason;
 
@@ -169,12 +171,22 @@ function parseProbe(stdout, mode) {
   throw new Error("release-asset ConPTY probe did not complete its bounded assertions");
 }
 
-export async function assertReceiptPath(tempRoot, receiptPath) {
+export async function assertReceiptPath(tempRoot, receiptPath, receiptName) {
   const root = path.resolve(tempRoot);
+  if (!receiptNames.has(receiptName)) throw new Error("invalid reconnect receipt path");
   const expected = path.join(root, receiptName);
   if (path.resolve(receiptPath) !== expected) throw new Error("invalid reconnect receipt path");
   const rootEntry = await lstat(root);
   if (!rootEntry.isDirectory() || rootEntry.isSymbolicLink()) throw new Error("invalid reconnect receipt owner");
+  try {
+    // A pre-existing target cannot be attributed to this attempt.  Do not read
+    // it: on Windows it may be a reparse point and on every platform it can
+    // otherwise direct a replacement outside the attempt root.
+    await lstat(expected);
+    throw new Error("pre-existing reconnect receipt target");
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
   return expected;
 }
 
@@ -185,26 +197,55 @@ export function validateReceipt(receipt) {
   return receipt;
 }
 
-export async function persistHelperExitReceipt(tempRoot, receiptPath, code, signal) {
-  const safePath = await assertReceiptPath(tempRoot, receiptPath);
-  let receipt;
+export async function publishReceipt(tempRoot, receiptPath, receipt, { write = writeFile, createLink = link, remove = unlink } = {}) {
+  const safePath = await assertReceiptPath(tempRoot, receiptPath, path.basename(receiptPath));
+  const finalReceipt = validateReceipt(receipt);
+  const temporary = path.join(path.dirname(safePath), `.${path.basename(safePath)}.${randomUUID()}.tmp`);
   try {
-    receipt = validateReceipt(JSON.parse(await readFile(safePath, "utf8")));
-  } catch {
-    receipt = { stage: "helper-exit", outcome: signal ? "error" : "timeout", closedReason: signal ? "helper_exit_signal" : "helper_exit_nonzero" };
+    await write(temporary, JSON.stringify(finalReceipt), { flag: "wx" });
+    const temporaryEntry = await lstat(temporary);
+    if (!temporaryEntry.isFile() || temporaryEntry.isSymbolicLink()) throw new Error("invalid reconnect receipt temporary");
+    // link() publishes only if target does not exist.  It never follows or
+    // replaces a target supplied between validation and publication.
+    await createLink(temporary, safePath);
+    return finalReceipt;
+  } finally {
+    await remove(temporary, { force: true }).catch(() => undefined);
   }
-  const finalReceipt = validateReceipt({
-    stage: "helper-exit",
-    outcome: receipt.outcome,
-    closedReason: code === 0 && !signal && receipt.outcome === "normal" ? "completed" : (signal ? "helper_exit_signal" : "helper_exit_nonzero"),
-  });
-  const temporary = `${safePath}.${randomUUID()}.tmp`;
-  await writeFile(temporary, JSON.stringify(finalReceipt), { flag: "wx" });
-  await rename(temporary, safePath);
-  return finalReceipt;
 }
 
-function startReconnectProbe(executable, apiURL, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath, shutdownToken, tempRoot, receiptPath) {
+async function readAttemptReceipt(tempRoot, receiptPath) {
+  const root = path.resolve(tempRoot);
+  if (path.dirname(path.resolve(receiptPath)) !== root) throw new Error("invalid reconnect receipt path");
+  const entry = await lstat(receiptPath);
+  if (!entry.isFile() || entry.isSymbolicLink()) throw new Error("invalid reconnect receipt target");
+  return validateReceipt(JSON.parse(await readFile(receiptPath, "utf8")));
+}
+
+export async function persistNodeExitReceipt(tempRoot, helperReceiptPath, nodeReceiptPath, code, signal, spawnFailed = false, sinks) {
+  const helperReceipt = spawnFailed ? undefined : await readAttemptReceipt(tempRoot, helperReceiptPath);
+  const closedReason = spawnFailed ? "helper_exit_spawn_error" : signal ? "helper_exit_signal" : code === 0 && helperReceipt.outcome === "normal" ? "completed" : "helper_exit_nonzero";
+  return publishReceipt(tempRoot, nodeReceiptPath, {
+    stage: "helper-exit",
+    outcome: closedReason === "completed" ? "normal" : helperReceipt?.outcome === "timeout" && !signal ? "timeout" : "error",
+    closedReason,
+  }, sinks);
+}
+
+export async function finalizeReconnectExit(tempRoot, helperReceiptPath, nodeReceiptPath, code, signal, stdout, { persist = persistNodeExitReceipt } = {}) {
+  let receiptFailure;
+  try {
+    await persist(tempRoot, helperReceiptPath, nodeReceiptPath, code, signal);
+  } catch (error) {
+    receiptFailure = error;
+  }
+  // A receipt-sink failure must never replace the helper's primary result.
+  if (code !== 0) throw new Error("release-asset ConPTY reconnect probe failed");
+  if (receiptFailure) throw receiptFailure;
+  return parseProbe(stdout, "reconnect");
+}
+
+function startReconnectProbe(executable, apiURL, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath, shutdownToken, tempRoot, helperReceiptPath, nodeReceiptPath) {
   const child = spawn("python", [
     helper,
     "--executable", executable,
@@ -216,21 +257,23 @@ function startReconnectProbe(executable, apiURL, readyPath, reconnectPath, shutd
     "--shutdown-acknowledgement-file", shutdownAcknowledgementPath,
     "--shutdown-token", shutdownToken,
     "--attempt-root", tempRoot,
-    "--outcome-receipt-file", receiptPath,
+    "--outcome-receipt-file", helperReceiptPath,
   ], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   child.stdout.setEncoding("utf8");
   child.stdout.on("data", chunk => { stdout += chunk; });
   const exited = new Promise(resolve => child.once("close", resolve));
   const completed = new Promise((resolve, reject) => {
-    child.once("error", reject);
+    let spawnFailed = false;
+    child.once("error", error => {
+      spawnFailed = true;
+      // Preserve the original spawn error.  The independent Node receipt
+      // records this terminal state without fabricating a helper result.
+      persistNodeExitReceipt(tempRoot, helperReceiptPath, nodeReceiptPath, null, null, true).catch(() => undefined).finally(() => reject(error));
+    });
     child.once("close", async (code, signal) => {
       try {
-        // This is intentionally best effort: a receipt sink error cannot hide
-        // the helper's original exit failure or weaken retained-root cleanup.
-        await persistHelperExitReceipt(tempRoot, receiptPath, code, signal).catch(() => undefined);
-        if (code !== 0) throw new Error("release-asset ConPTY reconnect probe failed");
-        resolve(parseProbe(stdout, "reconnect"));
+        if (!spawnFailed) resolve(await finalizeReconnectExit(tempRoot, helperReceiptPath, nodeReceiptPath, code, signal, stdout));
       } catch (error) {
         reject(error);
       }
@@ -358,9 +401,13 @@ async function main() {
     const reconnectPath = path.join(tempRoot, "probe-reconnect");
     const shutdownRequestPath = path.join(tempRoot, "probe-shutdown-request");
     const shutdownAcknowledgementPath = path.join(tempRoot, "probe-shutdown-acknowledgement");
-    const receiptPath = path.join(tempRoot, receiptName);
-    await assertReceiptPath(tempRoot, receiptPath);
-    probe = startReconnectProbe(executable, unavailable.url, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath, randomUUID(), tempRoot, receiptPath);
+    const helperReceiptPath = path.join(tempRoot, helperReceiptName);
+    const nodeReceiptPath = path.join(tempRoot, nodeReceiptName);
+    await Promise.all([
+      assertReceiptPath(tempRoot, helperReceiptPath, helperReceiptName),
+      assertReceiptPath(tempRoot, nodeReceiptPath, nodeReceiptName),
+    ]);
+    probe = startReconnectProbe(executable, unavailable.url, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath, randomUUID(), tempRoot, helperReceiptPath, nodeReceiptPath);
     await waitForFile(readyPath);
     const loopbackPort = unavailable.port;
     await unavailable.close(); unavailable = undefined;

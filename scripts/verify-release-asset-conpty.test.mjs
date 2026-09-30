@@ -5,7 +5,7 @@ import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertCandidateManifest, assertReceiptPath, cleanupOutcome, cleanupResources, npmCommand, parseArgs, persistHelperExitReceipt, prepareCoreRuntime, prepareSourceBuiltCore, stopProbe, validateReceipt } from "./verify-release-asset-conpty.mjs";
+import { assertCandidateManifest, assertReceiptPath, cleanupOutcome, cleanupResources, finalizeReconnectExit, npmCommand, parseArgs, persistNodeExitReceipt, prepareCoreRuntime, prepareSourceBuiltCore, publishReceipt, stopProbe, validateReceipt } from "./verify-release-asset-conpty.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -241,24 +241,40 @@ test("reconnect receipts are closed schema and reject terminal sentinel text", (
   assert.throws(() => validateReceipt({ stage: "reconnect", outcome: "SENTINEL_SECRET", closedReason: "timed_out" }), /invalid reconnect receipt/u);
 });
 
-test("interrupted parent retains a bounded helper outcome receipt", async () => {
+test("the Node exit receipt consumes only this attempt's fixed helper receipt", async () => {
   const tempRoot = path.join(os.tmpdir(), `tui-reconnect-receipt-${process.pid}-${Date.now()}`);
-  const receiptPath = path.join(tempRoot, "reconnect-outcome.json");
+  const helperReceiptPath = path.join(tempRoot, "helper-outcome.json");
+  const nodeReceiptPath = path.join(tempRoot, "node-exit-outcome.json");
   await mkdir(tempRoot, { recursive: true });
   try {
-    await writeFile(receiptPath, JSON.stringify({ stage: "wait-reconnect", outcome: "timeout", closedReason: "timed_out" }), { flag: "wx" });
-    assert.deepEqual(await persistHelperExitReceipt(tempRoot, receiptPath, 1, null), { stage: "helper-exit", outcome: "timeout", closedReason: "helper_exit_nonzero" });
-    assert.deepEqual(JSON.parse(await readFile(receiptPath, "utf8")), { stage: "helper-exit", outcome: "timeout", closedReason: "helper_exit_nonzero" });
+    await publishReceipt(tempRoot, helperReceiptPath, { stage: "wait-reconnect", outcome: "timeout", closedReason: "timed_out" });
+    assert.deepEqual(await persistNodeExitReceipt(tempRoot, helperReceiptPath, nodeReceiptPath, 1, null), { stage: "helper-exit", outcome: "timeout", closedReason: "helper_exit_nonzero" });
+    assert.deepEqual(JSON.parse(await readFile(nodeReceiptPath, "utf8")), { stage: "helper-exit", outcome: "timeout", closedReason: "helper_exit_nonzero" });
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
 });
 
-test("helper receipt failure preserves the primary cleanup outcome and refuses an outside path", async () => {
+test("receipt sinks reject foreign targets and preserve the primary failure when publication fails", async () => {
   const tempRoot = path.join(os.tmpdir(), `tui-reconnect-receipt-path-${process.pid}-${Date.now()}`);
   await mkdir(tempRoot, { recursive: true });
   try {
-    await assert.rejects(() => assertReceiptPath(tempRoot, path.join(tempRoot, "outside.json")), /invalid reconnect receipt path/u);
+    const helperReceiptPath = path.join(tempRoot, "helper-outcome.json");
+    await writeFile(helperReceiptPath, "foreign", { flag: "wx" });
+    await assert.rejects(() => assertReceiptPath(tempRoot, helperReceiptPath, "helper-outcome.json"), /pre-existing reconnect receipt target/u);
+    await assert.rejects(() => assertReceiptPath(tempRoot, path.join(tempRoot, "outside.json"), "outside.json"), /invalid reconnect receipt path/u);
+    const nodeReceiptPath = path.join(tempRoot, "node-exit-outcome.json");
+    let linked = false;
+    await assert.rejects(() => publishReceipt(tempRoot, nodeReceiptPath, { stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero" }, {
+      createLink: async () => { linked = true; throw new Error("injected link sink failure"); },
+    }), /injected link sink failure/u);
+    assert.equal(linked, true);
+    await assert.rejects(() => access(nodeReceiptPath));
+    await assert.rejects(() => finalizeReconnectExit(tempRoot, helperReceiptPath, nodeReceiptPath, 1, null, "", {
+      persist: async () => publishReceipt(tempRoot, nodeReceiptPath, { stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero" }, {
+        createLink: async () => { throw new Error("injected link sink failure"); },
+      }),
+    }), /release-asset ConPTY reconnect probe failed/u);
     const primaryFailure = new Error("reconnect-failed");
     assert.equal(cleanupOutcome(primaryFailure, false), primaryFailure);
   } finally {

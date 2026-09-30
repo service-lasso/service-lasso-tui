@@ -10,6 +10,10 @@ const MAX_ASSET_BYTES = 1024 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_METADATA_BYTES = 1024 * 1024;
 const PUBLIC_DOWNLOAD_HOSTS = new Set(["github.com", "github-releases.githubusercontent.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"]);
+const AZURE_REQUIRED_SIGNED_QUERY_KEYS = new Set(["sp", "sv", "se", "sig", "jwt"]);
+const AZURE_OPTIONAL_SIGNED_QUERY_KEYS = new Set(["sr", "spr", "rscd", "rsct", "skoid", "sktid", "skt", "ske", "sks", "skv", "response-content-disposition", "response-content-type"]);
+const MAX_SIGNED_QUERY_VALUE_BYTES = 4096;
+const MAX_SIGNED_QUERY_BYTES = 8192;
 const REQUIRED_CHECKS = Object.freeze(["Linux test and build", "Windows test and build", "macOS test and build", "Release asset cross-compilation"]);
 const REQUIRED_PLATFORMS = Object.freeze(["darwin-amd64", "darwin-arm64", "linux-amd64", "win32-amd64"]);
 const PLATFORM_ARCHIVES = Object.freeze({
@@ -208,6 +212,20 @@ export function assertDraftReleaseReceipt(release, manifest, localAssets) { retu
 
 export function assertExistingCandidateRecovery(release, manifest, localAssets) { return assertReleaseReceipt(release, manifest, localAssets); }
 
+function assertAzureSignedReleaseAsset(download) {
+  if (!/^\/github-production-release-asset\/[1-9][0-9]{0,18}\/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu.test(download.pathname)) fail("signed release asset path is malformed");
+  const entries = [...download.searchParams.entries()];
+  const permitted = new Set([...AZURE_REQUIRED_SIGNED_QUERY_KEYS, ...AZURE_OPTIONAL_SIGNED_QUERY_KEYS]);
+  if (entries.length < AZURE_REQUIRED_SIGNED_QUERY_KEYS.size || entries.length > permitted.size || new Set(entries.map(([key]) => key)).size !== entries.length || entries.some(([key]) => !permitted.has(key)) || [...AZURE_REQUIRED_SIGNED_QUERY_KEYS].some(key => !download.searchParams.has(key))) fail("signed release asset query is malformed");
+  let size = 0;
+  for (const [, value] of entries) {
+    const bytes = Buffer.byteLength(value, "utf8");
+    if (bytes < 1 || bytes > MAX_SIGNED_QUERY_VALUE_BYTES || /[\u0000-\u001f\u007f]/u.test(value)) fail("signed release asset query is malformed");
+    size += bytes;
+  }
+  if (size > MAX_SIGNED_QUERY_BYTES) fail("signed release asset query is malformed");
+}
+
 export function assertTransportPolicy({ uploadURL, downloadURL, authorization, redirect = false }) {
   const upload = new URL(uploadURL); const download = new URL(downloadURL);
   const explicitPort = value => typeof value === "string" && /^https:\/\/[^/?#@]+:\d+(?:[/?#]|$)/iu.test(value);
@@ -215,12 +233,15 @@ export function assertTransportPolicy({ uploadURL, downloadURL, authorization, r
   if (download.protocol !== "https:" || !PUBLIC_DOWNLOAD_HOSTS.has(download.hostname) || download.port || explicitPort(downloadURL) || download.username || download.password || download.hash) fail("release download host is not approved for headerless public retrieval");
   if (["github.com", "github-releases.githubusercontent.com"].includes(download.hostname) && (download.search || !/^\/[^/]+\/[^/]+\/releases\/download\/[^/]+\/[^/]+$/u.test(download.pathname))) fail("GitHub release download URL is malformed");
   if (["objects.githubusercontent.com", "release-assets.githubusercontent.com"].includes(download.hostname)) {
-    if (!/^\/github-production-release-asset-2e65be\/[1-9][0-9]{0,18}\/[A-Za-z0-9._~-]{1,256}$/u.test(download.pathname)) fail("signed release asset path is malformed");
-    const permitted = new Set(["X-Amz-Algorithm", "X-Amz-Credential", "X-Amz-Date", "X-Amz-Expires", "X-Amz-SignedHeaders", "X-Amz-Signature"]);
-    const entries = [...download.searchParams.entries()];
-    if (entries.length !== permitted.size || new Set(entries.map(([key]) => key)).size !== permitted.size || entries.some(([key]) => !permitted.has(key))) fail("signed release asset query is malformed");
-    const query = Object.fromEntries(entries);
-    if (query["X-Amz-Algorithm"] !== "AWS4-HMAC-SHA256" || !/^[A-Z0-9]{16,32}\/20[0-9]{6}\/us-(east|west)-[12]\/s3\/aws4_request$/u.test(query["X-Amz-Credential"]) || !/^20[0-9]{6}T[0-9]{6}Z$/u.test(query["X-Amz-Date"]) || !/^[1-9][0-9]{0,2}$/u.test(query["X-Amz-Expires"]) || Number(query["X-Amz-Expires"]) > 300 || query["X-Amz-SignedHeaders"] !== "host" || !/^[a-f0-9]{64}$/u.test(query["X-Amz-Signature"])) fail("signed release asset query is malformed");
+    if (/^\/github-production-release-asset\//u.test(download.pathname)) assertAzureSignedReleaseAsset(download);
+    else {
+      if (!/^\/github-production-release-asset-2e65be\/[1-9][0-9]{0,18}\/[A-Za-z0-9._~-]{1,256}$/u.test(download.pathname)) fail("signed release asset path is malformed");
+      const permitted = new Set(["X-Amz-Algorithm", "X-Amz-Credential", "X-Amz-Date", "X-Amz-Expires", "X-Amz-SignedHeaders", "X-Amz-Signature"]);
+      const entries = [...download.searchParams.entries()];
+      if (entries.length !== permitted.size || new Set(entries.map(([key]) => key)).size !== permitted.size || entries.some(([key]) => !permitted.has(key))) fail("signed release asset query is malformed");
+      const query = Object.fromEntries(entries);
+      if (query["X-Amz-Algorithm"] !== "AWS4-HMAC-SHA256" || !/^[A-Z0-9]{16,32}\/20[0-9]{6}\/us-(east|west)-[12]\/s3\/aws4_request$/u.test(query["X-Amz-Credential"]) || !/^20[0-9]{6}T[0-9]{6}Z$/u.test(query["X-Amz-Date"]) || !/^[1-9][0-9]{0,2}$/u.test(query["X-Amz-Expires"]) || Number(query["X-Amz-Expires"]) > 300 || query["X-Amz-SignedHeaders"] !== "host" || !/^[a-f0-9]{64}$/u.test(query["X-Amz-Signature"])) fail("signed release asset query is malformed");
+    }
   }
   return true;
 }

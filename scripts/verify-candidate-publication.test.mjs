@@ -21,6 +21,7 @@ const preflight = { immutableReleases: { enabled: true }, environment: { name: "
 
 function response(status, headers = {}, body) { return { status, headers: { get: key => headers[key.toLowerCase()] ?? null }, body: body === undefined ? undefined : (async function* () { yield body; })(), text: async () => body === undefined ? "" : Buffer.from(body).toString("utf8") }; }
 function signedRedirect(name) { return `https://release-assets.githubusercontent.com/github-production-release-asset-2e65be/123/${encodeURIComponent(name)}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ABCDEFGHIJKLMNOP%2F20261001%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261001T000000Z&X-Amz-Expires=300&X-Amz-SignedHeaders=host&X-Amz-Signature=${"a".repeat(64)}`; }
+function azureRedirect() { return "https://release-assets.githubusercontent.com/github-production-release-asset/123/01234567-89ab-cdef-0123-456789abcdef?sp=r&sv=2024-11-04&sr=b&spr=https&se=2030-01-01T00%3A00%3A00Z&rscd=attachment&rsct=application%2Foctet-stream&skoid=01234567-89ab-cdef-0123-456789abcdef&sktid=89abcdef-0123-4567-89ab-cdef01234567&skt=2029-12-31T00%3A00%3A00Z&ske=2030-01-01T00%3A00%3A00Z&sks=b&skv=2024-11-04&sig=sanitized-signature&jwt=sanitized.jwt.value&response-content-disposition=attachment&response-content-type=application%2Foctet-stream"; }
 function publicFetch({ bodies = localBodies, redirect = true, calls = [] } = {}) {
   return async (url, options) => {
     calls.push({ url: String(url), options }); const parsed = new URL(url);
@@ -107,6 +108,27 @@ test("rejects malformed public URLs and redirect escapes or loops", async () => 
   await assert.rejects(() => verify({ fetchImpl: async () => response(302, { location: "https://release-assets.githubusercontent.com/github-production-release-asset-2e65be/123/opaque-value-long-enough?signature=unbounded" }) }), /signed release asset/u);
   await assert.rejects(() => verify({ fetchImpl: async () => response(302, { location: `https://objects.githubusercontent.com/github-production-release-asset-2e65be/123/opaque-value-long-enough?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ABCDEFGHIJKLMNOP%2F20261001%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261001T000000Z&X-Amz-Expires=301&X-Amz-SignedHeaders=host&X-Amz-Signature=${"a".repeat(64)}` }) }), /signed release asset/u);
   await assert.rejects(() => verify({ fetchImpl: async url => response(302, { location: String(url) }) }), /redirect limit/u);
+});
+test("accepts the observed bounded GitHub Azure redirect shape", async () => {
+  const calls = []; let assetIndex = 0;
+  await verify({ fetchImpl: async (url, options) => {
+    calls.push({ url: String(url), options });
+    const parsed = new URL(url);
+    if (parsed.hostname === "github.com") return response(302, { location: azureRedirect() });
+    const name = [...names].sort()[assetIndex++];
+    return response(200, { "content-length": String(localBodies[name].length) }, localBodies[name]);
+  } });
+  assert.equal(calls.filter(call => new URL(call.url).hostname === "release-assets.githubusercontent.com").length, names.length);
+  assert.ok(calls.every(call => Object.keys(call.options.headers).length === 0));
+});
+test("rejects Azure signed redirects with missing, extra, malformed, credentialed, or oversized values", () => {
+  const redirect = new URL(azureRedirect());
+  const assertion = value => assert.throws(() => assertTransportPolicy({ uploadURL: "https://uploads.github.com/", downloadURL: value, authorization: "Bearer", redirect: true }), /signed release asset|release download host/u);
+  const missing = new URL(redirect); missing.searchParams.delete("jwt"); assertion(missing);
+  const extra = new URL(redirect); extra.searchParams.set("unexpected", "value"); assertion(extra);
+  const malformedPath = new URL(redirect); malformedPath.pathname = "/github-production-release-asset/123/not-a-uuid"; assertion(malformedPath);
+  const credentialed = new URL(redirect); credentialed.username = "user"; assertion(credentialed);
+  const oversized = new URL(redirect); oversized.searchParams.set("jwt", "a".repeat(4097)); assertion(oversized);
 });
 test("keeps authenticated uploads separate from headerless public downloads", () => {
   assert.equal(assertTransportPolicy({ uploadURL: "https://uploads.github.com/repos/service-lasso/service-lasso-tui/releases/1/assets", downloadURL: "https://github.com/service-lasso/service-lasso-tui/releases/download/tag/file", authorization: "Bearer" }), true);

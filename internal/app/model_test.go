@@ -113,9 +113,9 @@ func TestLifecycleRequiresKeyboardConfirmation(t *testing.T) {
 	if !strings.Contains(pending.View(), "Confirm start") {
 		t.Fatalf("start action did not request confirmation: %s", pending.View())
 	}
-	_, command := pending.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	submitted, command := pending.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	message := command()
-	completed, _ := pending.Update(message)
+	completed, _ := submitted.(model).Update(message)
 	if !strings.Contains(completed.(model).View(), "Last runtime result: Core completed start.") {
 		t.Fatalf("runtime result not rendered: %s", completed.(model).View())
 	}
@@ -158,7 +158,7 @@ func TestLifecycleDoubleConfirmDispatchesOnce(t *testing.T) {
 	}
 }
 
-func TestSubmittedLifecycleBlocksNavigationAndRendersOriginalResult(t *testing.T) {
+func TestSubmittedLifecycleKeepsNavigationResponsiveAndRendersOriginalResult(t *testing.T) {
 	client := &countingClient{fakeClient: fakeClient{
 		services:        []api.Service{{ID: "echo", Name: "Echo"}},
 		lifecycleResult: api.LifecycleResult{OK: true},
@@ -179,31 +179,61 @@ func TestSubmittedLifecycleBlocksNavigationAndRendersOriginalResult(t *testing.T
 	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	submittedModel, command := updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	submitted := submittedModel.(model)
-	if command == nil || !submitted.submittingAction {
+	if command == nil || !submitted.hasOutstandingAction() {
 		t.Fatal("confirmation did not submit lifecycle request")
 	}
-	for _, key := range []rune{'d', 'p'} {
-		next, blocked := submitted.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
-		if blocked != nil {
-			t.Fatalf("%q started a command while lifecycle submission was pending", key)
-		}
+	if submission := submitted.outstandingAction; submission.client != client || submission.connectionName != "local" || submission.connectionEpoch != 0 || submission.serviceID != "echo" || submission.action != "start" {
+		t.Fatalf("submission did not retain its original context: %#v", submission)
+	}
+	// Profile activation remains blocked, but read/navigation input must keep the
+	// UI useful while Core processes the already-submitted mutation.
+	for _, key := range []rune{'d', '?'} {
+		next, _ := submitted.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
 		submitted = next.(model)
 	}
-	if submitted.screen != detailScreen || submitted.connectionName != "local" || connections.current != "local" {
-		t.Fatalf("pending submission changed context: %#v", submitted)
+	if submitted.screen != helpScreen {
+		t.Fatalf("help was blocked by submission: %#v", submitted)
+	}
+	next, _ := submitted.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	submitted = next.(model)
+	next, _ = submitted.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	submitted = next.(model)
+	next, _ = submitted.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	submitted = next.(model)
+	next, _ = submitted.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	submitted = next.(model)
+	next, _ = submitted.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	submitted = next.(model)
+	refreshed, refresh := submitted.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if refresh == nil {
+		t.Fatal("refresh was blocked by submission")
+	}
+	submitted = refreshed.(model)
+	next, blockedProfile := submitted.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	if blockedProfile != nil {
+		t.Fatal("profile selection started a command while a lifecycle request was pending")
+	}
+	submitted = next.(model)
+	if submitted.screen != servicesScreen || submitted.connectionName != "local" || connections.current != "local" {
+		t.Fatalf("outstanding submission allowed profile switch or blocked navigation: %#v", submitted)
 	}
 
 	completed, _ := submitted.Update(command())
 	view := completed.(model).View()
-	if client.calls != 1 || strings.Count(view, "Last runtime result: Core completed start.") != 1 {
-		t.Fatalf("original lifecycle result was not rendered exactly once: calls=%d view=%s", client.calls, view)
+	if client.calls != 1 || client.serviceID != "echo" || strings.Count(view, "Last runtime result: Core completed start.") != 1 {
+		t.Fatalf("original lifecycle result was not rendered exactly once after navigation: calls=%d service=%q view=%s", client.calls, client.serviceID, view)
+	}
+	_, second := completed.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if second != nil || client.calls != 1 {
+		t.Fatalf("completed submission replayed: command=%v calls=%d", second != nil, client.calls)
 	}
 }
 
 func TestLifecycleFailureDoesNotExposeSensitiveMarker(t *testing.T) {
 	const marker = "SYNTHETIC_SENSITIVE_MARKER_DO_NOT_DISPLAY"
 	initial := New(fakeClient{}, context.Background()).(model)
-	updated, _ := initial.Update(lifecycleMsg{err: errors.New("runtime returned 403 Forbidden")})
+	initial.outstandingAction = &lifecycleSubmission{id: 1, action: "start"}
+	updated, _ := initial.Update(lifecycleMsg{submissionID: 1, err: errors.New("runtime returned 403 Forbidden")})
 	view := updated.(model).View()
 	if strings.Contains(view, marker) || !strings.Contains(view, "403 Forbidden") {
 		t.Fatalf("unexpected lifecycle error rendering: %s", view)
@@ -216,9 +246,11 @@ func TestLifecycleSuccessMessageDoesNotExposeSensitiveMarker(t *testing.T) {
 	updated, _ := initial.Update(loadedMsg{services: []api.Service{{ID: "echo", Name: "Echo"}}})
 	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
-	updated, _ = updated.(model).Update(lifecycleMsg{
-		action: "start",
-		result: api.LifecycleResult{OK: true, Message: marker},
+	updatedModel := updated.(model)
+	updatedModel.outstandingAction = &lifecycleSubmission{id: 1, action: "start"}
+	updated, _ = updatedModel.Update(lifecycleMsg{
+		submissionID: 1,
+		result:       api.LifecycleResult{OK: true, Message: marker},
 	})
 	view := updated.(model).View()
 	if strings.Contains(view, marker) || !strings.Contains(view, "Core completed start.") {

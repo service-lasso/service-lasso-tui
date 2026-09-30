@@ -66,7 +66,8 @@ type model struct {
 	err                error
 	pendingAction      string
 	pendingServiceID   string
-	submittingAction   bool
+	nextSubmissionID   uint64
+	outstandingAction  *lifecycleSubmission
 	lastResult         string
 	width              int
 	height             int
@@ -80,10 +81,20 @@ type loadedMsg struct {
 }
 
 type lifecycleMsg struct {
-	epoch  uint64
-	result api.LifecycleResult
-	action string
-	err    error
+	submissionID uint64
+	result       api.LifecycleResult
+	err          error
+}
+
+// lifecycleSubmission is deliberately separate from the confirmation and the
+// current screen. Once Core has received the request, its client, profile,
+// target, and action must remain stable until its one result is handled.
+type lifecycleSubmission struct {
+	id                uint64
+	client            runtimeClient
+	connectionName    string
+	connectionEpoch   uint64
+	serviceID, action string
 }
 
 func New(client runtimeClient, ctx context.Context) tea.Model {
@@ -185,15 +196,10 @@ func (m model) loadHistory() tea.Cmd {
 	}
 }
 
-func (m model) runLifecycle() tea.Cmd {
-	service, ok := m.serviceByID(m.pendingServiceID)
-	if !ok {
-		return nil
-	}
-	action, epoch, client := m.pendingAction, m.connectionEpoch, m.client
+func runLifecycle(submission lifecycleSubmission, ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
-		result, err := client.Lifecycle(m.ctx, service.ID, action)
-		return lifecycleMsg{epoch: epoch, result: result, action: action, err: err}
+		result, err := submission.client.Lifecycle(ctx, submission.serviceID, submission.action)
+		return lifecycleMsg{submissionID: submission.id, result: result, err: err}
 	}
 }
 
@@ -235,13 +241,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.historyUnavailable = true
 		}
 	case lifecycleMsg:
-		if message.epoch != m.connectionEpoch {
+		if m.outstandingAction == nil || message.submissionID != m.outstandingAction.id {
 			return m, nil
 		}
 		m.loading = false
-		m.pendingAction = ""
-		m.pendingServiceID = ""
-		m.submittingAction = false
+		submission := *m.outstandingAction
+		m.outstandingAction = nil
 		if message.err != nil {
 			m.err = message.err
 			m.lastResult = ""
@@ -251,19 +256,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if message.result.OK {
 				outcome = "completed"
 			}
-			m.lastResult = fmt.Sprintf("Core %s %s.", outcome, message.action)
+			m.lastResult = fmt.Sprintf("Core %s %s.", outcome, submission.action)
 		}
 	case tea.KeyMsg:
-		if m.submittingAction {
-			switch message.String() {
-			case "ctrl+c", "q":
-				return m, tea.Quit
-			default:
-				// A lifecycle request has already reached Core. Keep its original
-				// connection and detail context until the one result arrives.
-				return m, nil
-			}
-		}
 		if message.Type == tea.KeyRunes && string(message.Runes) == "/" {
 			m.searching = true
 			return m, nil
@@ -292,13 +287,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 		case "r":
-			if m.pendingAction != "" {
-				return m, nil
-			}
 			m.loading, m.err = true, nil
 			return m, tea.Batch(m.refresh(), m.refreshDashboard())
 		case "p":
-			if m.connections != nil && m.pendingAction == "" {
+			if m.connections != nil && m.pendingAction == "" && !m.hasOutstandingAction() {
 				m.selectedProfile = m.connectionName
 				m.screen = profilesScreen
 			}
@@ -329,17 +321,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.screen = dashboardScreen
 			}
 		case "y":
-			if m.screen == detailScreen && m.pendingAction != "" && !m.submittingAction && m.hasServiceID(m.pendingServiceID) {
-				m.loading, m.err = true, nil
-				m.submittingAction = true
-				return m, m.runLifecycle()
+			if m.screen == detailScreen && m.pendingAction != "" && !m.hasOutstandingAction() && m.hasServiceID(m.pendingServiceID) {
+				return m, m.submitPendingAction()
 			}
 			if m.pendingAction != "" && !m.hasServiceID(m.pendingServiceID) {
 				m.pendingAction, m.pendingServiceID = "", ""
 				m.lastResult = "Selected service changed; confirmation cancelled."
 			}
 		case "c", "s", "x", "R", "l":
-			if m.screen == detailScreen && m.hasSelectedService() && m.pendingAction == "" {
+			if m.screen == detailScreen && m.hasSelectedService() && m.pendingAction == "" && !m.hasOutstandingAction() {
 				m.beginPendingAction(map[string]string{
 					"c": "config", "s": "start", "x": "stop", "R": "restart", "l": "reload",
 				}[message.String()])
@@ -350,6 +340,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.moveSelected(-1)
 		case "enter":
 			if m.screen == profilesScreen {
+				if m.hasOutstandingAction() {
+					return m, nil
+				}
 				client, err := m.connections.Switch(m.selectedProfile)
 				if err != nil {
 					m.err = err
@@ -420,6 +413,26 @@ func (m *model) beginPendingAction(action string) {
 	m.pendingAction, m.pendingServiceID = action, service.ID
 }
 
+func (m *model) hasOutstandingAction() bool { return m.outstandingAction != nil }
+
+func (m *model) submitPendingAction() tea.Cmd {
+	m.nextSubmissionID++
+	submission := lifecycleSubmission{
+		id:              m.nextSubmissionID,
+		client:          m.client,
+		connectionName:  m.connectionName,
+		connectionEpoch: m.connectionEpoch,
+		serviceID:       m.pendingServiceID,
+		action:          m.pendingAction,
+	}
+	// Confirmation is local, transient UI state. The submitted request retains
+	// its own immutable context so navigation and search cannot retarget it.
+	m.pendingAction, m.pendingServiceID = "", ""
+	m.outstandingAction = &submission
+	m.loading, m.err = true, nil
+	return runLifecycle(submission, m.ctx)
+}
+
 func (m *model) cancelPendingOnNavigation() {
 	if m.screen == detailScreen && m.pendingAction != "" {
 		m.pendingAction, m.pendingServiceID = "", ""
@@ -470,6 +483,9 @@ func (m *model) moveSelected(direction int) {
 }
 
 func (m *model) activateConnection(client runtimeClient) {
+	if m.hasOutstandingAction() {
+		return
+	}
 	m.client = client
 	m.connectionName = m.connections.Current()
 	m.connectionEpoch++
@@ -477,7 +493,7 @@ func (m *model) activateConnection(client runtimeClient) {
 	m.selectedServiceID = ""
 	m.health, m.capabilities, m.setup, m.identity, m.inbox, m.history = api.Health{}, api.Capabilities{}, api.SetupStatus{}, api.RuntimeIdentity{}, api.Inbox{}, api.HealthHistory{}
 	m.optionalFailures, m.pendingAction, m.pendingServiceID, m.lastResult = nil, "", "", ""
-	m.historyUnavailable, m.stale, m.submittingAction, m.loading = false, false, false, true
+	m.historyUnavailable, m.stale, m.loading = false, false, true
 	m.err = nil
 	m.screen = dashboardScreen
 }
@@ -530,6 +546,9 @@ func (m model) View() string {
 		}
 	}
 	b.WriteString("\n")
+	if m.lastResult != "" {
+		b.WriteString("Last runtime result: " + m.lastResult + "\n\n")
+	}
 	if m.screen == helpScreen {
 		b.WriteString("d dashboard • v services • i inbox • p connections • / search • n narrow • r reconnect • esc back • q quit\n")
 		return b.String()
@@ -599,16 +618,13 @@ func (m model) detailView(b *strings.Builder) string {
 			b.WriteString("Health history is unavailable.\n")
 		}
 	}
-	if m.submittingAction {
+	if m.hasOutstandingAction() {
 		b.WriteString("\nSubmitting one confirmed request to Core…\n")
 	} else if m.pendingAction != "" {
 		fmt.Fprintf(b, "\nConfirm %s for %s? y confirm • esc cancel\n", m.pendingAction, safeTerminalText(m.pendingServiceID, 128))
 	} else {
 		b.WriteString("\ni install • c config • s start • x stop • R restart • l reload\n")
 		b.WriteString("Each action asks Core to enforce permission and confirmation.\n")
-	}
-	if m.lastResult != "" {
-		b.WriteString("Last runtime result: " + m.lastResult + "\n")
 	}
 	b.WriteString("esc back • r refresh • q quit\n")
 	return b.String()

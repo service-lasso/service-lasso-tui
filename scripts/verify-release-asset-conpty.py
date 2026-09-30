@@ -5,7 +5,6 @@ import select
 import stat
 import sys
 import time
-import uuid
 
 try:
     from winpty.enums import Backend
@@ -15,6 +14,8 @@ except ImportError:
     # the pinned Windows-only dependency is unavailable.
     Backend = None
     PtyProcess = None
+
+CONPTY_BACKEND = Backend.ConPTY if Backend is not None else None
 
 
 def emit(result): print(json.dumps(result, separators=(",", ":")))
@@ -44,26 +45,18 @@ def write_receipt(attempt_root, receipt_file, stage, outcome, closed_reason):
     if not stat.S_ISDIR(root_info.st_mode) or os.path.islink(root) or getattr(root_info, "st_file_attributes", 0) & reparse: return False
     if os.path.abspath(receipt_file) != os.path.join(root, RECEIPT_NAME): return False
     if stage not in RECEIPT_STAGES or outcome not in RECEIPT_OUTCOMES or closed_reason not in RECEIPT_REASONS: return False
-    # Never consume or replace an existing name.  It cannot be shown to belong
-    # to this helper attempt and might be a link or a Windows reparse point.
-    if os.path.lexists(receipt_file): return False
-    temporary = os.path.join(root, "." + RECEIPT_NAME + "." + str(uuid.uuid4()) + ".tmp")
     try:
-        with open(temporary, "x", encoding="utf-8") as receipt:
+        # Exclusive final-name creation is the publication operation.  It
+        # refuses an existing file, link, or Windows reparse point, and there
+        # is no temporary pathname to link or later unlink after an attacker
+        # has substituted it.
+        with open(receipt_file, "x", encoding="utf-8") as receipt:
             receipt.write(json.dumps({"stage": stage, "outcome": outcome, "closedReason": closed_reason}, separators=(",", ":")))
             receipt.flush()
             os.fsync(receipt.fileno())
-        temporary_info = os.lstat(temporary)
-        if not stat.S_ISREG(temporary_info.st_mode) or os.path.islink(temporary): return False
-        # link is an atomic no-clobber publication primitive: an intervening
-        # target creation fails rather than replacing or following it.
-        os.link(temporary, receipt_file)
         return True
     except Exception:
         return False
-    finally:
-        try: os.remove(temporary)
-        except Exception: pass
 
 def acknowledge_shutdown(process, acknowledgement_file, token):
     try:
@@ -102,13 +95,13 @@ def wait_for_file(file_name, timeout, process=None, request_file=None, acknowled
         sleeper(0.05)
     return False
 
-def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, attempt_root=None, outcome_receipt_file=None, pty_process=PtyProcess, wait=wait_for, wait_file=wait_for_file):
+def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, attempt_root=None, outcome_receipt_file=None, pty_process=PtyProcess, wait=wait_for, wait_file=wait_for_file, backend=CONPTY_BACKEND):
     process, stage = None, "launch"
     try:
         if pty_process is None: return fail(stage)
         environment = {key: os.environ[key] for key in ("APPDATA", "COMSPEC", "LOCALAPPDATA", "PATHEXT", "PATH", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE", "WINDIR") if os.environ.get(key)}
         environment.update({"TERM": "xterm-256color", "SERVICE_LASSO_API_URL": api_url})
-        process = pty_process.spawn([executable], cwd=os.path.dirname(executable), env=environment, dimensions=(40, 120), backend=Backend.ConPTY)
+        process = pty_process.spawn([executable], cwd=os.path.dirname(executable), env=environment, dimensions=(40, 120), backend=backend)
         expected = "Runtime API unavailable"
         stage = "startup"
         if not wait(process, ("Service Lasso TUI", "q quit", expected), 20, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token):

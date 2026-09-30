@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import test from "node:test";
-import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -241,15 +241,15 @@ test("reconnect receipts are closed schema and reject terminal sentinel text", (
   assert.throws(() => validateReceipt({ stage: "reconnect", outcome: "SENTINEL_SECRET", closedReason: "timed_out" }), /invalid reconnect receipt/u);
 });
 
-test("the Node exit receipt consumes only this attempt's fixed helper receipt", async () => {
+test("the Node exit receipt derives only its controlled child-exit observation", async () => {
   const tempRoot = path.join(os.tmpdir(), `tui-reconnect-receipt-${process.pid}-${Date.now()}`);
   const helperReceiptPath = path.join(tempRoot, "helper-outcome.json");
   const nodeReceiptPath = path.join(tempRoot, "node-exit-outcome.json");
   await mkdir(tempRoot, { recursive: true });
   try {
-    await publishReceipt(tempRoot, helperReceiptPath, { stage: "wait-reconnect", outcome: "timeout", closedReason: "timed_out" });
-    assert.deepEqual(await persistNodeExitReceipt(tempRoot, helperReceiptPath, nodeReceiptPath, 1, null), { stage: "helper-exit", outcome: "timeout", closedReason: "helper_exit_nonzero" });
-    assert.deepEqual(JSON.parse(await readFile(nodeReceiptPath, "utf8")), { stage: "helper-exit", outcome: "timeout", closedReason: "helper_exit_nonzero" });
+    await writeFile(helperReceiptPath, "foreign helper bytes", { flag: "wx" });
+    assert.deepEqual(await persistNodeExitReceipt(tempRoot, nodeReceiptPath, 1, null), { stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero" });
+    assert.deepEqual(JSON.parse(await readFile(nodeReceiptPath, "utf8")), { stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero" });
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -261,7 +261,7 @@ test("a spawn failure records a closed Node receipt without consuming a helper t
   const nodeReceiptPath = path.join(tempRoot, "node-exit-outcome.json");
   await mkdir(tempRoot, { recursive: true });
   try {
-    assert.deepEqual(await persistNodeExitReceipt(tempRoot, helperReceiptPath, nodeReceiptPath, null, null, true), {
+    assert.deepEqual(await persistNodeExitReceipt(tempRoot, nodeReceiptPath, null, null, true), {
       stage: "helper-exit", outcome: "error", closedReason: "helper_exit_spawn_error",
     });
     assert.deepEqual(JSON.parse(await readFile(nodeReceiptPath, "utf8")), {
@@ -272,28 +272,74 @@ test("a spawn failure records a closed Node receipt without consuming a helper t
   }
 });
 
-test("receipt sinks reject foreign targets and preserve the primary failure when publication fails", async () => {
+test("Node receipts classify normal, signal, and null child exits without helper input", async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-reconnect-exit-kinds-${process.pid}-${Date.now()}`);
+  await mkdir(tempRoot, { recursive: true });
+  try {
+    const normalRoot = path.join(tempRoot, "normal");
+    const signalRoot = path.join(tempRoot, "signal");
+    await Promise.all([mkdir(normalRoot), mkdir(signalRoot)]);
+    assert.deepEqual(await persistNodeExitReceipt(normalRoot, path.join(normalRoot, "node-exit-outcome.json"), 0, null), {
+      stage: "helper-exit", outcome: "normal", closedReason: "completed",
+    });
+    assert.deepEqual(await persistNodeExitReceipt(signalRoot, path.join(signalRoot, "node-exit-outcome.json"), null, "SIGTERM"), {
+      stage: "helper-exit", outcome: "error", closedReason: "helper_exit_signal",
+    });
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("a null code and null signal is a bounded nonzero helper exit", async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-reconnect-null-exit-${process.pid}-${Date.now()}`);
+  await mkdir(tempRoot, { recursive: true });
+  try {
+    assert.deepEqual(await persistNodeExitReceipt(tempRoot, path.join(tempRoot, "node-exit-outcome.json"), null, null), {
+      stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero",
+    });
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("receipt sinks reject foreign targets and preserve the primary failure when publication fails", async t => {
   const tempRoot = path.join(os.tmpdir(), `tui-reconnect-receipt-path-${process.pid}-${Date.now()}`);
   await mkdir(tempRoot, { recursive: true });
   try {
     const helperReceiptPath = path.join(tempRoot, "helper-outcome.json");
     await writeFile(helperReceiptPath, "foreign", { flag: "wx" });
-    await assert.rejects(() => assertReceiptPath(tempRoot, helperReceiptPath, "helper-outcome.json"), /pre-existing reconnect receipt target/u);
+    const foreignTemporary = path.join(tempRoot, ".node-exit-outcome.json.foreign.tmp");
+    await writeFile(foreignTemporary, "foreign temporary", { flag: "wx" });
+    assert.equal(await assertReceiptPath(tempRoot, helperReceiptPath, "helper-outcome.json"), helperReceiptPath);
     await assert.rejects(() => assertReceiptPath(tempRoot, path.join(tempRoot, "outside.json"), "outside.json"), /invalid reconnect receipt path/u);
     const nodeReceiptPath = path.join(tempRoot, "node-exit-outcome.json");
-    let linked = false;
+    let opened = false;
     await assert.rejects(() => publishReceipt(tempRoot, nodeReceiptPath, { stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero" }, {
-      createLink: async () => { linked = true; throw new Error("injected link sink failure"); },
-    }), /injected link sink failure/u);
-    assert.equal(linked, true);
+      openFile: async () => { opened = true; throw new Error("injected receipt sink failure"); },
+    }), /injected receipt sink failure/u);
+    assert.equal(opened, true);
     await assert.rejects(() => access(nodeReceiptPath));
-    await assert.rejects(() => finalizeReconnectExit(tempRoot, helperReceiptPath, nodeReceiptPath, 1, null, "", {
+    assert.equal(await readFile(foreignTemporary, "utf8"), "foreign temporary");
+    await assert.rejects(() => finalizeReconnectExit(tempRoot, nodeReceiptPath, 1, null, "", {
       persist: async () => publishReceipt(tempRoot, nodeReceiptPath, { stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero" }, {
-        createLink: async () => { throw new Error("injected link sink failure"); },
+        openFile: async () => { throw new Error("injected receipt sink failure"); },
       }),
     }), /release-asset ConPTY reconnect probe failed/u);
     const primaryFailure = new Error("reconnect-failed");
     assert.equal(cleanupOutcome(primaryFailure, false), primaryFailure);
+
+    const linkedReceipt = nodeReceiptPath;
+    const linkedForeign = path.join(tempRoot, "linked-foreign.json");
+    await writeFile(linkedForeign, "foreign", { flag: "wx" });
+    try {
+      await symlink(linkedForeign, linkedReceipt);
+    } catch (error) {
+      if (error?.code === "EPERM") t.skip("symbolic links unavailable on this Windows runner");
+      else throw error;
+      return;
+    }
+    await assert.rejects(() => publishReceipt(tempRoot, linkedReceipt, { stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero" }), /EEXIST/u);
+    assert.equal(await readFile(linkedForeign, "utf8"), "foreign");
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

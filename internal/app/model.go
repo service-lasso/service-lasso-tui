@@ -406,6 +406,9 @@ func (m model) serviceByID(id string) (api.Service, bool) {
 func (m model) hasServiceID(id string) bool { _, ok := m.serviceByID(id); return ok }
 
 func (m *model) beginPendingAction(action string) {
+	if m.hasOutstandingAction() || m.pendingAction != "" {
+		return
+	}
 	service, ok := m.selectedService()
 	if !ok {
 		return

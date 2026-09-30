@@ -125,11 +125,13 @@ type countingClient struct {
 	fakeClient
 	calls     int
 	serviceID string
+	action    string
 }
 
-func (f *countingClient) Lifecycle(_ context.Context, serviceID, _ string) (api.LifecycleResult, error) {
+func (f *countingClient) Lifecycle(_ context.Context, serviceID, action string) (api.LifecycleResult, error) {
 	f.calls++
 	f.serviceID = serviceID
+	f.action = action
 	return f.lifecycleResult, f.lifecycleErr
 }
 
@@ -155,6 +157,81 @@ func TestLifecycleDoubleConfirmDispatchesOnce(t *testing.T) {
 	_ = command()
 	if client.calls != 1 {
 		t.Fatalf("lifecycle request count = %d, want 1", client.calls)
+	}
+}
+
+func TestSubmittedLifecycleDoesNotQueueAnotherConfirmation(t *testing.T) {
+	mutators := []struct {
+		name   string
+		key    rune
+		action string
+	}{
+		{name: "install", key: 'i', action: "install"},
+		{name: "config", key: 'c', action: "config"},
+		{name: "start", key: 's', action: "start"},
+		{name: "stop", key: 'x', action: "stop"},
+		{name: "restart", key: 'R', action: "restart"},
+		{name: "reload", key: 'l', action: "reload"},
+	}
+
+	for _, mutator := range mutators {
+		t.Run(mutator.name, func(t *testing.T) {
+			client := &countingClient{fakeClient: fakeClient{
+				services:        []api.Service{{ID: "echo", Name: "Echo"}},
+				lifecycleResult: api.LifecycleResult{OK: true},
+			}}
+			initial := New(client, context.Background()).(model)
+			updated, _ := initial.Update(loadedMsg{services: client.services})
+			updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+			updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+			updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+
+			submittedModel, originalCommand := updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+			submitted := submittedModel.(model)
+			if originalCommand == nil || submitted.outstandingAction == nil {
+				t.Fatal("original confirmation did not submit")
+			}
+			original := *submitted.outstandingAction
+
+			blockedModel, blockedCommand := submitted.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{mutator.key}})
+			submitted = blockedModel.(model)
+			if blockedCommand != nil || submitted.pendingAction != "" || submitted.pendingServiceID != "" {
+				t.Fatalf("%s queued a confirmation while original request was submitted: command=%v pending=%q service=%q", mutator.name, blockedCommand != nil, submitted.pendingAction, submitted.pendingServiceID)
+			}
+			if actual := submitted.outstandingAction; actual == nil || actual.client != original.client || actual.connectionName != original.connectionName || actual.connectionEpoch != original.connectionEpoch || actual.serviceID != original.serviceID || actual.action != original.action || actual.id != original.id {
+				t.Fatalf("%s changed original request context: got=%#v want=%#v", mutator.name, actual, original)
+			}
+
+			completedModel, _ := submitted.Update(originalCommand())
+			completed := completedModel.(model)
+			view := completed.View()
+			if client.calls != 1 || client.serviceID != "echo" || client.action != "start" || strings.Count(view, "Last runtime result: Core completed start.") != 1 {
+				t.Fatalf("original request did not complete exactly once: calls=%d service=%q action=%q view=%s", client.calls, client.serviceID, client.action, view)
+			}
+			if completed.outstandingAction != nil || completed.pendingAction != "" || completed.pendingServiceID != "" {
+				t.Fatalf("%s was delayed after original completion: %#v", mutator.name, completed)
+			}
+
+			unchangedModel, unconfirmed := completed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+			completed = unchangedModel.(model)
+			if unconfirmed != nil || client.calls != 1 {
+				t.Fatalf("y replayed or dispatched a delayed request: command=%v calls=%d", unconfirmed != nil, client.calls)
+			}
+
+			confirmedModel, _ := completed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{mutator.key}})
+			confirmed := confirmedModel.(model)
+			if confirmed.pendingAction != mutator.action || confirmed.pendingServiceID != "echo" {
+				t.Fatalf("explicit %s request did not enter confirmation: %#v", mutator.name, confirmed)
+			}
+			_, confirmedCommand := confirmed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+			if confirmedCommand == nil {
+				t.Fatalf("y did not submit explicit %s confirmation", mutator.name)
+			}
+			_ = confirmedCommand()
+			if client.calls != 2 || client.action != mutator.action {
+				t.Fatalf("explicit confirmation dispatch mismatch: calls=%d action=%q want=%q", client.calls, client.action, mutator.action)
+			}
+		})
 	}
 }
 

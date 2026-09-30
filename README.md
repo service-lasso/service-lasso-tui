@@ -34,7 +34,12 @@ unread and unreplayed.
 profile must explicitly set `"authMode":"oauth-bearer"` and declare
 `"scopes":["service-lasso:read","service-lasso:lifecycle:write"]`; its
 token is then sent as a bearer credential. Existing profiles never change auth
-mode implicitly.
+mode implicitly. A non-loopback profile that omits either declaration, uses
+`local-admin`, or lacks a required scope is rejected before the TUI reads its
+credential environment variable or opens an HTTP connection. Omitted mode
+continues to select `local-admin` only for loopback URLs. These client checks
+do not validate OAuth credentials or permissions; Core does that for every
+request.
 Use a process environment or an operator-managed secret launcher; do not put a
 token in a command-line argument.
 

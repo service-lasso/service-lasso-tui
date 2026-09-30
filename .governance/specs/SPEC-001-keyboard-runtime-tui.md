@@ -83,6 +83,15 @@ The local-admin profile remains explicit and sends its token only as
 `x-service-lasso-admin-token`; an existing token is never silently converted
 to a bearer token. A non-loopback durable-operation profile must explicitly
 declare guarded `oauth-bearer` mode and the required read/lifecycle scopes.
+The client rejects every non-loopback profile that omits that declaration,
+uses `local-admin`, or lacks either required scope before reading its named
+credential or creating an HTTP request. This admission applies while loading
+configured profiles, resolving flag/environment overrides, selecting a
+profile, and constructing a client from a literal profile. Omitted auth mode
+continues to mean `local-admin` only for a loopback URL. A valid remote profile
+uses HTTPS and sends only `Authorization: Bearer`; it never sends the
+local-admin header. These local guards do not validate OAuth tokens or grant
+authority: Core remains the server-side authority for both.
 Core remains authoritative for loopback authentication, OAuth validation,
 scope enforcement, permission profiles, confirmation, idempotency, execution,
 auditing, and recovery.

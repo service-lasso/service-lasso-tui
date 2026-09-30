@@ -254,9 +254,9 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
         candidate_identity = held_candidate.receipt
         environment = constrained_child_environment(api_url, startup_probe_nonce, term="xterm-256color")
         process = pty_process.spawn([executable], cwd=os.path.dirname(executable), env=environment, dimensions=(40, 120), backend=backend)
-        expected = "Runtime API unavailable"
+        expected = ("Service Lasso TUI", "Runtime API unavailable", "Press r to retry")
         stage = "startup"
-        if not wait(process, ("Service Lasso TUI", "q quit", expected), 20, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, startup_probe_nonce, candidate_identity):
+        if not wait(process, expected, 20, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, startup_probe_nonce, candidate_identity):
             return fail_probe(stage, outcome_receipt=receipt(stage, "timeout", "timed_out", candidate_identity=candidate_identity))
         if mode == "unavailable":
             stage = "exit"; process.write("q")

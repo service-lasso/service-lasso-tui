@@ -412,11 +412,13 @@ test("held receipt handles bind publication despite attempt-root substitution", 
 test("Windows CI executes the pinned Python ConPTY helper against a safe unavailable endpoint", async () => {
   const workflow = await readFile(path.join(repoRoot, ".github", "workflows", "ci.yml"), "utf8");
   assert.match(workflow, /actions\/setup-python@v6[\s\S]*?python-version: '3\.14'/u);
+  assert.match(workflow, /CI_SOURCE_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}[\s\S]*?actions\/checkout@v5[\s\S]*?ref: \$\{\{ env\.CI_SOURCE_SHA \}\}/u);
   assert.match(workflow, /GOFLAGS: ""[\s\S]*?GOWORK: "off"[\s\S]*?node scripts\/assert-go-source-provenance\.mjs/u);
   assert.match(workflow, /go build -mod=readonly -buildvcs=true -o \$binary/u);
   assert.match(workflow, /\$metadata = \(go version -m \$binary\) -join "`n"/u);
   assert.match(workflow, /python -m pip install --require-hashes --only-binary=:all: --no-deps -r scripts\/requirements-conpty\.txt/u);
   assert.match(workflow, /verify-release-asset-conpty\.py --executable \$binary --mode unavailable --api-url http:\/\/127\.0\.0\.1:1/u);
+  assert.match(workflow, /service-lasso-tui-windows-constructor-failure-\$\{\{ env\.CI_SOURCE_SHA \}\}/u);
 });
 
 test("candidate packaging re-verifies every extracted executable VCS identity", async () => {

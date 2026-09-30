@@ -121,12 +121,16 @@ class ReceiptTests(unittest.TestCase):
 
     def test_unavailable_conpty_child_uses_the_same_inert_token_without_host_inheritance(self):
         nonce = "0123456789abcdef" * 4
+        observed_waits = []
+        def wait(*args):
+            observed_waits.append(args[1])
+            return "rendered"
         with patch.dict(os.environ, {"SERVICE_LASSO_API_TOKEN": "host-credential", "UNRELATED_HOST_VALUE": "host-only"}):
             with contextlib.redirect_stdout(io.StringIO()) as output:
                 result = self.run_probe(
                     "candidate.exe", "unavailable", "http://127.0.0.1:1", None, None, None, None, None,
                     pty_process=FakePty,
-                    wait=lambda *_args: "Service Lasso TUI q quit Runtime API unavailable",
+                    wait=wait,
                     backend=None,
                     startup_probe_nonce=nonce,
                 )
@@ -136,6 +140,17 @@ class ReceiptTests(unittest.TestCase):
         self.assertNotEqual(environment["SERVICE_LASSO_API_TOKEN"], "host-credential")
         self.assertNotIn("UNRELATED_HOST_VALUE", environment)
         self.assertNotIn(probe_module.INERT_PROBE_TOKEN, output.getvalue())
+        self.assertEqual(observed_waits, [("Service Lasso TUI", "Runtime API unavailable", "Press r to retry")])
+
+    def test_unavailable_still_waiting_is_bounded_before_keyboard_input(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = self.run_probe(
+                "candidate.exe", "unavailable", "http://127.0.0.1:1", None, None, None, None, None,
+                pty_process=FakePty, wait=lambda *_args: None, backend=None,
+            )
+        self.assertEqual(result, 1)
+        self.assertEqual(json.loads(output.getvalue()), {"ok": False, "stage": "startup", "receipt": self.receipt("startup", "timeout", "timed_out")})
 
     def test_direct_constructor_rejects_wrong_exit_or_extra_terminal_text(self):
         nonce = "0123456789abcdef" * 4
@@ -157,7 +172,7 @@ class ReceiptTests(unittest.TestCase):
             result = probe_module.discriminate_constructor_then_probe(
                 "candidate.exe", "unavailable", "http://127.0.0.1:1", None, None, None, None, None,
                 pty_process=FakePty,
-                wait=lambda *_args: "Service Lasso TUI q quit Runtime API unavailable",
+                wait=lambda *_args: "Service Lasso TUI Runtime API unavailable Press r to retry",
                 backend=None,
                 source_commit=self.source_commit,
                 expected_binary_sha256=self.binary_sha256,
@@ -338,7 +353,7 @@ class ReceiptTests(unittest.TestCase):
             result = self.run_probe(
                 "candidate.exe", "unavailable", "http://127.0.0.1:1", None, None, None, None, None,
                 pty_process=FakePty,
-                wait=lambda *_args: "Service Lasso TUI q quit Runtime API unavailable",
+                wait=lambda *_args: "Service Lasso TUI Runtime API unavailable Press r to retry",
                 backend=None,
             )
         self.assertEqual(result, 0)

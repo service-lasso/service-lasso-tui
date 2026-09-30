@@ -160,6 +160,12 @@ and unavailable ConPTY children. It must not inherit a default token, read a
 real credential, place a token in an argument or receipt, or log it. This
 precondition exists because connection resolution requires a non-empty
 credential before URL construction; it does not relax that product policy.
+All pull-request source builds and Windows constructor artifacts bind to the
+pull request's exact head SHA, not the provider-created merge ref. Push builds
+bind to `github.sha`. The workflow verifies its checked-out commit equals that
+selected immutable source identity before building, uses it for VCS admission
+and provenance, and uses it in the retained failed-artifact name. Integration
+with `develop` remains a distinct branch-protection decision.
 When a hosted Windows unavailable-state ConPTY probe reports `api_client_error`
 for a deliberately invalid API URL, the harness must first run the newly built
 held executable directly with a fresh nonce and that invalid URL. It accepts

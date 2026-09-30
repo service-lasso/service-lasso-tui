@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  CI_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
 jobs:
   test:
     name: ${{ matrix.name }} test and build
@@ -25,6 +28,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.CI_SOURCE_SHA }}
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -37,6 +42,7 @@ jobs:
           node scripts/assert-go-source-provenance.mjs
           go test -mod=readonly ./...
           $sourceCommit = (git rev-parse HEAD).Trim()
+          if ($sourceCommit -ne $env:CI_SOURCE_SHA) { throw 'checked-out source identity does not match the selected immutable source SHA' }
           $binary = Join-Path $env:RUNNER_TEMP 'service-lasso-tui-check'
           go build -mod=readonly -buildvcs=true -o $binary ./cmd/service-lasso-tui
           $metadata = (go version -m $binary) -join "`n"
@@ -57,6 +63,7 @@ jobs:
           python -m pip install --require-hashes --only-binary=:all: --no-deps -r scripts/requirements-conpty.txt
           $sourceCommit = (git rev-parse HEAD).Trim()
           if ($sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'invalid checked-out source identity' }
+          if ($sourceCommit -ne $env:CI_SOURCE_SHA) { throw 'checked-out source identity does not match the selected immutable source SHA' }
           $binary = Join-Path $env:RUNNER_TEMP 'service-lasso-tui.exe'
           go build -mod=readonly -buildvcs=true -o $binary ./cmd/service-lasso-tui
           $metadata = (go version -m $binary) -join "`n"
@@ -74,7 +81,7 @@ jobs:
         if: runner.os == 'Windows' && failure()
         uses: actions/upload-artifact@v4
         with:
-          name: service-lasso-tui-windows-constructor-failure-${{ github.sha }}
+          name: service-lasso-tui-windows-constructor-failure-${{ env.CI_SOURCE_SHA }}
           path: |
             ${{ runner.temp }}/service-lasso-tui.exe
             ${{ runner.temp }}/service-lasso-tui-probe-provenance.json
@@ -89,6 +96,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.CI_SOURCE_SHA }}
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -100,6 +109,7 @@ jobs:
         run: |
           node scripts/assert-go-source-provenance.mjs
           source_commit="$(git rev-parse HEAD)"
+          test "$source_commit" = "$CI_SOURCE_SHA"
           for target in windows/amd64 linux/amd64 darwin/amd64 darwin/arm64; do
             os="${target%/*}"
             arch="${target#*/}"

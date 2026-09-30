@@ -27,6 +27,7 @@ test("fresh job binds checked source before consuming its artifact and runs the 
   await mkdir(path.join(artifact, "provider-bodies"), { recursive: true });
   await Promise.all([
     cp(path.join(scriptsDirectory, "verify-candidate-publication.mjs"), path.join(sourceScripts, "verify-candidate-publication.mjs")),
+    cp(path.join(scriptsDirectory, "verify-candidate-publication-cli.mjs"), path.join(sourceScripts, "verify-candidate-publication-cli.mjs")),
     cp(path.join(scriptsDirectory, "bind-candidate-publication-source.sh"), path.join(sourceScripts, "bind-candidate-publication-source.sh")),
   ]);
   await chmod(path.join(sourceScripts, "bind-candidate-publication-source.sh"), 0o755);
@@ -93,7 +94,8 @@ test("fresh job binds checked source before consuming its artifact and runs the 
   ]);
   const fixtureFetch = path.join(jobRoot, "fixture-fetch.mjs");
   await writeFile(fixtureFetch, `import { appendFile, readFile } from "node:fs/promises";\nimport path from "node:path";\nconst artifact = process.env.FRESH_JOB_ARTIFACT_DIR;\nglobalThis.fetch = async (url, options) => {\n  const value = String(url);\n  await appendFile(path.join(artifact, "fetch-calls.ndjson"), JSON.stringify({ url: value, options }) + "\\n");\n  const parsed = new URL(value);\n  const name = decodeURIComponent(parsed.pathname.split("/").at(-1));\n  if (parsed.hostname === "github.com") return { status: 302, headers: { get: key => key === "location" ? \`https://release-assets.githubusercontent.com/github-production-release-asset-2e65be/123/\${encodeURIComponent(name)}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ABCDEFGHIJKLMNOP%2F20261001%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261001T000000Z&X-Amz-Expires=300&X-Amz-SignedHeaders=host&X-Amz-Signature=\${"a".repeat(64)}\` : null } };\n  const body = await readFile(path.join(artifact, "provider-bodies", name));\n  return { status: 200, headers: { get: key => key === "content-length" ? String(body.length) : null }, body: (async function* () { yield body; })() };\n};\n`);
-  const verifier = path.join(sourceScripts, "verify-candidate-publication.mjs");
+  const verifier = path.join(sourceScripts, "verify-candidate-publication-cli.mjs");
+  const verifierLibrary = path.join(sourceScripts, "verify-candidate-publication.mjs");
   const sourceReceipt = path.join(jobRoot, "candidate-source-binding.json");
   const artifactName = `service-lasso-tui-candidate-${version}-${sha}`;
   await run(bash, [path.join(sourceScripts, "bind-candidate-publication-source.sh"), sha, "refs/heads/develop", sourceReceipt, artifactName], { cwd: source });
@@ -110,14 +112,16 @@ test("fresh job binds checked source before consuming its artifact and runs the 
   }, /candidate publication source must have no tracked or untracked changes/u);
   assert.equal(artifactRetrieved, false);
   await rm(path.join(source, "unexpected-untracked-input"));
-  const cleanVerifier = await readFile(verifier);
-  await writeFile(verifier, `${cleanVerifier}\ntracked dirty input\n`);
+  const cleanVerifierLibrary = await readFile(verifierLibrary);
+  await writeFile(verifierLibrary, `${cleanVerifierLibrary}\ntracked dirty input\n`);
   await assert.rejects(async () => {
     await run(bash, [path.join(sourceScripts, "bind-candidate-publication-source.sh"), sha, "refs/heads/develop", sourceReceipt, artifactName], { cwd: source });
     retrieveArtifact();
   }, /candidate publication source must have no tracked or untracked changes/u);
   assert.equal(artifactRetrieved, false);
-  await writeFile(verifier, cleanVerifier);
+  await writeFile(verifierLibrary, cleanVerifierLibrary);
+  const importResult = await run(process.execPath, ["--input-type=module", "--eval", "await import(process.argv[1]);", pathToFileURL(verifierLibrary).href], { cwd: source });
+  assert.equal(importResult.stdout, "");
   const retrievedArtifact = retrieveArtifact();
   const preflightResult = await run(process.execPath, [verifier, "--mode", "preflight", "--source-ref", "refs/heads/develop", "--source-commit", sha, "--version", version, "--tag", tag, "--immutable-releases", path.join(retrievedArtifact, "immutable-releases.json"), "--environment", path.join(retrievedArtifact, "development-candidate.json"), "--branch-protection", path.join(retrievedArtifact, "develop-protection.json")], { cwd: source });
   assert.equal(JSON.parse(preflightResult.stdout).environment, "development-candidate");
@@ -138,5 +142,5 @@ test("fresh job binds checked source before consuming its artifact and runs the 
   await assertLocalFailureBeforeProviderRead(() => writeFile(path.join(artifact, "candidate-manifest.json"), Buffer.from("{}", "utf8")));
   await writeFile(path.join(artifact, "candidate-manifest.json"), bodies["candidate-manifest.json"]);
   await assertLocalFailureBeforeProviderRead(() => writeFile(path.join(artifact, "candidate-local-assets.json"), JSON.stringify({ ...localAssets, [names[1]]: { ...localAssets[names[1]], sha256: "f".repeat(64) } })));
-  assert.notEqual(path.resolve(verifier), path.resolve(scriptsDirectory, "verify-candidate-publication.mjs"));
+  assert.notEqual(path.resolve(verifier), path.resolve(path.join(scriptsDirectory, "verify-candidate-publication-cli.mjs")));
 });

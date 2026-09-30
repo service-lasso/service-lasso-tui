@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { lstat, mkdir, open, readFile, readdir, rm } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 const SHA256 = /^[a-f0-9]{64}$/u;
 const SHA1 = /^[a-f0-9]{40}$/u;
@@ -354,4 +353,3 @@ export async function main(argv) {
   const result = await verifyPublicAssetBytes({ release: await readJSON(values.release), manifest, localAssets, assetDirectory: values["asset-directory"], downloadDir: values["download-dir"] });
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
-if (process.argv[1] === fileURLToPath(import.meta.url)) main(process.argv.slice(2)).catch(error => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });

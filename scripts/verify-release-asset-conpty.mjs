@@ -48,10 +48,53 @@ export function assertCandidateManifest(manifest) {
   ) throw new Error("candidate manifest does not bind the expected Windows release asset");
 }
 
-function parseArgs(argv) {
-  const marker = argv.indexOf("--core-root");
-  if (marker < 0 || !argv[marker + 1] || argv.length !== 2) throw new Error("usage");
-  return { coreRoot: path.resolve(argv[marker + 1]) };
+export function parseArgs(argv) {
+  let coreRoot;
+  let coreKind = "source-built";
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] === "--core-root" && argv[index + 1]) {
+      coreRoot = path.resolve(argv[index + 1]);
+      index += 1;
+    } else if (argv[index] === "--core-kind" && ["source-built", "packaged"].includes(argv[index + 1])) {
+      coreKind = argv[index + 1];
+      index += 1;
+    } else {
+      throw new Error("usage");
+    }
+  }
+  if (!coreRoot) throw new Error("usage");
+  return { coreRoot, coreKind };
+}
+
+async function assertRuntimeDist(coreRoot) {
+  const entries = await Promise.all([
+    stat(path.join(coreRoot, "package.json")),
+    stat(path.join(coreRoot, "packages", "core", "index.js")),
+    stat(path.join(coreRoot, "dist", "server", "index.js")),
+  ]);
+  if (entries.some(entry => !entry.isFile())) throw new Error("Core runtime dist is not a regular-file package runtime");
+}
+
+export async function prepareSourceBuiltCore({ coreRoot, tempRoot, command = run }) {
+  const { stdout: suppliedHead } = await command("git", ["-C", coreRoot, "rev-parse", "HEAD"]);
+  if (suppliedHead.trim() !== coreDevelop) throw new Error("Core source is not the pinned develop revision");
+
+  const isolatedRoot = path.join(tempRoot, "core-source");
+  // A normal clone (rather than a worktree) keeps npm's dependency and build
+  // writes out of the caller-provided checkout and its Git common directory.
+  await command("git", ["clone", "--no-local", "--no-checkout", coreRoot, isolatedRoot]);
+  await command("git", ["-C", isolatedRoot, "checkout", "--detach", coreDevelop]);
+  const { stdout: isolatedHead } = await command("git", ["-C", isolatedRoot, "rev-parse", "HEAD"]);
+  if (isolatedHead.trim() !== coreDevelop) throw new Error("isolated Core checkout is not the pinned develop revision");
+  await command("npm", ["ci"], { cwd: isolatedRoot, timeout: 300_000 });
+  await command("npm", ["run", "build"], { cwd: isolatedRoot, timeout: 300_000 });
+  await assertRuntimeDist(isolatedRoot);
+  return { coreRoot: isolatedRoot, evidence: "source-built" };
+}
+
+export async function verifyPackagedCore({ coreRoot }) {
+  await assertRuntimeDist(coreRoot);
+  return { coreRoot, evidence: "packaged" };
 }
 
 async function download(url, destination) {
@@ -153,15 +196,15 @@ async function main() {
     console.log(JSON.stringify({ ok: true, classification: "not_applicable", platform: process.platform }));
     return;
   }
-  const { coreRoot } = parseArgs(process.argv.slice(2));
-  stage = "core-head";
-  await stat(path.join(coreRoot, "package.json"));
-  const { stdout: coreHead } = await run("git", ["-C", coreRoot, "rev-parse", "HEAD"]);
-  if (coreHead.trim() !== coreDevelop) throw new Error("Core source is not the pinned develop revision");
+  const { coreRoot: suppliedCoreRoot, coreKind } = parseArgs(process.argv.slice(2));
 
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "service-lasso-tui-release-asset-"));
   let apiServer; let unavailable; let probe; let primaryError;
   try {
+    stage = "core-runtime-preflight";
+    const coreRuntime = coreKind === "source-built"
+      ? await prepareSourceBuiltCore({ coreRoot: suppliedCoreRoot, tempRoot })
+      : await verifyPackagedCore({ coreRoot: suppliedCoreRoot });
     stage = "download";
     const base = `https://github.com/service-lasso/service-lasso-tui/releases/download/candidate-${candidate.version}`;
     const manifestPath = path.join(tempRoot, "candidate-manifest.json");
@@ -189,7 +232,7 @@ async function main() {
     const loopbackPort = unavailable.port;
     await unavailable.close(); unavailable = undefined;
     stage = "core-start";
-    const core = await import(pathToFileURL(path.join(coreRoot, "packages", "core", "index.js")).href);
+    const core = await import(pathToFileURL(path.join(coreRuntime.coreRoot, "packages", "core", "index.js")).href);
     const servicesRoot = path.join(tempRoot, "services"); const workspaceRoot = path.join(tempRoot, "workspace");
     await Promise.all([mkdir(servicesRoot), mkdir(workspaceRoot)]);
     apiServer = await core.startApiServer({ host: "127.0.0.1", port: loopbackPort, servicesRoot, workspaceRoot, noAutostart: true });
@@ -198,7 +241,7 @@ async function main() {
     await writeFile(reconnectPath, "ready\n", { flag: "wx" });
     stage = "reconnect";
     const connected = await probe.completed;
-    console.log(JSON.stringify({ ok: true, classification: "direct-release-asset-conpty-read", candidate: { version: candidate.version, sourceCommit: candidate.sourceCommit, manifestSha256: candidate.manifestSha256, archiveSha256: candidate.archiveSha256, executable: candidate.executable }, coreDevelop, platform: "win32-amd64", unavailable: "rendered", connectedDashboard: "rendered", reconnect: connected.reconnect, navigation: connected.navigation, terminal: { narrowResize: connected.narrowResize }, exit: connected.exit }));
+    console.log(JSON.stringify({ ok: true, classification: coreRuntime.evidence === "packaged" ? "direct-release-asset-packaged-core-conpty-read" : "direct-release-asset-source-built-core-conpty-read", candidate: { version: candidate.version, sourceCommit: candidate.sourceCommit, manifestSha256: candidate.manifestSha256, archiveSha256: candidate.archiveSha256, executable: candidate.executable }, core: { evidence: coreRuntime.evidence, sourceCommit: coreRuntime.evidence === "source-built" ? coreDevelop : undefined }, platform: "win32-amd64", unavailable: "rendered", connectedDashboard: "rendered", reconnect: connected.reconnect, navigation: connected.navigation, terminal: { narrowResize: connected.narrowResize }, exit: connected.exit }));
   } catch (error) {
     primaryError = error;
     throw error;

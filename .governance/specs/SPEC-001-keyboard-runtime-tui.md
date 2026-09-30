@@ -83,3 +83,11 @@ as surrogate evidence until native hardware acceptance is available.
 Core #1461 may consume a candidate only after independent release review pins
 the candidate version, full source SHA, manifest, assets, and digests; a
 mutable release selector or incomplete asset set is rejected.
+
+`TUI-DISTRIBUTION-002`: Windows candidate-asset ConPTY acceptance must prepare
+an isolated Core source checkout at the pinned commit with `npm ci` and
+`npm run build` before starting the source runtime, and it must fail closed if
+the required runtime dist is absent. A supplied packaged Core runtime must be
+selected explicitly and must already contain the verified package entry and
+runtime dist. Evidence records must distinguish `source-built` from
+`packaged`; source construction never establishes packaged-Core qualification.

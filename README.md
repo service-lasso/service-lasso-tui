@@ -62,11 +62,20 @@ unavailable launch, then proves the connected dashboard, `d`, `?`, `q`, and a
 50-column ConPTY resize. It does not provide a token or issue lifecycle,
 authentication, staging, release, or deployment mutations.
 
-From an exact, built Core checkout at `10e4d72b75c66977ad1dd629991a27443ffc0fd3`:
+From a Core checkout at `10e4d72b75c66977ad1dd629991a27443ffc0fd3`:
 
 ```powershell
 node scripts/verify-release-asset-conpty.mjs --core-root <path-to-pinned-core>
 ```
+
+The default preflight clones the supplied exact Core source into a temporary
+isolated checkout, runs `npm ci` and `npm run build` there, and starts that
+source-built runtime only after its required `dist/server/index.js` exists. Its
+record is labelled `direct-release-asset-source-built-core-conpty-read`; it is
+not a packaged-Core claim. A separately supplied package runtime can be probed
+only with `--core-kind packaged`, and it must already contain its package entry
+and `dist/server/index.js`; that path is labelled separately and never falls
+back to source construction.
 
 The output is a closed-schema direct release-asset read record. Linux and
 macOS assets, authenticated reads, lifecycle operations, and independent

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertCandidateManifest } from "./verify-release-asset-conpty.mjs";
+import { assertCandidateManifest, parseArgs, prepareSourceBuiltCore, verifyPackagedCore } from "./verify-release-asset-conpty.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -31,6 +32,64 @@ test("rejects an incomplete candidate asset inventory", () => {
   const changed = structuredClone(manifest);
   changed.assets.pop();
   assert.throws(() => assertCandidateManifest(changed), /candidate manifest/);
+});
+
+test("defaults to isolated source-built Core and accepts packaged Core only when explicitly selected", () => {
+  assert.deepEqual(parseArgs(["--core-root", "core"]), { coreRoot: path.resolve("core"), coreKind: "source-built" });
+  assert.deepEqual(parseArgs(["--core-kind", "packaged", "--core-root", "core"]), { coreRoot: path.resolve("core"), coreKind: "packaged" });
+  assert.throws(() => parseArgs(["--core-kind", "source"]), /usage/);
+});
+
+test("source Core preparation clones, pins, installs, and builds an isolated runtime before use", async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-core-preflight-${process.pid}-${Date.now()}`);
+  await mkdir(tempRoot, { recursive: true });
+  const commands = [];
+  const isolatedRoot = path.join(tempRoot, "core-source");
+  const command = async (program, args, options = {}) => {
+    commands.push({ program, args, options });
+    if (program === "git" && args.includes("rev-parse")) return { stdout: "10e4d72b75c66977ad1dd629991a27443ffc0fd3\n" };
+    if (program === "npm" && args.join(" ") === "run build") {
+      await Promise.all([
+        mkdir(path.join(isolatedRoot, "packages", "core"), { recursive: true }),
+        mkdir(path.join(isolatedRoot, "dist", "server"), { recursive: true }),
+      ]);
+      await Promise.all([
+        writeFile(path.join(isolatedRoot, "package.json"), "{}"),
+        writeFile(path.join(isolatedRoot, "packages", "core", "index.js"), ""),
+        writeFile(path.join(isolatedRoot, "dist", "server", "index.js"), ""),
+      ]);
+    }
+    return { stdout: "" };
+  };
+  try {
+    const prepared = await prepareSourceBuiltCore({ coreRoot: "supplied-core", tempRoot, command });
+    assert.deepEqual(prepared, { coreRoot: isolatedRoot, evidence: "source-built" });
+    assert.deepEqual(commands.map(({ program, args }) => [program, args]), [
+      ["git", ["-C", "supplied-core", "rev-parse", "HEAD"]],
+      ["git", ["clone", "--no-local", "--no-checkout", "supplied-core", isolatedRoot]],
+      ["git", ["-C", isolatedRoot, "checkout", "--detach", "10e4d72b75c66977ad1dd629991a27443ffc0fd3"]],
+      ["git", ["-C", isolatedRoot, "rev-parse", "HEAD"]],
+      ["npm", ["ci"]],
+      ["npm", ["run", "build"]],
+    ]);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("packaged Core mode rejects a missing runtime dist instead of falling back to source", async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-packaged-core-${process.pid}-${Date.now()}`);
+  await mkdir(tempRoot, { recursive: true });
+  try {
+    await mkdir(path.join(tempRoot, "packages", "core"), { recursive: true });
+    await Promise.all([
+      writeFile(path.join(tempRoot, "package.json"), "{}"),
+      writeFile(path.join(tempRoot, "packages", "core", "index.js"), ""),
+    ]);
+    await assert.rejects(() => verifyPackagedCore({ coreRoot: tempRoot }), /ENOENT/);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("Windows CI executes the pinned Python ConPTY helper against a safe unavailable endpoint", async () => {

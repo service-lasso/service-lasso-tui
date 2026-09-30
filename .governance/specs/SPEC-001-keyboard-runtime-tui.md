@@ -96,3 +96,8 @@ category (`source_identity_*`, `source_clone_failed`, `isolated_checkout_failed`
 `isolated_identity_*`, `dependency_install_failed`, `source_build_failed`,
 `runtime_dist_unavailable`, or `packaged_runtime_invalid`). It never includes
 command output, paths, environment values, or credentials in that record.
+When the reconnect helper has started, it atomically records only `stage`,
+`outcome`, and `closedReason` in its attempt-owned temporary root. Node replaces
+that record with its own bounded helper-exit state before cleanup. Receipt path
+ownership and every enum are validated; a receipt sink failure preserves the
+original probe failure and the existing retained-root cleanup protections.

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -24,6 +24,10 @@ const candidate = Object.freeze({
   ]),
 });
 const coreDevelop = "10e4d72b75c66977ad1dd629991a27443ffc0fd3";
+const receiptName = "reconnect-outcome.json";
+const receiptStages = new Set(["launch", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit", "helper-exit"]);
+const receiptOutcomes = new Set(["normal", "error", "timeout"]);
+const receiptReasons = new Set(["completed", "stage_failed", "timed_out", "shutdown_requested", "helper_exit_nonzero", "helper_exit_signal"]);
 let stage = "setup";
 let failureReason;
 
@@ -165,7 +169,42 @@ function parseProbe(stdout, mode) {
   throw new Error("release-asset ConPTY probe did not complete its bounded assertions");
 }
 
-function startReconnectProbe(executable, apiURL, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath, shutdownToken) {
+export async function assertReceiptPath(tempRoot, receiptPath) {
+  const root = path.resolve(tempRoot);
+  const expected = path.join(root, receiptName);
+  if (path.resolve(receiptPath) !== expected) throw new Error("invalid reconnect receipt path");
+  const rootEntry = await lstat(root);
+  if (!rootEntry.isDirectory() || rootEntry.isSymbolicLink()) throw new Error("invalid reconnect receipt owner");
+  return expected;
+}
+
+export function validateReceipt(receipt) {
+  if (!receipt || Object.keys(receipt).length !== 3 || !receiptStages.has(receipt.stage) || !receiptOutcomes.has(receipt.outcome) || !receiptReasons.has(receipt.closedReason)) {
+    throw new Error("invalid reconnect receipt");
+  }
+  return receipt;
+}
+
+export async function persistHelperExitReceipt(tempRoot, receiptPath, code, signal) {
+  const safePath = await assertReceiptPath(tempRoot, receiptPath);
+  let receipt;
+  try {
+    receipt = validateReceipt(JSON.parse(await readFile(safePath, "utf8")));
+  } catch {
+    receipt = { stage: "helper-exit", outcome: signal ? "error" : "timeout", closedReason: signal ? "helper_exit_signal" : "helper_exit_nonzero" };
+  }
+  const finalReceipt = validateReceipt({
+    stage: "helper-exit",
+    outcome: receipt.outcome,
+    closedReason: code === 0 && !signal && receipt.outcome === "normal" ? "completed" : (signal ? "helper_exit_signal" : "helper_exit_nonzero"),
+  });
+  const temporary = `${safePath}.${randomUUID()}.tmp`;
+  await writeFile(temporary, JSON.stringify(finalReceipt), { flag: "wx" });
+  await rename(temporary, safePath);
+  return finalReceipt;
+}
+
+function startReconnectProbe(executable, apiURL, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath, shutdownToken, tempRoot, receiptPath) {
   const child = spawn("python", [
     helper,
     "--executable", executable,
@@ -176,6 +215,8 @@ function startReconnectProbe(executable, apiURL, readyPath, reconnectPath, shutd
     "--shutdown-request-file", shutdownRequestPath,
     "--shutdown-acknowledgement-file", shutdownAcknowledgementPath,
     "--shutdown-token", shutdownToken,
+    "--attempt-root", tempRoot,
+    "--outcome-receipt-file", receiptPath,
   ], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   child.stdout.setEncoding("utf8");
@@ -183,8 +224,11 @@ function startReconnectProbe(executable, apiURL, readyPath, reconnectPath, shutd
   const exited = new Promise(resolve => child.once("close", resolve));
   const completed = new Promise((resolve, reject) => {
     child.once("error", reject);
-    child.once("close", code => {
+    child.once("close", async (code, signal) => {
       try {
+        // This is intentionally best effort: a receipt sink error cannot hide
+        // the helper's original exit failure or weaken retained-root cleanup.
+        await persistHelperExitReceipt(tempRoot, receiptPath, code, signal).catch(() => undefined);
         if (code !== 0) throw new Error("release-asset ConPTY reconnect probe failed");
         resolve(parseProbe(stdout, "reconnect"));
       } catch (error) {
@@ -314,7 +358,9 @@ async function main() {
     const reconnectPath = path.join(tempRoot, "probe-reconnect");
     const shutdownRequestPath = path.join(tempRoot, "probe-shutdown-request");
     const shutdownAcknowledgementPath = path.join(tempRoot, "probe-shutdown-acknowledgement");
-    probe = startReconnectProbe(executable, unavailable.url, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath, randomUUID());
+    const receiptPath = path.join(tempRoot, receiptName);
+    await assertReceiptPath(tempRoot, receiptPath);
+    probe = startReconnectProbe(executable, unavailable.url, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath, randomUUID(), tempRoot, receiptPath);
     await waitForFile(readyPath);
     const loopbackPort = unavailable.port;
     await unavailable.close(); unavailable = undefined;

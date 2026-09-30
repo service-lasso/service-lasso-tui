@@ -5,7 +5,7 @@ import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertCandidateManifest, cleanupOutcome, cleanupResources, npmCommand, parseArgs, prepareCoreRuntime, prepareSourceBuiltCore, stopProbe } from "./verify-release-asset-conpty.mjs";
+import { assertCandidateManifest, assertReceiptPath, cleanupOutcome, cleanupResources, npmCommand, parseArgs, persistHelperExitReceipt, prepareCoreRuntime, prepareSourceBuiltCore, stopProbe, validateReceipt } from "./verify-release-asset-conpty.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -230,6 +230,37 @@ test("cleanup unconfirmed retains the extracted root and preserves the primary f
     const primaryFailure = new Error("core-start");
     assert.equal(cleanupOutcome(primaryFailure, false), primaryFailure);
     assert.match(cleanupOutcome(undefined, false)?.message ?? "", /^cleanup_unconfirmed$/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("reconnect receipts are closed schema and reject terminal sentinel text", () => {
+  assert.deepEqual(validateReceipt({ stage: "reconnect", outcome: "timeout", closedReason: "timed_out" }), { stage: "reconnect", outcome: "timeout", closedReason: "timed_out" });
+  assert.throws(() => validateReceipt({ stage: "reconnect", outcome: "timeout", closedReason: "timed_out", terminal: "SENTINEL_SECRET" }), /invalid reconnect receipt/u);
+  assert.throws(() => validateReceipt({ stage: "reconnect", outcome: "SENTINEL_SECRET", closedReason: "timed_out" }), /invalid reconnect receipt/u);
+});
+
+test("interrupted parent retains a bounded helper outcome receipt", async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-reconnect-receipt-${process.pid}-${Date.now()}`);
+  const receiptPath = path.join(tempRoot, "reconnect-outcome.json");
+  await mkdir(tempRoot, { recursive: true });
+  try {
+    await writeFile(receiptPath, JSON.stringify({ stage: "wait-reconnect", outcome: "timeout", closedReason: "timed_out" }), { flag: "wx" });
+    assert.deepEqual(await persistHelperExitReceipt(tempRoot, receiptPath, 1, null), { stage: "helper-exit", outcome: "timeout", closedReason: "helper_exit_nonzero" });
+    assert.deepEqual(JSON.parse(await readFile(receiptPath, "utf8")), { stage: "helper-exit", outcome: "timeout", closedReason: "helper_exit_nonzero" });
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("helper receipt failure preserves the primary cleanup outcome and refuses an outside path", async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-reconnect-receipt-path-${process.pid}-${Date.now()}`);
+  await mkdir(tempRoot, { recursive: true });
+  try {
+    await assert.rejects(() => assertReceiptPath(tempRoot, path.join(tempRoot, "outside.json")), /invalid reconnect receipt path/u);
+    const primaryFailure = new Error("reconnect-failed");
+    assert.equal(cleanupOutcome(primaryFailure, false), primaryFailure);
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

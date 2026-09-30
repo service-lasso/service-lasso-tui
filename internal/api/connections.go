@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -12,8 +13,10 @@ import (
 // environment variable which holds the Core local-admin token; the token is
 // never written to the connection file or accepted as a command-line value.
 type ConnectionProfile struct {
-	URL      string `json:"url"`
-	TokenEnv string `json:"tokenEnv"`
+	URL      string   `json:"url"`
+	TokenEnv string   `json:"tokenEnv"`
+	AuthMode AuthMode `json:"authMode,omitempty"`
+	Scopes   []string `json:"scopes,omitempty"`
 }
 
 type connectionFile struct {
@@ -74,7 +77,7 @@ func ResolveConnections(options ConnectionOptions) (*ConnectionManager, *Client,
 	}
 	apiURL := firstNonEmpty(options.APIURL, env("SERVICE_LASSO_API_URL"), profile.URL, "http://127.0.0.1:17883")
 	tokenEnv := firstNonEmpty(options.TokenEnv, env("SERVICE_LASSO_API_TOKEN_ENV"), profile.TokenEnv, "SERVICE_LASSO_API_TOKEN")
-	profiles[selected] = ConnectionProfile{URL: apiURL, TokenEnv: tokenEnv}
+	profiles[selected] = ConnectionProfile{URL: apiURL, TokenEnv: tokenEnv, AuthMode: profile.AuthMode, Scopes: profile.Scopes}
 	manager := &ConnectionManager{profiles: profiles, current: selected, env: env}
 	client, err := manager.Client(selected)
 	if err != nil {
@@ -115,7 +118,33 @@ func (m *ConnectionManager) Client(name string) (*Client, error) {
 	if token == "" {
 		return nil, fmt.Errorf("connection profile %q credential is unavailable", name)
 	}
-	return NewClient(profile.URL, nil, token)
+	mode := profile.AuthMode
+	if mode == "" {
+		mode = AuthModeLocalAdmin
+	}
+	if mode == AuthModeOAuthBearer && !isLoopbackURL(profile.URL) && !hasRequiredScopes(profile.Scopes) {
+		return nil, fmt.Errorf("oauth-bearer profile %q lacks required lifecycle scopes", name)
+	}
+	return NewClientWithAuth(profile.URL, nil, token, mode)
+}
+
+func isLoopbackURL(raw string) bool {
+	client, err := NewClient(raw, nil, "")
+	if err != nil {
+		return false
+	}
+	parsed, _ := url.Parse(client.baseURL)
+	return isLoopbackHost(parsed.Hostname())
+}
+
+func hasRequiredScopes(scopes []string) bool {
+	needed := map[string]bool{"service-lasso:read": false, "service-lasso:lifecycle:write": false}
+	for _, scope := range scopes {
+		if _, ok := needed[scope]; ok {
+			needed[scope] = true
+		}
+	}
+	return needed["service-lasso:read"] && needed["service-lasso:lifecycle:write"]
 }
 
 func (m *ConnectionManager) Switch(name string) (*Client, error) {

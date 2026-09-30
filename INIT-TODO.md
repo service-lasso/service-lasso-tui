@@ -4,8 +4,15 @@
   development baseline.
 - [x] Record project intent, active specification, and issue-to-spec mapping.
 - [x] Install strict pull-request and branch-protection guidance.
-- [ ] Core: publish a stable asynchronous operation status and cancellation
-  contract before the TUI can meet the operation-progress acceptance criteria.
+- [x] Issue #20 verified Core `develop` `55848ec178b5fb05826192c8a2db576eaa8848dc`
+  publishes availability, preview/confirmation, durable submission/readback,
+  and advertised cancellation for lifecycle operations. Update/update
+  cancellation remains Core #1538; removal and source-safe admission remain
+  separate dependencies.
+- [ ] Retain exact-source Core lifecycle acceptance for Issue #20 (authenticated
+  allow/deny, preview, one submission, readback/reconnect, cancellation, and
+  unrelated-service preservation) separately from fixtures, source CI, package
+  qualification, release, and GA.
 - [x] Issue #7 verified Core `develop` GET routes for capability/setup metadata,
   authenticated runtime identity, inbox list, and service health history. The
   TUI consumes only bounded display fields and no inbox detail or mutation.

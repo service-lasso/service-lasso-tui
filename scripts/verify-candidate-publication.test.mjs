@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, rename, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rename, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -125,6 +125,14 @@ test("rejects an identity swap between lstat and open", async () => {
     await writeFile(file, localBodies[name]); await writeFile(`${file}.replacement`, localBodies[name]);
     await assert.rejects(() => readBoundedRegularLocalAsset(directory, name, 1024, async () => { await rename(`${file}.replacement`, file); }), /changed while opening/u);
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("rejects an external same-size file swapped in through a symlink", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "candidate-symlink-swap-")); const external = await mkdtemp(path.join(os.tmpdir(), "candidate-external-file-")); const name = names[0]; const file = path.join(directory, name);
+  try {
+    await writeFile(file, localBodies[name]); const externalFile = path.join(external, "same-size.bin"); await writeFile(externalFile, localBodies[name]);
+    await assert.rejects(() => readBoundedRegularLocalAsset(directory, name, 1024, async () => { await rename(file, `${file}.original`); await symlink(externalFile, file, "file"); }), /changed while opening/u);
+  } finally { await rm(directory, { recursive: true, force: true }); await rm(external, { recursive: true, force: true }); }
 });
 
 test("uploads the original held bytes if every source path is coherently replaced after verification", async () => {

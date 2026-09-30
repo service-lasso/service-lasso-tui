@@ -110,17 +110,25 @@ records only one of `terminal_exited_zero`, `terminal_exit_code_1`,
 `terminal_exit_code_2`, `terminal_exited_nonzero`, `terminal_signaled`, or
 `terminal_unknown`. The two numeric categories mean only that the owned PTY
 reported that exit code; neither implies that the TUI reached `main` or
-`Program.Run`. The helper
-accepts a non-`unclassified` startup boundary only from the exact framed marker
-emitted by the checked TUI when its explicit probe nonce matches the fresh
-attempt nonce. The marker is processed in memory and its nonce, terminal text,
-paths, errors, and environment values are never emitted or stored. The
-`api_*` values are emitted only after the application receives a typed
+`Program.Run`. The helper accepts a non-`unclassified` startup boundary only
+from exactly one complete framed marker emitted by the checked TUI. Its nonce
+must match the fresh attempt nonce, and its source commit and binary SHA-256
+must match the source and held executable identities observed by the helper
+before spawn. Malformed, partial, duplicate, foreign, or otherwise extra frames
+produce `unclassified`. The helper opens the executable through an owned
+Windows handle that permits read sharing only, hashes those held bytes, and
+keeps the handle open through child spawn and probe completion so replacement
+or deletion cannot change the spawned candidate. The marker is processed in
+memory and its nonce, terminal text, paths, errors, and environment values are
+never emitted or stored. Closed receipts may record only the source commit and
+binary SHA-256 as `candidateIdentity`; they never record a path, nonce,
+terminal text, URL, token, or error data. The TUI obtains the source commit
+from its own clean Go build information (`vcs.revision` and
+`vcs.modified=false`) and the binary SHA-256 by reading its own executable; it
+does not accept a caller-supplied source or binary identity for this marker.
+The `api_*` values are emitted only after the application receives a typed
 configuration error from its API client; `api_client_error` is the fallback for
-an unclassified API-client return. Where a platform boundary erases the typed
-error identity, the application may map only one of its own exact fixed
-configuration messages to the same closed category; it never include that
-message in the marker or receipt. The `program_run_*` values are emitted only
+an unclassified API-client return. The `program_run_*` values are emitted only
 after the application receives a non-nil result from Bubble Tea `Program.Run`;
 typed Bubble Tea sentinel errors select the killed, panic, or interrupted
 values, and any other returned error selects `program_run_error`. On Windows,

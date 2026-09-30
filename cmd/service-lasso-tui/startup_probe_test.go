@@ -2,8 +2,11 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"errors"
-	"strings"
+	"fmt"
+	"os"
+	"runtime/debug"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -13,15 +16,46 @@ import (
 const probeNonce = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 func TestStartupProbeMarkerRequiresAnExactNonceAndKnownBoundary(t *testing.T) {
-	marker, ok := startupProbeMarker(probeNonce, startupBoundaryProgramRunError)
-	if !ok || marker != "\x1eSERVICE_LASSO_TUI_STARTUP_BOUNDARY:"+probeNonce+":program_run_error\x1f" {
+	source := "0123456789abcdef0123456789abcdef01234567"
+	marker, ok := startupProbeMarkerWithIdentity(probeNonce, startupBoundaryProgramRunError, source, probeNonce)
+	if !ok || marker != "\x1eSERVICE_LASSO_TUI_STARTUP_BOUNDARY:"+probeNonce+":program_run_error:"+source+":"+probeNonce+"\x1f" {
 		t.Fatalf("unexpected marker: %q, %t", marker, ok)
 	}
-	if marker, ok := startupProbeMarker("not-a-nonce", startupBoundaryProgramRunError); ok || marker != "" {
+	if marker, ok := startupProbeMarkerWithIdentity("not-a-nonce", startupBoundaryProgramRunError, source, probeNonce); ok || marker != "" {
 		t.Fatalf("invalid nonce produced a marker: %q", marker)
 	}
-	if marker, ok := startupProbeMarker(probeNonce, startupBoundaryUnclassified); ok || marker != "" {
+	if marker, ok := startupProbeMarkerWithIdentity(probeNonce, startupBoundaryUnclassified, source, probeNonce); ok || marker != "" {
 		t.Fatalf("unknown boundary produced a marker: %q", marker)
+	}
+}
+
+func TestStartupProbeSourceCommitRequiresTheExpectedModuleAndCleanVCSBuildInfo(t *testing.T) {
+	info := &debug.BuildInfo{Main: debug.Module{Path: "github.com/service-lasso/service-lasso-tui"}, Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "0123456789abcdef0123456789abcdef01234567"}, {Key: "vcs.modified", Value: "false"}}}
+	if commit, ok := startupProbeSourceCommit(info); !ok || commit != "0123456789abcdef0123456789abcdef01234567" {
+		t.Fatalf("source commit = %q, %t", commit, ok)
+	}
+	info.Settings[1].Value = "true"
+	if _, ok := startupProbeSourceCommit(info); ok {
+		t.Fatal("dirty build info was admitted")
+	}
+}
+
+func TestStartupProbeSelfSHA256MatchesTheOpenedExecutable(t *testing.T) {
+	got, ok := startupProbeSelfSHA256()
+	if !ok {
+		t.Fatal("self hash unavailable")
+	}
+	path, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("%x", sha256.Sum256(data))
+	if got != want {
+		t.Fatalf("self hash = %s, want %s", got, want)
 	}
 }
 
@@ -61,7 +95,7 @@ func TestStartupProbeClassifiesOnlyTypedAPIConfigurationErrors(t *testing.T) {
 	if got := startupBoundaryForAPIError(errors.New("SYNTHETIC_SECRET")); got != startupBoundaryAPIClientError {
 		t.Fatalf("generic API boundary = %q", got)
 	}
-	if got := startupBoundaryForAPIError(errors.New("invalid Service Lasso API URL")); got != startupBoundaryAPIURLInvalid {
+	if got := startupBoundaryForAPIError(errors.New("invalid Service Lasso API URL")); got != startupBoundaryAPIClientError {
 		t.Fatalf("fixed-message API boundary = %q", got)
 	}
 }
@@ -70,8 +104,8 @@ func TestStartupProbeDoesNotEmitRawErrorWhenExplicitlyEnabled(t *testing.T) {
 	t.Setenv(startupProbeNonceEnvironment, probeNonce)
 	var output bytes.Buffer
 	reportStartupFailure(&output, startupBoundaryProgramRunError, errors.New("SYNTHETIC_SECRET"))
-	if strings.Contains(output.String(), "SYNTHETIC_SECRET") || !strings.Contains(output.String(), probeNonce) {
-		t.Fatalf("unsafe probe output: %q", output.String())
+	if output.String() != "SYNTHETIC_SECRET\n" {
+		t.Fatalf("unbound probe output = %q", output.String())
 	}
 }
 

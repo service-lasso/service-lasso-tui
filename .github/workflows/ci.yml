@@ -40,8 +40,12 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --require-hashes --only-binary=:all: --no-deps -r scripts/requirements-conpty.txt
-          go build -o service-lasso-tui.exe ./cmd/service-lasso-tui
-          python scripts/verify-release-asset-conpty.py --executable service-lasso-tui.exe --mode unavailable --api-url http://127.0.0.1:1
+          $sourceCommit = (git rev-parse HEAD).Trim()
+          if ($sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'invalid checked-out source identity' }
+          if ((go list -m) -ne 'github.com/service-lasso/service-lasso-tui') { throw 'unexpected Go module identity' }
+          go build -buildvcs=true -o service-lasso-tui.exe ./cmd/service-lasso-tui
+          $binarySHA256 = (Get-FileHash -Algorithm SHA256 -LiteralPath service-lasso-tui.exe).Hash.ToLowerInvariant()
+          python scripts/verify-release-asset-conpty.py --executable service-lasso-tui.exe --mode unavailable --api-url http://127.0.0.1:1 --source-commit $sourceCommit --expected-executable-sha256 $binarySHA256
       - name: Test direct-probe evidence guards
         run: |
           python scripts/verify-release-asset-conpty-python.test.py

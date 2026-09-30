@@ -1,11 +1,13 @@
 package main
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"regexp"
+	"runtime/debug"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/service-lasso/service-lasso-tui/internal/api"
@@ -32,23 +34,7 @@ const (
 func startupBoundaryForAPIError(err error) startupBoundary {
 	var configurationError *api.ConfigurationError
 	if !errors.As(err, &configurationError) {
-		// A Windows terminal boundary can preserve a fixed error string while
-		// losing its dynamic type. These are the exact local configuration
-		// messages; their text is never placed in the diagnostic marker.
-		switch err.Error() {
-		case "invalid Service Lasso API URL":
-			return startupBoundaryAPIURLInvalid
-		case "Service Lasso API URL must use HTTP or HTTPS":
-			return startupBoundaryAPIURLScheme
-		case "Service Lasso API URL must not contain userinfo":
-			return startupBoundaryAPIURLUserinfo
-		case "Service Lasso API URL must not contain a query or fragment":
-			return startupBoundaryAPIURLQueryOrFragment
-		case "operator token requires HTTPS for a non-loopback Service Lasso API URL":
-			return startupBoundaryAPITokenTransport
-		default:
-			return startupBoundaryAPIClientError
-		}
+		return startupBoundaryAPIClientError
 	}
 	switch configurationError.Kind {
 	case api.ConfigurationErrorInvalidURL:
@@ -67,6 +53,56 @@ func startupBoundaryForAPIError(err error) startupBoundary {
 }
 
 var startupProbeNoncePattern = regexp.MustCompile(`\A[a-f0-9]{64}\z`)
+var startupProbeSourceCommitPattern = regexp.MustCompile(`\A[a-f0-9]{40}\z`)
+
+func startupProbeSourceCommit(info *debug.BuildInfo) (string, bool) {
+	if info == nil || info.Main.Path != "github.com/service-lasso/service-lasso-tui" {
+		return "", false
+	}
+	var revision, modified string
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			revision = setting.Value
+		case "vcs.modified":
+			modified = setting.Value
+		}
+	}
+	return revision, modified == "false" && startupProbeSourceCommitPattern.MatchString(revision)
+}
+
+func startupProbeSelfSHA256() (string, bool) {
+	path, err := os.Executable()
+	if err != nil {
+		return "", false
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", false
+	}
+	defer file.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", false
+	}
+	return fmt.Sprintf("%x", hash.Sum(nil)), true
+}
+
+func startupProbeIdentity() (string, string, bool) {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "", "", false
+	}
+	sourceCommit, ok := startupProbeSourceCommit(info)
+	if !ok {
+		return "", "", false
+	}
+	binarySHA256, ok := startupProbeSelfSHA256()
+	if !ok {
+		return "", "", false
+	}
+	return sourceCommit, binarySHA256, true
+}
 
 func startupBoundaryForProgramError(err error) startupBoundary {
 	switch {
@@ -82,12 +118,20 @@ func startupBoundaryForProgramError(err error) startupBoundary {
 }
 
 func startupProbeMarker(nonce string, boundary startupBoundary) (string, bool) {
-	if !startupProbeNoncePattern.MatchString(nonce) {
+	sourceCommit, binarySHA256, identityOK := startupProbeIdentity()
+	if !identityOK {
+		return "", false
+	}
+	return startupProbeMarkerWithIdentity(nonce, boundary, sourceCommit, binarySHA256)
+}
+
+func startupProbeMarkerWithIdentity(nonce string, boundary startupBoundary, sourceCommit string, binarySHA256 string) (string, bool) {
+	if !startupProbeNoncePattern.MatchString(nonce) || !startupProbeSourceCommitPattern.MatchString(sourceCommit) || !startupProbeNoncePattern.MatchString(binarySHA256) {
 		return "", false
 	}
 	switch boundary {
 	case startupBoundaryAPIURLInvalid, startupBoundaryAPIURLScheme, startupBoundaryAPIURLUserinfo, startupBoundaryAPIURLQueryOrFragment, startupBoundaryAPITokenTransport, startupBoundaryAPIClientError, startupBoundaryProgramRunError, startupBoundaryProgramRunKilled, startupBoundaryProgramRunPanic, startupBoundaryProgramRunInterrupted:
-		return "\x1eSERVICE_LASSO_TUI_STARTUP_BOUNDARY:" + nonce + ":" + string(boundary) + "\x1f", true
+		return "\x1eSERVICE_LASSO_TUI_STARTUP_BOUNDARY:" + nonce + ":" + string(boundary) + ":" + sourceCommit + ":" + binarySHA256 + "\x1f", true
 	default:
 		return "", false
 	}

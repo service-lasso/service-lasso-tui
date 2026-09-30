@@ -10,6 +10,7 @@ import ctypes
 from ctypes import wintypes
 import json
 import os
+import re
 import secrets
 import sys
 
@@ -116,9 +117,16 @@ def secure_root(base_root):
 def valid(receipt):
     if not isinstance(receipt, dict) or receipt.get("stage") not in {"launch", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit", "helper-exit"} or receipt.get("outcome") not in {"normal", "error", "timeout"} or receipt.get("closedReason") not in {"completed", "stage_failed", "timed_out", "shutdown_requested", "terminal_exited_zero", "terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown", "helper_exit_nonzero", "helper_exit_signal", "helper_exit_spawn_error"}:
         return False
-    if set(receipt) == {"stage", "outcome", "closedReason"}:
+    identity = receipt.get("candidateIdentity")
+    if identity is not None and (not isinstance(identity, dict) or set(identity) != {"sourceCommit", "binarySHA256"} or not isinstance(identity["sourceCommit"], str) or not isinstance(identity["binarySHA256"], str) or re.fullmatch(r"[a-f0-9]{40}", identity["sourceCommit"]) is None or re.fullmatch(r"[a-f0-9]{64}", identity["binarySHA256"]) is None):
+        return False
+    keys = set(receipt)
+    base = {"stage", "outcome", "closedReason"}
+    if identity is not None:
+        base.add("candidateIdentity")
+    if keys == base:
         return True
-    return set(receipt) == {"stage", "outcome", "closedReason", "startupBoundary"} and receipt["stage"] == "startup" and receipt["outcome"] == "error" and receipt["closedReason"] in {"terminal_exited_zero", "terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown"} and receipt["startupBoundary"] in {"unclassified", "api_url_invalid", "api_url_scheme", "api_url_userinfo", "api_url_query_or_fragment", "api_token_transport", "api_client_error", "program_run_error", "program_run_killed", "program_run_panic", "program_run_interrupted"}
+    return keys == base | {"startupBoundary"} and receipt["stage"] == "startup" and receipt["outcome"] == "error" and receipt["closedReason"] in {"terminal_exited_zero", "terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown"} and receipt["startupBoundary"] in {"unclassified", "api_url_invalid", "api_url_scheme", "api_url_userinfo", "api_url_query_or_fragment", "api_token_transport", "api_client_error", "program_run_error", "program_run_killed", "program_run_panic", "program_run_interrupted"}
 
 def write(handle, receipt):
     data = json.dumps(receipt, separators=(",", ":")).encode("utf-8")

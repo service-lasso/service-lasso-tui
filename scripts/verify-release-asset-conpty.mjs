@@ -178,14 +178,16 @@ export function parseProbe(stdout, mode) {
   try {
     const result = JSON.parse(stdout.trim());
     const expectedKeys = mode === "unavailable"
-      ? ["exit", "mode", "ok"]
+      ? ["exit", "mode", "ok", "receipt"]
       : ["exit", "mode", "narrowResize", "navigation", "ok", "receipt", "reconnect"];
     const actualKeys = Object.keys(result ?? {}).sort();
     const successReceipt = result?.receipt;
     if (
       result?.ok === true && result.mode === mode &&
       actualKeys.length === expectedKeys.length && actualKeys.every((key, index) => key === expectedKeys[index]) &&
-      mode === "unavailable" && result.exit === "q"
+      mode === "unavailable" && result.exit === "q" &&
+      validateReceipt(successReceipt).stage === "exit" && successReceipt.outcome === "normal" && successReceipt.closedReason === "completed" &&
+      validCandidateIdentity(successReceipt.candidateIdentity)
     ) return result;
     if (
       result?.ok === true && result.mode === mode &&
@@ -209,12 +211,21 @@ export function parseProbe(stdout, mode) {
 
 export function validateReceipt(receipt) {
   const keys = Object.keys(receipt ?? {}).sort();
-  const hasStartupBoundary = keys.length === 4 && keys.every((key, index) => key === ["closedReason", "outcome", "stage", "startupBoundary"][index]);
-  const hasBaseShape = keys.length === 3 && keys.every((key, index) => key === ["closedReason", "outcome", "stage"][index]);
-  if (!receipt || (!hasBaseShape && !hasStartupBoundary) || !receiptStages.has(receipt.stage) || !receiptOutcomes.has(receipt.outcome) || !receiptReasons.has(receipt.closedReason) || (hasStartupBoundary && (receipt.stage !== "startup" || receipt.outcome !== "error" || !terminalCloseReasons.has(receipt.closedReason) || !startupBoundaries.has(receipt.startupBoundary)))) {
+  const hasIdentity = validCandidateIdentity(receipt?.candidateIdentity);
+  const expected = hasIdentity
+    ? ["candidateIdentity", "closedReason", "outcome", "stage", ...(Object.hasOwn(receipt ?? {}, "startupBoundary") ? ["startupBoundary"] : [])]
+    : ["closedReason", "outcome", "stage", ...(Object.hasOwn(receipt ?? {}, "startupBoundary") ? ["startupBoundary"] : [])];
+  const hasClosedShape = keys.length === expected.length && keys.every((key, index) => key === expected[index]);
+  const hasStartupBoundary = Object.hasOwn(receipt ?? {}, "startupBoundary");
+  if (!receipt || !hasClosedShape || !receiptStages.has(receipt.stage) || !receiptOutcomes.has(receipt.outcome) || !receiptReasons.has(receipt.closedReason) || (hasStartupBoundary && (receipt.stage !== "startup" || receipt.outcome !== "error" || !terminalCloseReasons.has(receipt.closedReason) || !startupBoundaries.has(receipt.startupBoundary)))) {
     throw new Error("invalid reconnect receipt");
   }
   return receipt;
+}
+
+function validCandidateIdentity(identity) {
+  return identity && Object.keys(identity).length === 2 &&
+    /^[a-f0-9]{40}$/u.test(identity.sourceCommit) && /^[a-f0-9]{64}$/u.test(identity.binarySHA256);
 }
 
 function startWriterRequest(writer, message) {

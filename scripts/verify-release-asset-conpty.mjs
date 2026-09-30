@@ -531,8 +531,11 @@ async function main() {
     if (stage === "core-runtime-preflight") failureReason = error instanceof CorePreflightFailure ? error.reason : "preflight_unclassified";
     throw error;
   } finally {
-    await closeReceiptSinks(receiptSinks);
+    // Keep the native root and receipt handles anchored while the cooperating
+    // probe and loopback resources stop. Windows deliberately retains that
+    // root afterwards instead of doing a pathname-recursive delete.
     const cleanupConfirmed = tempRoot ? await cleanupResources({ probe, apiServer, unavailable, tempRoot, retainTempRoot: process.platform === "win32" }) : false;
+    await closeReceiptSinks(receiptSinks);
     const cleanupError = cleanupOutcome(primaryError, cleanupConfirmed);
     if (cleanupError && cleanupError !== primaryError) {
       stage = "cleanup-unconfirmed";

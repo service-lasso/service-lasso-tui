@@ -51,6 +51,27 @@ The result is a closed-schema, direct-read record. It is not evidence of
 release asset qualification, lifecycle behavior, cross-platform support,
 deployment, or GA.
 
+## Exact Windows candidate-asset acceptance
+
+Issue #6 also has a bounded Windows-only probe for the published prerelease
+candidate `2026.9.30-97fafb0`. It downloads only that candidate's manifest and
+Windows archive, verifies their pinned SHA-256 values, checks the extracted
+`service-lasso-tui.exe` path, and drives the extracted executable through
+ConPTY. The probe starts a disposable loopback Core read surface only after an
+unavailable launch, then proves the connected dashboard, `d`, `?`, `q`, and a
+50-column ConPTY resize. It does not provide a token or issue lifecycle,
+authentication, staging, release, or deployment mutations.
+
+From an exact, built Core checkout at `10e4d72b75c66977ad1dd629991a27443ffc0fd3`:
+
+```powershell
+node scripts/verify-release-asset-conpty.mjs --core-root <path-to-pinned-core>
+```
+
+The output is a closed-schema direct release-asset read record. Linux and
+macOS assets, authenticated reads, lifecycle operations, and independent
+release review remain outside this evidence.
+
 See [the runtime API contract](docs/runtime-api-contract.md), [the Core
 integration and release contract](docs/core-integration-contract.md), and [the
 framework decision](docs/framework-decision.md).

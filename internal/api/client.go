@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -270,12 +271,22 @@ func (c *Client) request(ctx context.Context, method, path string, body io.Reade
 	defer response.Body.Close()
 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		// Error bodies can contain server diagnostics or accidental sensitive
-		// material. Keep them out of the UI and retained test evidence.
-		return fmt.Errorf("request %s %s: runtime returned %s", method, path, response.Status)
+		return safeHTTPError(method, path, response.StatusCode)
 	}
 	if err := json.NewDecoder(response.Body).Decode(destination); err != nil {
 		return fmt.Errorf("decode %s %s: %w", method, path, err)
 	}
 	return nil
+}
+
+// safeHTTPError intentionally excludes a runtime response body. Core error
+// payloads and reason phrases can include diagnostics or accidental sensitive
+// material, while the request method, path, and canonical HTTP status remain
+// useful to the operator.
+func safeHTTPError(method, path string, statusCode int) error {
+	status := strconv.Itoa(statusCode)
+	if text := http.StatusText(statusCode); text != "" {
+		status += " " + text
+	}
+	return fmt.Errorf("request %s %s: runtime returned %s", method, path, status)
 }

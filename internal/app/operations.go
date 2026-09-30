@@ -9,12 +9,13 @@ import (
 
 // persistedOperation is deliberately closed and metadata-only. In particular it
 // excludes credentials, confirmation phrases, previews, request bodies, and
-// idempotency keys. binding is an opaque local actor/connection binding.
+// idempotency keys. Binding is supplied by Core as an opaque validated
+// actor/client/instance context; it is never derived from a URL or credential.
 type persistedOperation struct {
 	Version        int    `json:"version"`
 	OperationID    string `json:"operationId"`
 	ConnectionName string `json:"connectionName"`
-	Binding        string `json:"binding"`
+	Binding        string `json:"reconciliationContext"`
 }
 
 type operationStore interface {
@@ -42,14 +43,14 @@ func (s fileOperationStore) Load() (*persistedOperation, error) {
 		return nil, fmt.Errorf("read operation reconciliation metadata: %w", err)
 	}
 	var value persistedOperation
-	if err := json.Unmarshal(bytes, &value); err != nil || value.Version != 1 || value.OperationID == "" || value.ConnectionName == "" || value.Binding == "" {
+	if err := json.Unmarshal(bytes, &value); err != nil || value.Version != 2 || value.OperationID == "" || value.ConnectionName == "" || value.Binding == "" {
 		return nil, fmt.Errorf("operation reconciliation metadata is invalid")
 	}
 	return &value, nil
 }
 
 func (s fileOperationStore) Save(value persistedOperation) error {
-	if value.Version != 1 || value.OperationID == "" || value.ConnectionName == "" || value.Binding == "" {
+	if value.Version != 2 || value.OperationID == "" || value.ConnectionName == "" || value.Binding == "" {
 		return fmt.Errorf("refuse unsafe operation reconciliation metadata")
 	}
 	if err := os.MkdirAll(filepath.Dir(s.path), 0700); err != nil {

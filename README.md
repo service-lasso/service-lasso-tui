@@ -19,8 +19,11 @@ without replaying after reconnect, refresh, navigation, or profile switching.
 durable operation contract. `z` asks Core to cancel only when that operation
 explicitly advertises cancellation support.
 
-The TUI retains a locally protected, metadata-only reconciliation record for an
-accepted operation (opaque operation ID plus opaque connection/actor binding).
+The TUI retains a locally protected, metadata-only reconciliation record only
+when Core supplies a validated opaque actor/client/instance context for that
+accepted operation. The current client fails closed and does not persist one
+until Core #1553's reviewed contract is integrated; it never derives authority
+from a URL, profile, or credential.
 It never saves a credential, confirmation phrase, preview, request body, or
 idempotency key. A changed profile or actor binding leaves the operation
 unread and unreplayed.
@@ -39,8 +42,10 @@ For more than one runtime, pass a metadata-only profile file with
 `--connections <file> --profile <name>`. Each profile has a `url` and
 `tokenEnv` field. The TUI reads the named environment variable when it connects;
 it never saves the credential in the profile file. Press `p` to switch between
-configured profiles. Switching clears the current dashboard context and ignores
-late results from the previous connection.
+configured profiles. Switching clears the current dashboard context, but keeps
+an accepted or submission-uncertain durable operation in memory so its opaque
+ID cannot be lost or resubmitted. Core context is required before that record
+can survive a process restart.
 
 The executable is an attached terminal operator tool. It is not a Core managed
 service and must not be autostarted by Core.

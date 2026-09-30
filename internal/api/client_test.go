@@ -134,37 +134,6 @@ func TestSafeHTTPErrorUsesCanonicalStatusTextOrNumericFallback(t *testing.T) {
 	}
 }
 
-func TestClientPostsConfirmedLifecycleAction(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/services/echo/start" {
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
-		}
-		if got := r.Header.Get("Content-Type"); got != "application/json" {
-			t.Fatalf("content type %q", got)
-		}
-		if got := r.Header.Get("x-service-lasso-admin-token"); got != "test-token" {
-			t.Fatalf("operator token header %q", got)
-		}
-		var body struct {
-			Confirm bool `json:"confirm"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !body.Confirm {
-			t.Fatalf("expected explicit confirmation, body=%#v err=%v", body, err)
-		}
-		_, _ = w.Write([]byte(`{"ok":true,"action":"start","serviceId":"echo","message":"started"}`))
-	}))
-	defer server.Close()
-
-	client, err := NewClient(server.URL, server.Client(), "test-token")
-	if err != nil {
-		t.Fatal(err)
-	}
-	result, err := client.Lifecycle(context.Background(), "echo", "start")
-	if err != nil || !result.OK || result.Message != "started" {
-		t.Fatalf("unexpected lifecycle result %#v, %v", result, err)
-	}
-}
-
 func TestClientRejectsInvalidBaseURL(t *testing.T) {
 	if _, err := NewClient("not a URL", nil, ""); err == nil {
 		t.Fatal("expected URL validation error")
@@ -292,52 +261,6 @@ func TestClientDoesNotFollowHTTPSDowngradeRedirectWithOperatorToken(t *testing.T
 	}
 }
 
-func TestClientDoesNotFollowLifecycleRedirect(t *testing.T) {
-	var redirectedRequests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/services/echo/start" {
-			http.Redirect(w, r, "/api/services/echo/redirect-target", http.StatusTemporaryRedirect)
-			return
-		}
-		redirectedRequests.Add(1)
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	provided := &http.Client{CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return nil }}
-	client, err := NewClient(server.URL, provided, "test-token")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = client.Lifecycle(context.Background(), "echo", "start")
-	if err == nil || !strings.Contains(err.Error(), "307 Temporary Redirect") {
-		t.Fatalf("expected lifecycle redirect to fail closed, got %v", err)
-	}
-	if got := redirectedRequests.Load(); got != 0 {
-		t.Fatalf("redirect target received %d lifecycle request(s), want 0", got)
-	}
-}
-
-func TestClientRejectsUnsafeLifecycleServiceID(t *testing.T) {
-	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		requests.Add(1)
-	}))
-	defer server.Close()
-
-	client, err := NewClient(server.URL, server.Client(), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = client.Lifecycle(context.Background(), "echo/start", "start")
-	if err == nil || !strings.Contains(err.Error(), "invalid service ID") {
-		t.Fatalf("expected unsafe service ID to be rejected, got %v", err)
-	}
-	if got := requests.Load(); got != 0 {
-		t.Fatalf("received %d request(s) for rejected service ID, want 0", got)
-	}
-}
-
 func TestDurableLifecycleUsesPreviewOneFrozenSubmitAndSafeReadback(t *testing.T) {
 	var submits atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -346,7 +269,7 @@ func TestDurableLifecycleUsesPreviewOneFrozenSubmitAndSafeReadback(t *testing.T)
 		}
 		switch r.URL.Path {
 		case "/api/operator/lifecycle/services/echo/availability":
-			_, _ = w.Write([]byte(`{"actions":[{"action":"start","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"reload","available":false,"reason":"durable_operation_unavailable","permission":"service-lasso:lifecycle:write","requiresConfirmation":true}]}`))
+			_, _ = w.Write([]byte(`{"actions":[{"action":"start","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true}]}`))
 		case "/api/operator/lifecycle/operations":
 			var body map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&body)
@@ -371,7 +294,7 @@ func TestDurableLifecycleUsesPreviewOneFrozenSubmitAndSafeReadback(t *testing.T)
 		t.Fatal(err)
 	}
 	actions, err := client.LifecycleAvailability(context.Background(), "echo")
-	if err != nil || len(actions) != 2 || !actions[0].Available || actions[1].Available {
+	if err != nil || len(actions) != 1 || !actions[0].Available {
 		t.Fatalf("availability = %#v, %v", actions, err)
 	}
 	preview, err := client.PreviewLifecycle(context.Background(), "echo", "start")

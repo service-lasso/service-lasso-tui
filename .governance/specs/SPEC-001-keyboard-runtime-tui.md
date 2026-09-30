@@ -36,10 +36,13 @@ request with a fresh opaque idempotency key and the Core confirmation context.
 It reads `GET /api/operator/lifecycle/operations/:operationId` until Core
 reports a terminal result. Refresh, reconnect, navigation, and connection
 switching never replay a mutation. The TUI persists only an opaque operation
-ID plus safe connection/actor-binding metadata needed for later readback; it
-never persists credentials, confirmation phrases, previews, request bodies, or
-idempotency keys. A binding mismatch or an uncertain result is retained and
-rendered as reconciliation-required rather than submitted again.
+ID plus a Core-issued validated opaque actor/client/instance context needed for
+later readback; it never persists credentials, confirmation phrases, previews,
+request bodies, idempotency keys, URL-derived identifiers, or token hashes.
+Until Core #1553's reviewed context contract is integrated, persistence fails
+closed while in-process accepted and uncertain operations remain retained and
+cannot be resubmitted. A context mismatch or an uncertain result is rendered
+as reconciliation-required rather than submitted again.
 
 ## TUI-KEYBOARD
 
@@ -47,7 +50,9 @@ Arrow keys and `j`/`k` navigate; Enter opens a detail; Escape returns; `r`
 refreshes; `?` shows contextual help; `/` filters locally; `n` narrows the
 layout; and resize preserves the current view. Lifecycle shortcuts are visible
 in the detail screen and require `y` to confirm the Core preview or Escape to
-cancel. Availability, preview, accepted, running, terminal,
+cancel. While confirmation is shown, only `y` and Escape are accepted;
+refresh, navigation, profile switching, search, layout, and quit input cannot
+alter the frozen context. Availability, preview, accepted, running, terminal,
 unknown-after-crash, denied, and unavailable states remain distinct.
 
 `TUI-ACCEPTANCE-001`: Direct Windows read acceptance builds the current TUI

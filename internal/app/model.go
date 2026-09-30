@@ -20,7 +20,6 @@ type runtimeClient interface {
 	RuntimeIdentity(context.Context) (api.RuntimeIdentity, error)
 	Inbox(context.Context, string) (api.Inbox, error)
 	HealthHistory(context.Context, string) (api.HealthHistory, error)
-	Lifecycle(context.Context, string, string) (api.LifecycleResult, error)
 }
 
 // durableLifecycleClient is deliberately separate from the read dashboard
@@ -31,6 +30,15 @@ type durableLifecycleClient interface {
 	SubmitLifecycle(context.Context, api.LifecyclePreview, string) (api.Operation, error)
 	Operation(context.Context, string) (api.Operation, error)
 	CancelOperation(context.Context, string) (api.Operation, error)
+}
+
+// reconciliationContextProvider is an adapter boundary for Core's pending
+// server-issued actor/client/instance reconciliation context. The production
+// HTTP client intentionally does not implement it until Core #1553 provides a
+// reviewed contract. Local URL, profile, and credential material are never a
+// substitute for this authority.
+type reconciliationContextProvider interface {
+	ReconciliationContext() (string, bool)
 }
 
 type connectionManager interface {
@@ -79,7 +87,6 @@ type model struct {
 	pendingPreview     *api.LifecyclePreview
 	preparingAction    bool
 	nextSubmissionID   uint64
-	outstandingAction  *lifecycleSubmission
 	operation          *operationSubmission
 	operationStore     operationStore
 	lastResult         string
@@ -94,12 +101,6 @@ type loadedMsg struct {
 	err      error
 }
 
-type lifecycleMsg struct {
-	submissionID uint64
-	result       api.LifecycleResult
-	err          error
-}
-
 type lifecyclePreparedMsg struct {
 	epoch             uint64
 	action, serviceID string
@@ -110,26 +111,18 @@ type operationMsg struct {
 	submissionID uint64
 	operation    api.Operation
 	err          error
+	cancellation bool
 }
 type operationPollMsg struct{ submissionID uint64 }
 
-// lifecycleSubmission is deliberately separate from the confirmation and the
-// current screen. Once Core has received the request, its client, profile,
-// target, and action must remain stable until its one result is handled.
-type lifecycleSubmission struct {
-	id                uint64
-	client            runtimeClient
-	connectionName    string
-	connectionEpoch   uint64
-	serviceID, action string
-}
-
 type operationSubmission struct {
-	id              uint64
-	client          durableLifecycleClient
-	connectionName  string
-	connectionEpoch uint64
-	operation       api.Operation
+	id                    uint64
+	client                durableLifecycleClient
+	connectionName        string
+	connectionEpoch       uint64
+	reconciliationContext string
+	cancellationPending   bool
+	operation             api.Operation
 }
 
 func New(client runtimeClient, ctx context.Context) tea.Model {
@@ -249,13 +242,6 @@ func (m model) loadHistory() tea.Cmd {
 	}
 }
 
-func runLifecycle(submission lifecycleSubmission, ctx context.Context) tea.Cmd {
-	return func() tea.Msg {
-		result, err := submission.client.Lifecycle(ctx, submission.serviceID, submission.action)
-		return lifecycleMsg{submissionID: submission.id, result: result, err: err}
-	}
-}
-
 func prepareLifecycle(client durableLifecycleClient, ctx context.Context, epoch uint64, serviceID, action string) tea.Cmd {
 	return func() tea.Msg {
 		actions, err := client.LifecycleAvailability(ctx, serviceID)
@@ -300,7 +286,7 @@ func readOperation(submission operationSubmission, ctx context.Context) tea.Cmd 
 func cancelOperation(submission operationSubmission, ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
 		operation, err := submission.client.CancelOperation(ctx, submission.operation.ID)
-		return operationMsg{submissionID: submission.id, operation: operation, err: err}
+		return operationMsg{submissionID: submission.id, operation: operation, err: err, cancellation: true}
 	}
 }
 
@@ -341,24 +327,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.historyUnavailable = true
 		}
-	case lifecycleMsg:
-		if m.outstandingAction == nil || message.submissionID != m.outstandingAction.id {
-			return m, nil
-		}
-		m.loading = false
-		submission := *m.outstandingAction
-		m.outstandingAction = nil
-		if message.err != nil {
-			m.err = message.err
-			m.lastResult = ""
-		} else {
-			m.err = nil
-			outcome := "failed"
-			if message.result.OK {
-				outcome = "completed"
-			}
-			m.lastResult = fmt.Sprintf("Core %s %s.", outcome, submission.action)
-		}
 	case lifecyclePreparedMsg:
 		if message.epoch != m.connectionEpoch || message.serviceID != m.pendingServiceID || message.action != m.pendingAction {
 			return m, nil
@@ -379,7 +347,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if message.stored == nil || message.stored.ConnectionName != m.connectionName {
 			return m, nil
 		}
-		binding, matches := m.connectionBinding()
+		binding, matches := m.reconciliationContext()
 		if !matches || binding != message.stored.Binding {
 			m.lastResult = "Retained operation belongs to a different actor or connection; it was not read or replayed."
 			return m, nil
@@ -396,17 +364,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if message.err != nil {
+			if message.cancellation {
+				m.operation.cancellationPending = false
+			}
 			m.err = message.err
 			m.lastResult = "Operation outcome is uncertain; reconnect or refresh only reads the retained operation."
 			return m, nil
 		}
 		m.operation.operation = message.operation
+		if message.cancellation {
+			m.operation.cancellationPending = false
+		}
 		m.err = nil
-		if m.operationStore != nil {
-			if binding, ok := m.connectionBinding(); ok {
-				if err := m.operationStore.Save(persistedOperation{Version: 1, OperationID: message.operation.ID, ConnectionName: m.operation.connectionName, Binding: binding}); err != nil {
-					m.err = err
-				}
+		if m.operationStore != nil && m.operation.reconciliationContext != "" {
+			if err := m.operationStore.Save(persistedOperation{Version: 2, OperationID: message.operation.ID, ConnectionName: m.operation.connectionName, Binding: m.operation.reconciliationContext}); err != nil {
+				m.err = err
 			}
 		}
 		if message.operation.Outcome != "" || message.operation.Status == "unknown_after_crash" {
@@ -419,11 +391,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return operationPollMsg{submissionID: message.submissionID} })
 	case operationPollMsg:
-		if m.operation == nil || message.submissionID != m.operation.id || m.operation.connectionEpoch != m.connectionEpoch {
+		if m.operation == nil || message.submissionID != m.operation.id {
 			return m, nil
 		}
 		return m, readOperation(*m.operation, m.ctx)
 	case tea.KeyMsg:
+		// A Core preview freezes the exact context shown to the operator. While
+		// it is visible, only the advertised confirm/cancel keys can affect UI
+		// state; navigation, refresh, profile selection, search, and quit are
+		// deliberately ignored.
+		if m.pendingAction != "" {
+			switch message.String() {
+			case "esc", "backspace":
+				m.pendingAction, m.pendingServiceID, m.pendingPreview, m.preparingAction = "", "", nil, false
+				m.lastResult = "Confirmation cancelled."
+				return m, nil
+			case "y":
+				if m.screen == detailScreen && !m.preparingAction && m.pendingPreview != nil && m.operation == nil && m.hasServiceID(m.pendingServiceID) {
+					return m, m.submitPendingAction()
+				}
+			}
+			return m, nil
+		}
 		if message.Type == tea.KeyRunes && string(message.Runes) == "/" {
 			m.searching = true
 			return m, nil
@@ -455,52 +444,37 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loading, m.err = true, nil
 			return m, tea.Batch(m.refresh(), m.refreshDashboard())
 		case "p":
-			if m.connections != nil && m.pendingAction == "" && !m.hasOutstandingAction() {
+			if m.connections != nil {
 				m.selectedProfile = m.connectionName
 				m.screen = profilesScreen
 			}
 		case "d":
-			m.cancelPendingOnNavigation()
 			m.screen = dashboardScreen
 		case "v":
-			m.cancelPendingOnNavigation()
 			m.screen = servicesScreen
 		case "i":
-			if m.screen == detailScreen && m.hasSelectedService() && m.pendingAction == "" {
+			if m.screen == detailScreen && m.hasSelectedService() {
 				return m, m.beginPendingAction("install")
 			} else {
-				m.cancelPendingOnNavigation()
 				m.screen = inboxScreen
 			}
 		case "?":
-			m.cancelPendingOnNavigation()
 			m.screen = helpScreen
 		case "/":
 			m.searching = true
 		case "n":
 			m.narrow = !m.narrow
 		case "esc", "backspace":
-			if m.pendingAction != "" {
-				m.pendingAction, m.pendingServiceID, m.pendingPreview, m.preparingAction = "", "", nil, false
-			} else {
-				m.screen = dashboardScreen
-			}
-		case "y":
-			if m.screen == detailScreen && m.pendingAction != "" && (!m.preparingAction) && !m.hasOutstandingAction() && m.operation == nil && m.hasServiceID(m.pendingServiceID) {
-				return m, m.submitPendingAction()
-			}
-			if m.pendingAction != "" && !m.hasServiceID(m.pendingServiceID) {
-				m.pendingAction, m.pendingServiceID = "", ""
-				m.lastResult = "Selected service changed; confirmation cancelled."
-			}
+			m.screen = dashboardScreen
 		case "c", "s", "x", "R", "l":
-			if m.screen == detailScreen && m.hasSelectedService() && m.pendingAction == "" && !m.hasOutstandingAction() && m.operation == nil {
+			if m.screen == detailScreen && m.hasSelectedService() && m.operation == nil {
 				return m, m.beginPendingAction(map[string]string{
 					"c": "config", "s": "start", "x": "stop", "R": "restart", "l": "reload",
 				}[message.String()])
 			}
 		case "z":
-			if m.operation != nil && m.operation.operation.CancellationSupported {
+			if m.operation != nil && m.operation.operation.CancellationSupported && !m.operation.cancellationPending {
+				m.operation.cancellationPending = true
 				return m, cancelOperation(*m.operation, m.ctx)
 			}
 		case "down", "j":
@@ -509,9 +483,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.moveSelected(-1)
 		case "enter":
 			if m.screen == profilesScreen {
-				if m.hasOutstandingAction() {
-					return m, nil
-				}
 				client, err := m.connections.Switch(m.selectedProfile)
 				if err != nil {
 					m.err = err
@@ -575,7 +546,7 @@ func (m model) serviceByID(id string) (api.Service, bool) {
 func (m model) hasServiceID(id string) bool { _, ok := m.serviceByID(id); return ok }
 
 func (m *model) beginPendingAction(action string) tea.Cmd {
-	if m.hasOutstandingAction() || m.pendingAction != "" {
+	if m.operation != nil || m.pendingAction != "" {
 		return nil
 	}
 	service, ok := m.selectedService()
@@ -584,17 +555,18 @@ func (m *model) beginPendingAction(action string) tea.Cmd {
 	}
 	durable, ok := m.client.(durableLifecycleClient)
 	if !ok {
-		// Compatibility is restricted to in-process read/test adapters. The
-		// concrete production API client implements durableLifecycleClient and
-		// therefore cannot reach the retired synchronous route.
-		m.pendingAction, m.pendingServiceID, m.pendingPreview, m.preparingAction = action, service.ID, nil, false
+		m.err = fmt.Errorf("durable lifecycle operations are unavailable for this runtime client")
+		m.lastResult = ""
+		return nil
+	}
+	if action == "reload" {
+		m.err = fmt.Errorf("reload is unavailable: Core does not provide a durable operation contract")
+		m.lastResult = ""
 		return nil
 	}
 	m.pendingAction, m.pendingServiceID, m.pendingPreview, m.preparingAction = action, service.ID, nil, true
 	return prepareLifecycle(durable, m.ctx, m.connectionEpoch, service.ID, action)
 }
-
-func (m *model) hasOutstandingAction() bool { return m.outstandingAction != nil }
 
 func (m *model) submitPendingAction() tea.Cmd {
 	if m.pendingPreview != nil {
@@ -604,35 +576,15 @@ func (m *model) submitPendingAction() tea.Cmd {
 			return nil
 		}
 		m.nextSubmissionID++
-		submission := operationSubmission{id: m.nextSubmissionID, client: durable, connectionName: m.connectionName, connectionEpoch: m.connectionEpoch}
+		binding, _ := m.reconciliationContext()
+		submission := operationSubmission{id: m.nextSubmissionID, client: durable, connectionName: m.connectionName, connectionEpoch: m.connectionEpoch, reconciliationContext: binding}
 		preview := *m.pendingPreview
 		m.pendingAction, m.pendingServiceID, m.pendingPreview, m.preparingAction = "", "", nil, false
 		m.operation = &submission
 		m.loading, m.err = false, nil
 		return submitDurableLifecycle(submission, preview, m.ctx)
 	}
-	m.nextSubmissionID++
-	submission := lifecycleSubmission{
-		id:              m.nextSubmissionID,
-		client:          m.client,
-		connectionName:  m.connectionName,
-		connectionEpoch: m.connectionEpoch,
-		serviceID:       m.pendingServiceID,
-		action:          m.pendingAction,
-	}
-	// Confirmation is local, transient UI state. The submitted request retains
-	// its own immutable context so navigation and search cannot retarget it.
-	m.pendingAction, m.pendingServiceID = "", ""
-	m.outstandingAction = &submission
-	m.loading, m.err = true, nil
-	return runLifecycle(submission, m.ctx)
-}
-
-func (m *model) cancelPendingOnNavigation() {
-	if m.screen == detailScreen && m.pendingAction != "" {
-		m.pendingAction, m.pendingServiceID, m.pendingPreview, m.preparingAction = "", "", nil, false
-		m.lastResult = "Confirmation cancelled after navigation."
-	}
+	return nil
 }
 
 func (m model) hasSelectedService() bool { _, ok := m.selectedService(); return ok }
@@ -678,9 +630,6 @@ func (m *model) moveSelected(direction int) {
 }
 
 func (m *model) activateConnection(client runtimeClient) {
-	if m.hasOutstandingAction() {
-		return
-	}
 	m.client = client
 	m.connectionName = m.connections.Current()
 	m.connectionEpoch++
@@ -688,18 +637,19 @@ func (m *model) activateConnection(client runtimeClient) {
 	m.selectedServiceID = ""
 	m.health, m.capabilities, m.setup, m.identity, m.inbox, m.history = api.Health{}, api.Capabilities{}, api.SetupStatus{}, api.RuntimeIdentity{}, api.Inbox{}, api.HealthHistory{}
 	m.optionalFailures, m.pendingAction, m.pendingServiceID, m.lastResult = nil, "", "", ""
-	m.pendingPreview, m.preparingAction, m.operation = nil, false, nil
+	m.pendingPreview, m.preparingAction = nil, false
 	m.historyUnavailable, m.stale, m.loading = false, false, true
 	m.err = nil
 	m.screen = dashboardScreen
 }
 
-func (m model) connectionBinding() (string, bool) {
-	client, ok := m.client.(*api.Client)
+func (m model) reconciliationContext() (string, bool) {
+	provider, ok := m.client.(reconciliationContextProvider)
 	if !ok {
 		return "", false
 	}
-	return client.ConnectionBinding(), true
+	context, ok := provider.ReconciliationContext()
+	return context, ok && context != ""
 }
 
 func safeTerminalText(value string, limit int) string {
@@ -831,9 +781,7 @@ func (m model) detailView(b *strings.Builder) string {
 			b.WriteString("Health history is unavailable.\n")
 		}
 	}
-	if m.hasOutstandingAction() {
-		b.WriteString("\nSubmitting one confirmed request to Core…\n")
-	} else if m.operation != nil {
+	if m.operation != nil {
 		fmt.Fprintf(b, "\nCore operation %s: %s (%d%%)\n", safeTerminalText(m.operation.operation.ID, 80), safeTerminalText(m.operation.operation.Phase, 48), m.operation.operation.Progress)
 		if m.operation.operation.CancellationSupported {
 			b.WriteString("z request Core cancellation\n")
@@ -843,16 +791,18 @@ func (m model) detailView(b *strings.Builder) string {
 	} else if m.pendingAction != "" {
 		if m.pendingPreview != nil {
 			fmt.Fprintf(b, "\nCore preview: %s %s → %s\nConfirm %s for %s? y confirm • esc cancel\n", safeTerminalText(m.pendingAction, 40), strings.Join(m.pendingPreview.Targets, ", "), strings.Join(m.pendingPreview.Effects, ", "), m.pendingAction, safeTerminalText(m.pendingServiceID, 128))
-		} else if _, durable := m.client.(durableLifecycleClient); !durable {
-			fmt.Fprintf(b, "\nConfirm %s for %s? y confirm • esc cancel\n", m.pendingAction, safeTerminalText(m.pendingServiceID, 128))
 		} else {
 			b.WriteString("\nCore preview is unavailable.\n")
 		}
 	} else {
-		b.WriteString("\ni install • c config • s start • x stop • R restart • l reload (Core currently denies reload)\n")
+		b.WriteString("\ni install • c config • s start • x stop • R restart\n")
 		b.WriteString("Each action checks Core availability and asks Core to enforce permission and confirmation.\n")
 	}
-	b.WriteString("esc back • r refresh • q quit\n")
+	if m.pendingAction != "" {
+		b.WriteString("y confirm • esc cancel\n")
+	} else {
+		b.WriteString("esc back • r refresh • q quit\n")
+	}
 	return b.String()
 }
 

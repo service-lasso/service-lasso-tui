@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -133,15 +132,6 @@ type Inbox struct {
 type HealthHistory struct {
 	ServiceID string
 	Entries   int
-}
-
-// LifecycleResult is the durable result returned by Core after a lifecycle
-// request completes. The detailed state remains Core-owned.
-type LifecycleResult struct {
-	OK        bool   `json:"ok"`
-	Action    string `json:"action"`
-	ServiceID string `json:"serviceId"`
-	Message   string `json:"message"`
 }
 
 type LifecycleAvailability struct {
@@ -310,30 +300,6 @@ func (c *Client) HealthHistory(ctx context.Context, serviceID string) (HealthHis
 	return HealthHistory{ServiceID: result.ServiceID, Entries: len(result.History.Transitions)}, err
 }
 
-// Lifecycle asks Core to perform one documented lifecycle action. Core remains
-// responsible for authorization, confirmation enforcement, auditing, and the
-// actual mutation. This client never retries a mutation automatically.
-func (c *Client) Lifecycle(ctx context.Context, serviceID, action string) (LifecycleResult, error) {
-	var result LifecycleResult
-	if !serviceIDPattern.MatchString(serviceID) {
-		return result, fmt.Errorf("invalid service ID")
-	}
-	allowed := map[string]bool{
-		"install": true, "config": true, "start": true, "stop": true, "restart": true, "reload": true,
-	}
-	if !allowed[action] {
-		return result, fmt.Errorf("unsupported lifecycle action %q", action)
-	}
-	body, err := json.Marshal(struct {
-		Confirm bool `json:"confirm"`
-	}{Confirm: true})
-	if err != nil {
-		return result, fmt.Errorf("encode lifecycle confirmation: %w", err)
-	}
-	path := "/api/services/" + url.PathEscape(serviceID) + "/" + action
-	return result, c.request(ctx, http.MethodPost, path, bytes.NewReader(body), &result)
-}
-
 func (c *Client) LifecycleAvailability(ctx context.Context, serviceID string) ([]LifecycleAvailability, error) {
 	if !serviceIDPattern.MatchString(serviceID) {
 		return nil, fmt.Errorf("invalid service ID")
@@ -352,7 +318,7 @@ func (c *Client) LifecycleAvailability(ctx context.Context, serviceID string) ([
 	}
 	actions := make([]LifecycleAvailability, 0, len(result.Actions))
 	for _, entry := range result.Actions {
-		if !isLifecycleAction(entry.Action) || !safeIdentifier(entry.Permission, 96) {
+		if !isDurableAction(entry.Action) || !safeIdentifier(entry.Permission, 96) {
 			return nil, fmt.Errorf("invalid lifecycle availability response")
 		}
 		reason := ""
@@ -451,16 +417,9 @@ func NewIdempotencyKey() (string, error) {
 	return fmt.Sprintf("tui-%x", value), nil
 }
 
-// ConnectionBinding is an opaque, one-way binding for locally retained
-// reconciliation metadata. It is never rendered or sent to Core.
-func (c *Client) ConnectionBinding() string {
-	sum := sha256.Sum256([]byte(c.baseURL + "\x00" + string(c.authMode) + "\x00" + c.operatorToken))
-	return fmt.Sprintf("tui-binding-%x", sum[:])
-}
 func isDurableAction(value string) bool {
 	return value == "install" || value == "config" || value == "start" || value == "stop" || value == "restart"
 }
-func isLifecycleAction(value string) bool { return isDurableAction(value) || value == "reload" }
 func safeOpaque(value, prefix string, limit int) bool {
 	return strings.HasPrefix(value, prefix) && safeIdentifier(value, limit)
 }

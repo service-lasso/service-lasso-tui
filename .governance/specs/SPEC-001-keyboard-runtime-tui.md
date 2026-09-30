@@ -99,10 +99,13 @@ identity, `source_clone_failed`, `isolated_checkout_failed`,
 command output, paths, environment values, or credentials in that record.
 When the reconnect helper has started, it atomically records only `stage`,
 `outcome`, and `closedReason` in its attempt-owned temporary root. On Windows,
-a native receipt-writer creates that root and both receipt files relative to
-held directory handles, rejects reparse points during construction, applies an
+a native receipt-writer reaches the requested temporary base from a held volume
+root one directory component at a time, keeps that base and every ancestor
+handle live, and creates that root and both receipt files relative to held
+directory handles. It rejects reparse points during construction, applies an
 owner-only DACL, and keeps the owner non-delete- and non-write-shareable while
-the receipt is live. Node asks that writer to replace
+the receipt is live. Native fixtures must prove replacement of the attempt
+root, parent, and grandparent is refused during acquisition. Node asks that writer to replace
 the helper record with its bounded helper-exit state before cleanup. Every
 receipt enum and response schema is closed; a receipt sink failure preserves
 the original probe failure. Until a handle-relative owned deletion operation is

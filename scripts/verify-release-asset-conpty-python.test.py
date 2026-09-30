@@ -15,12 +15,21 @@ SPEC.loader.exec_module(probe_module)
 
 
 class FakePty:
+    spawned = None
+
     @staticmethod
-    def spawn(*_args, **_kwargs):
+    def spawn(*args, **kwargs):
+        FakePty.spawned = (args, kwargs)
         return FakePty()
 
     def close(self, force=True):
         self.closed = force
+
+    def isalive(self):
+        return False
+
+    def write(self, _value):
+        pass
 
 
 class EarlyClosingPty(FakePty):
@@ -65,6 +74,18 @@ class ReceiptTests(unittest.TestCase):
             )
         self.assertEqual(result, 1)
         self.assertEqual(json.loads(output.getvalue()), {"ok": False, "stage": "startup", "receipt": {"stage": "startup", "outcome": "error", "closedReason": "terminal_closed"}})
+
+    def test_launch_resolves_a_relative_candidate_before_passing_it_to_pywinpty(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = probe_module.probe(
+                "candidate.exe", "unavailable", "http://127.0.0.1:1", None, None, None, None, None,
+                pty_process=FakePty,
+                wait=lambda *_args: "Service Lasso TUI q quit Runtime API unavailable",
+                backend=None,
+            )
+        self.assertEqual(result, 0)
+        self.assertEqual(FakePty.spawned[0][0][0], os.path.abspath("candidate.exe"))
 
 
 if __name__ == "__main__":

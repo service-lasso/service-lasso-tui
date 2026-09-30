@@ -78,6 +78,10 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
     process, stage = None, "launch"
     try:
         if pty_process is None: return fail(stage)
+        # pywinpty resolves the command through the constrained child PATH.
+        # Anchor the CI-built candidate before that constrained environment is
+        # supplied, rather than depending on the caller's working directory.
+        executable = os.path.abspath(executable)
         environment = {key: os.environ[key] for key in ("APPDATA", "COMSPEC", "LOCALAPPDATA", "PATHEXT", "PATH", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE", "WINDIR") if os.environ.get(key)}
         environment.update({"TERM": "xterm-256color", "SERVICE_LASSO_API_URL": api_url})
         process = pty_process.spawn([executable], cwd=os.path.dirname(executable), env=environment, dimensions=(40, 120), backend=backend)

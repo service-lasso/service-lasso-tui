@@ -82,6 +82,14 @@ identify the failed boundary (source identity, clone, isolated checkout or
 identity, dependency install, build, runtime dist, or packaged runtime) without
 including command output, paths, environment values, or credentials.
 
+On Windows, the probe resolves the candidate executable to an absolute path
+before giving it to the constrained ConPTY child environment. Its native
+receipt writer walks the configured temporary-base directory from a held volume
+root, retaining each ancestor handle through the attempt; it does not admit a
+complete mutable DOS base path in one operation. The root, parent, and
+grandparent replacement checks are native fixtures. Attempt roots remain
+retained evidence because owned, handle-relative removal is not implemented.
+
 The output is a closed-schema direct release-asset read record. Linux and
 macOS assets, authenticated reads, lifecycle operations, and independent
 release review remain outside this evidence.

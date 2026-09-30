@@ -73,25 +73,45 @@ def nt_open(name, root, access, disposition, options, security_descriptor=None, 
 def close(handle):
     if handle and handle.value not in (None, INVALID_HANDLE_VALUE): kernel32.CloseHandle(handle)
 
+def anchored_directory(base_root):
+    # Do not admit the caller's complete DOS path in one operation: a normal
+    # directory can be replaced without being a reparse point before that
+    # open. Start from the stable volume root, then open every component below
+    # an already-held parent. Keeping every handle without delete sharing
+    # preserves the identity of the full parent chain for this attempt.
+    absolute = os.path.abspath(base_root)
+    drive, tail = os.path.splitdrive(absolute)
+    components = [part for part in tail.replace("/", "\\").split("\\") if part]
+    if not drive or any(part in {".", ".."} for part in components):
+        raise RuntimeError("receipt base path is not an absolute Windows directory")
+    ancestors = [nt_open("\\??\\" + drive + "\\", None, FILE_LIST_DIRECTORY | SYNCHRONIZE, FILE_OPEN, FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT)]
+    try:
+        for component in components:
+            ancestors.append(nt_open(component, ancestors[-1], FILE_LIST_DIRECTORY | SYNCHRONIZE, FILE_OPEN, FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT))
+        return ancestors[-1], ancestors
+    except Exception:
+        for handle in reversed(ancestors): close(handle)
+        raise
+
 def secure_root(base_root):
-    # The base path is opened once with reparse rejection. Every created child
-    # then uses its live handle, never a reconstructed path.
-    # NtCreateFile accepts the native DOS namespace form when no RootDirectory
-    # is supplied. Descendants below this first held directory never use a DOS
-    # pathname again.
-    base = nt_open("\\??\\" + os.path.abspath(base_root), None, FILE_LIST_DIRECTORY | SYNCHRONIZE, 1, FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT)
+    # The base identity is established through anchored_directory before a
+    # receipt root is created. Every created child then uses its live handle,
+    # never a reconstructed path.
+    base, ancestors = anchored_directory(base_root)
     try:
         descriptor = owner_only_descriptor()
         try:
             for _ in range(32):
                 leaf = "service-lasso-tui-release-asset-" + secrets.token_hex(16)
-                try: return leaf, nt_open(leaf, base, FILE_LIST_DIRECTORY | SYNCHRONIZE, FILE_CREATE, FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT, descriptor)
+                try: return leaf, nt_open(leaf, base, FILE_LIST_DIRECTORY | SYNCHRONIZE, FILE_CREATE, FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT, descriptor), ancestors
                 except OSError as error:
                     if ctypes.c_ulong(error.errno).value != STATUS_OBJECT_NAME_COLLISION: raise
         finally:
             kernel32.LocalFree(descriptor)
         raise RuntimeError("receipt root collision limit")
-    finally: close(base)
+    except Exception:
+        for handle in reversed(ancestors): close(handle)
+        raise
 
 def valid(receipt):
     return isinstance(receipt, dict) and set(receipt) == {"stage", "outcome", "closedReason"} and receipt["stage"] in {"launch", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit", "helper-exit"} and receipt["outcome"] in {"normal", "error", "timeout"} and receipt["closedReason"] in {"completed", "stage_failed", "timed_out", "terminal_closed", "shutdown_requested", "helper_exit_nonzero", "helper_exit_signal", "helper_exit_spawn_error"}
@@ -110,8 +130,51 @@ def read(handle):
     if not kernel32.ReadFile(handle, data, len(data), ctypes.byref(count), None): raise OSError(ctypes.get_last_error(), "ReadFile")
     return data.raw[:count.value]
 
+def create_directory(name, parent):
+    descriptor = owner_only_descriptor()
+    try:
+        return nt_open(name, parent, FILE_LIST_DIRECTORY | SYNCHRONIZE, FILE_CREATE, FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT, descriptor)
+    finally:
+        kernel32.LocalFree(descriptor)
+
+def replacement_self_test(base_root):
+    # Build a real root/ancestor fixture through the same native acquisition
+    # path used by production.  Replacing any live component must be denied;
+    # a successful rename would prove that a pre-admission substitution window
+    # remains. This fixture uses only empty, unique directories and removes
+    # them one at a time after every native handle is released.
+    fixture_leaf, fixture_root, fixture_ancestors = secure_root(base_root)
+    grandparent = parent = acquired_root = None
+    acquired_leaf = None
+    acquired_ancestors = []
+    fixture_path = os.path.join(os.path.abspath(base_root), fixture_leaf)
+    grandparent_path = os.path.join(fixture_path, "grandparent")
+    parent_path = os.path.join(grandparent_path, "parent")
+    try:
+        grandparent = create_directory("grandparent", fixture_root)
+        parent = create_directory("parent", grandparent)
+        acquired_leaf, acquired_root, acquired_ancestors = secure_root(parent_path)
+        for live_path in (fixture_path, grandparent_path, parent_path):
+            try:
+                os.replace(live_path, live_path + "-replacement")
+            except OSError:
+                continue
+            raise RuntimeError("live receipt ancestor replacement unexpectedly admitted")
+        emit({"ok": True, "event": "replacement-self-test"})
+    finally:
+        close(acquired_root)
+        for handle in reversed(acquired_ancestors): close(handle)
+        close(parent); close(grandparent); close(fixture_root)
+        for handle in reversed(fixture_ancestors): close(handle)
+        # This is not production cleanup: it removes just the empty, unique
+        # fixture directories after all identity handles are gone.
+        try:
+            for directory in (os.path.join(parent_path, acquired_leaf), parent_path, grandparent_path, fixture_path): os.rmdir(directory)
+        except OSError:
+            pass
+
 def ownership_self_test(base_root):
-    leaf, root = secure_root(base_root)
+    leaf, root, ancestors = secure_root(base_root)
     helper = None
     try:
         descriptor = owner_only_descriptor()
@@ -134,15 +197,18 @@ def ownership_self_test(base_root):
         emit({"ok": True, "event": "ownership-self-test"})
     finally:
         close(helper); close(root)
+        for handle in reversed(ancestors): close(handle)
 
 def emit(value):
     print(json.dumps(value, separators=(",", ":")), flush=True)
 
 def main():
-    parser = argparse.ArgumentParser(add_help=False); parser.add_argument("--base-root", required=True); parser.add_argument("--ownership-self-test", action="store_true"); args = parser.parse_args()
+    parser = argparse.ArgumentParser(add_help=False); parser.add_argument("--base-root", required=True); parser.add_argument("--ownership-self-test", action="store_true"); parser.add_argument("--replacement-self-test", action="store_true"); args = parser.parse_args()
     if args.ownership_self_test:
         ownership_self_test(args.base_root); return
-    leaf, root = secure_root(args.base_root)
+    if args.replacement_self_test:
+        replacement_self_test(args.base_root); return
+    leaf, root, ancestors = secure_root(args.base_root)
     helper = node = None
     try:
         descriptor = owner_only_descriptor()
@@ -167,5 +233,6 @@ def main():
             write(helper if sink == "helper" else node, receipt); emit({"ok": True, "event": "written", "sink": sink})
     finally:
         close(helper); close(node); close(root)
+        for handle in reversed(ancestors): close(handle)
 
 if __name__ == "__main__": main()

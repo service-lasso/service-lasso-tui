@@ -153,6 +153,21 @@ test("Windows native receipt ownership denies a concurrent writer and reads the 
   }
 });
 
+test("Windows native receipt acquisition denies replacement of the live root and its ancestors", { skip: process.platform !== "win32" }, async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-receipt-ancestor-replacement-${process.pid}-${Date.now()}`);
+  await mkdir(tempRoot, { recursive: true });
+  try {
+    const { stdout } = await new Promise((resolve, reject) => {
+      execFile("python", [path.join(repoRoot, "scripts", "verify-release-asset-receipts.py"), "--base-root", tempRoot, "--replacement-self-test"], { windowsHide: true }, (error, stdout, stderr) => {
+        if (error) reject(error); else resolve({ stdout, stderr });
+      });
+    });
+    assert.deepEqual(JSON.parse(stdout), { ok: true, event: "replacement-self-test" });
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("npm preflight commands use fixed Windows cmd.exe npm.cmd boundaries", () => {
   assert.deepEqual(npmCommand("ci", "win32"), { program: "cmd.exe", args: ["/d", "/s", "/c", "npm.cmd ci"] });
   assert.deepEqual(npmCommand("build", "win32"), { program: "cmd.exe", args: ["/d", "/s", "/c", "npm.cmd run build"] });
@@ -343,7 +358,7 @@ test("held receipt handles bind publication despite attempt-root substitution", 
     await rm(displacedRoot, { recursive: true, force: true });
     const { rename } = await import("node:fs/promises");
     if (process.platform === "win32") {
-      await assert.rejects(() => rename(tempRoot, displacedRoot), /EPERM|EACCES/u);
+      await assert.rejects(() => rename(tempRoot, displacedRoot), /EPERM|EACCES|EBUSY/u);
     } else {
       await rename(tempRoot, displacedRoot);
     }
@@ -352,8 +367,10 @@ test("held receipt handles bind publication despite attempt-root substitution", 
     const receiptDirectory = process.platform === "win32" ? sinks.root : path.join(displacedRoot, path.basename(sinks.root));
     assert.deepEqual(JSON.parse(await readFile(path.join(receiptDirectory, "node-exit-outcome.json"), "utf8")), { stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero" });
   } finally {
-    await rm(tempRoot, { recursive: true, force: true });
-    await rm(`${tempRoot}-owned`, { recursive: true, force: true });
+    if (process.platform !== "win32") {
+      await rm(tempRoot, { recursive: true, force: true });
+      await rm(`${tempRoot}-owned`, { recursive: true, force: true });
+    }
   }
 });
 

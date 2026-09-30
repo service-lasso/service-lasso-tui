@@ -299,16 +299,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if message.epoch != m.connectionEpoch {
 			return m, nil
 		}
+		// The confirmation view is a record of one Core-issued preview. A list
+		// result can have been started before that view was entered, so it must
+		// not alter selection or invalidate the advertised target while the
+		// operator can still choose y or Escape.
+		if m.pendingAction != "" {
+			return m, nil
+		}
 		m.loading = false
 		m.err = message.err
 		if message.err == nil {
 			m.health, m.services = message.health, message.services
 			m.stale = false
 			m.ensureSelectedService()
-			if m.pendingAction != "" && !m.hasServiceID(m.pendingServiceID) {
-				m.pendingAction, m.pendingServiceID, m.pendingPreview, m.preparingAction = "", "", nil, false
-				m.lastResult = "Selected service changed; confirmation cancelled."
-			}
 		} else if len(m.services) > 0 {
 			m.stale = true
 		}
@@ -402,12 +405,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// deliberately ignored.
 		if m.pendingAction != "" {
 			switch message.String() {
-			case "esc", "backspace":
+			case "esc":
 				m.pendingAction, m.pendingServiceID, m.pendingPreview, m.preparingAction = "", "", nil, false
 				m.lastResult = "Confirmation cancelled."
 				return m, nil
 			case "y":
-				if m.screen == detailScreen && !m.preparingAction && m.pendingPreview != nil && m.operation == nil && m.hasServiceID(m.pendingServiceID) {
+				if !m.preparingAction && m.pendingPreview != nil && m.operation == nil {
 					return m, m.submitPendingAction()
 				}
 			}
@@ -442,7 +445,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "r":
 			m.loading, m.err = true, nil
-			return m, tea.Batch(m.refresh(), m.refreshDashboard())
+			commands := []tea.Cmd{m.refresh(), m.refreshDashboard()}
+			if m.operation != nil {
+				// A retained operation is read using the client captured when it was
+				// submitted. Refresh must never construct a new request or bind the
+				// operation to the currently selected profile.
+				commands = append(commands, readOperation(*m.operation, m.ctx))
+			}
+			return m, tea.Batch(commands...)
 		case "p":
 			if m.connections != nil {
 				m.selectedProfile = m.connectionName

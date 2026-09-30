@@ -23,17 +23,30 @@ async function run(command, args, options = {}) {
 }
 
 async function reserveUnavailableLoopbackURL() {
-  const listener = createServer();
+  // Keep the listener open for the entire unavailable probe. Closing an
+  // ephemeral listener before spawning the child lets another process claim
+  // that port and turns this bounded negative check into an accidental live
+  // runtime probe. Reset accepted connections so the TUI observes an
+  // unavailable API promptly while ownership of the port is retained.
+  const listener = createServer(socket => socket.destroy());
   await new Promise((resolve, reject) => {
     listener.once("error", reject);
     listener.listen({ host: "127.0.0.1", port: 0 }, resolve);
   });
   const address = listener.address();
-  await new Promise((resolve, reject) => listener.close(error => error ? reject(error) : resolve()));
   if (!address || typeof address === "string") {
+    await new Promise((resolve, reject) => listener.close(error => error ? reject(error) : resolve()));
     throw new Error("unavailable loopback port was not allocated");
   }
-  return `http://127.0.0.1:${address.port}`;
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    async close() {
+      if (!listener.listening) {
+        return;
+      }
+      await new Promise((resolve, reject) => listener.close(error => error ? reject(error) : resolve()));
+    },
+  };
 }
 
 function parseProbe(stdout, mode) {
@@ -66,12 +79,15 @@ async function main() {
 
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "service-lasso-tui-real-core-"));
   let apiServer;
+  let unavailableReservation;
   try {
     const executable = path.join(tempRoot, "service-lasso-tui.exe");
     await run("go", ["build", "-o", executable, "./cmd/service-lasso-tui"], { cwd: repoRoot });
     const helper = path.join(repoRoot, "scripts", "verify-real-core-conpty.py");
-    const unavailableURL = await reserveUnavailableLoopbackURL();
-    const unavailable = parseProbe((await run("python", [helper, "--executable", executable, "--mode", "unavailable", "--api-url", unavailableURL])).stdout, "unavailable");
+    unavailableReservation = await reserveUnavailableLoopbackURL();
+    const unavailable = parseProbe((await run("python", [helper, "--executable", executable, "--mode", "unavailable", "--api-url", unavailableReservation.url])).stdout, "unavailable");
+    await unavailableReservation.close();
+    unavailableReservation = undefined;
     const core = await import(pathToFileURL(path.join(coreRoot, "packages", "core", "index.js")).href);
     const servicesRoot = path.join(tempRoot, "services");
     const workspaceRoot = path.join(tempRoot, "workspace");
@@ -84,8 +100,15 @@ async function main() {
     const connected = parseProbe((await run("python", [helper, "--executable", executable, "--mode", "connected", "--api-url", apiServer.url])).stdout, "connected");
     console.log(JSON.stringify({ ok: true, evidence: "direct-real-core-conpty", coreDevelop: pinnedCoreDevelop, platform: "win32-amd64", unavailable: unavailable.mode, connectedDashboard: "rendered", navigation: connected.navigation, exit: connected.exit }));
   } finally {
-    await apiServer?.stop();
-    await rm(tempRoot, { recursive: true, force: true });
+    try {
+      await apiServer?.stop();
+    } finally {
+      try {
+        await unavailableReservation?.close();
+      } finally {
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    }
   }
 }
 

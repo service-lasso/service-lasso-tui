@@ -103,12 +103,14 @@ async function main() {
   const hostArchitecture = await getWindowsHostArchitecture();
   const helperArchitecture = await getHelperArchitecture(helper);
   assertAmd64Evidence({ hostArchitecture, nodeArchitecture: process.arch, helperArchitecture });
-  acceptanceStage = "core-source";
+  acceptanceStage = "core-package";
   await stat(path.join(coreRoot, "package.json"));
+  acceptanceStage = "core-head";
   const { stdout: coreHead } = await run("git", ["-C", coreRoot, "rev-parse", "HEAD"]);
   if (coreHead.trim() !== pinnedCoreDevelop) {
     throw new Error("Core source is not the pinned develop revision.");
   }
+  acceptanceStage = "core-clean";
   const { stdout: coreDirty } = await run("git", ["-C", coreRoot, "status", "--porcelain"]);
   if (coreDirty.trim() !== "") {
     throw new Error("Core source must be clean for direct acceptance.");

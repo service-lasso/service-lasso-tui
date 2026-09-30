@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdir, open, readFile, rm } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -52,6 +52,9 @@ export function assertPreflight({ immutableReleases, environment, branchProtecti
 export function assertManifest(manifest, identity) {
   exactKeys(manifest, ["assets", "checksumManifest", "corePackagingIssue", "kind", "release", "schemaVersion", "source", "version"], "candidate manifest");
   if (manifest.schemaVersion !== 2 || manifest.kind !== "develop-prerelease-candidate" || manifest.version !== identity.version) fail("candidate manifest identity is invalid");
+  exactKeys(manifest.source, ["commit", "ref", "repository"], "candidate manifest source");
+  exactKeys(manifest.release, ["draft", "immutable", "prerelease", "tag"], "candidate manifest release");
+  exactKeys(manifest.checksumManifest, ["name", "sha256"], "candidate checksum manifest");
   if (manifest.source?.repository !== "service-lasso/service-lasso-tui" || manifest.source?.ref !== identity.sourceRef || manifest.source?.commit !== identity.sourceCommit) fail("candidate manifest source is invalid");
   if (manifest.corePackagingIssue !== "service-lasso/service-lasso#1461") fail("candidate manifest Core handoff is invalid");
   if (manifest.release?.tag !== identity.tag || manifest.release?.prerelease !== true || manifest.release?.draft !== false || manifest.release?.immutable !== true) fail("candidate manifest release contract is invalid");
@@ -60,6 +63,7 @@ export function assertManifest(manifest, identity) {
   if (!Array.isArray(manifest.assets) || manifest.assets.length !== expectedAssets.length) fail("candidate manifest must describe all platform assets");
   for (const expected of expectedAssets) {
     const asset = manifest.assets.find(candidate => candidate?.platform === expected.platform);
+    exactKeys(asset, ["executable", "name", "platform", "sha256"], "candidate manifest asset");
     if (!asset || asset.name !== expected.name || asset.executable !== expected.executable || !SHA256.test(asset.sha256)) fail("candidate manifest platform inventory is invalid");
   }
   return manifest;
@@ -81,19 +85,28 @@ function localAssetPath(assetDirectory, name) {
   return { root, file };
 }
 
-async function readBoundedRegularLocalAsset(assetDirectory, name, maxBytes = MAX_ASSET_BYTES) {
+function fileIdentity(stat) {
+  const valid = value => (typeof value === "bigint" && value >= 0n) || (typeof value === "number" && Number.isFinite(value) && value >= 0);
+  if (!valid(stat?.dev) || !valid(stat?.ino)) fail("local candidate asset identity is unavailable");
+  return { dev: stat.dev, ino: stat.ino, size: stat.size, ctimeMs: stat.ctimeMs, birthtimeMs: stat.birthtimeMs };
+}
+function sameFileIdentity(left, right) { return left.dev === right.dev && left.ino === right.ino && left.size === right.size && left.ctimeMs === right.ctimeMs && left.birthtimeMs === right.birthtimeMs; }
+
+export async function readBoundedRegularLocalAsset(assetDirectory, name, maxBytes = MAX_ASSET_BYTES, beforeOpen) {
   const { root, file } = localAssetPath(assetDirectory, name);
   const directory = await lstat(root);
   if (!directory.isDirectory() || directory.isSymbolicLink()) fail("local candidate asset directory is invalid");
   const entry = await lstat(file);
   if (!entry.isFile() || entry.isSymbolicLink() || entry.size <= 0 || entry.size > maxBytes) fail(`local candidate asset is invalid for ${name}`);
+  const entryIdentity = fileIdentity(entry);
+  if (beforeOpen) await beforeOpen(file);
   const handle = await open(file, "r");
   try {
     const opened = await handle.stat();
-    if (!opened.isFile() || opened.size !== entry.size || opened.size <= 0 || opened.size > maxBytes) fail(`local candidate asset changed while opening for ${name}`);
+    if (!opened.isFile() || !sameFileIdentity(entryIdentity, fileIdentity(opened)) || opened.size <= 0 || opened.size > maxBytes) fail(`local candidate asset changed while opening for ${name}`);
     const bytes = await handle.readFile();
     const completed = await handle.stat();
-    if (bytes.length !== entry.size || completed.size !== entry.size) fail(`local candidate asset changed while reading for ${name}`);
+    if (bytes.length !== entry.size || !sameFileIdentity(entryIdentity, fileIdentity(completed))) fail(`local candidate asset changed while reading for ${name}`);
     return bytes;
   } finally {
     await handle.close();
@@ -133,6 +146,34 @@ export async function assertActualLocalAssets({ assetDirectory, manifest, localA
   if (manifest.checksumManifest.sha256 !== actual["SHA256SUMS.txt"].sha256) fail("actual local checksum manifest does not match the manifest");
   assertChecksumManifestBytes(actual["SHA256SUMS.txt"].bytes, manifest);
   return Object.fromEntries(requiredNames.map(name => [name, { sha256: actual[name].sha256, size: actual[name].size }]));
+}
+
+export async function assertPublicationDirectory(assetDirectory, manifest) {
+  const expected = new Set([...fixedInventoryNames(manifest?.version), "candidate-local-assets.json"]);
+  const entries = await readdir(assetDirectory);
+  if (entries.length !== expected.size || entries.some(entry => !expected.has(entry))) fail("candidate publication directory has unexpected files");
+  return [...expected].sort();
+}
+
+// The returned buffers are the custody boundary for a new publication.  Callers
+// upload these held bytes, never paths that can be reopened after verification.
+export async function holdVerifiedLocalAssets({ assetDirectory, manifest, localAssets, beforeOpen }) {
+  const requiredNames = fixedInventoryNames(manifest?.version);
+  assertLocalAssets(localAssets, requiredNames);
+  const held = {}; let totalBytes = 0;
+  for (const name of requiredNames) {
+    const bytes = await readBoundedRegularLocalAsset(assetDirectory, name, (name.endsWith(".json") || name === "SHA256SUMS.txt") ? MAX_METADATA_BYTES : MAX_ASSET_BYTES, beforeOpen);
+    totalBytes += bytes.length;
+    if (totalBytes > MAX_TOTAL_BYTES) fail("candidate upload inventory exceeds held-byte bound");
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    if (sha256 !== localAssets[name].sha256 || bytes.length !== localAssets[name].size) fail(`actual local candidate asset does not match the inventory for ${name}`);
+    held[name] = bytes;
+  }
+  const heldInventory = Object.fromEntries(requiredNames.map(name => [name, { sha256: createHash("sha256").update(held[name]).digest("hex"), size: held[name].length, bytes: held[name] }]));
+  const actual = await assertActualLocalAssets({ assetDirectory, manifest, localAssets: Object.fromEntries(requiredNames.map(name => [name, heldInventory[name]])) });
+  // Verify the manifest/checksum relation against the held immutable bytes too.
+  assertChecksumManifestBytes(held["SHA256SUMS.txt"], manifest);
+  return { inventory: actual, bytes: held, totalBytes };
 }
 
 export function assertReleaseReceipt(release, manifest, localAssets) {
@@ -236,6 +277,7 @@ export async function main(argv) {
   assertLocalMetadataPath(values["asset-directory"], values.manifest, "candidate-manifest.json"); assertLocalMetadataPath(values["asset-directory"], values["local-assets"], "candidate-local-assets.json");
   const manifest = assertManifest(await readLocalMetadataJSON(values["asset-directory"], "candidate-manifest.json"), identity); const localAssets = await readLocalMetadataJSON(values["asset-directory"], "candidate-local-assets.json");
   if (values.mode === "local-assets") { const result = await assertActualLocalAssets({ assetDirectory: values["asset-directory"], manifest, localAssets }); process.stdout.write(`${JSON.stringify(result)}\n`); return; }
+  if (values.mode === "publication-assets") { const result = await assertPublicationDirectory(values["asset-directory"], manifest); await assertActualLocalAssets({ assetDirectory: values["asset-directory"], manifest, localAssets }); process.stdout.write(`${JSON.stringify(result)}\n`); return; }
   if (values.mode !== "receipt" || !values.release || !values["download-dir"]) fail("usage");
   const result = await verifyPublicAssetBytes({ release: await readJSON(values.release), manifest, localAssets, assetDirectory: values["asset-directory"], downloadDir: values["download-dir"] });
   process.stdout.write(`${JSON.stringify(result)}\n`);

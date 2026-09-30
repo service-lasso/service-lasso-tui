@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { assertExistingCandidateRecovery, assertManifest, assertPreflight, assertReleaseReceipt, assertTransportPolicy, candidateIdentity, verifyPublicAssetBytes } from "./verify-candidate-publication.mjs";
+import { assertExistingCandidateRecovery, assertManifest, assertPreflight, assertPublicationDirectory, assertReleaseReceipt, assertTransportPolicy, candidateIdentity, readBoundedRegularLocalAsset, verifyPublicAssetBytes } from "./verify-candidate-publication.mjs";
+import { uploadVerifiedCandidateAssets } from "./upload-verified-candidate-assets.mjs";
 
 const identity = candidateIdentity({ sourceRef: "refs/heads/develop", sourceCommit: "0123456789abcdef0123456789abcdef01234567", version: "2026.10.1-0123456", tag: "candidate-2026.10.1-0123456" });
 const names = ["service-lasso-tui-2026.10.1-0123456-win32-amd64.zip", "service-lasso-tui-2026.10.1-0123456-linux-amd64.tar.gz", "service-lasso-tui-2026.10.1-0123456-darwin-amd64.tar.gz", "service-lasso-tui-2026.10.1-0123456-darwin-arm64.tar.gz", "SHA256SUMS.txt", "candidate-manifest.json"];
@@ -58,9 +59,13 @@ test("requires a full-SHA-bound four-platform candidate manifest", () => {
   assert.doesNotThrow(() => assertManifest(manifest, identity));
   assert.throws(() => assertManifest({ ...manifest, assets: manifest.assets.slice(1) }, identity), /all platform/u);
   assert.throws(() => assertManifest({ ...manifest, assets: manifest.assets.map((asset, index) => index === 0 ? { ...asset, name: "service-lasso-tui-anything.zip" } : asset) }, identity), /platform inventory/u);
-  assert.throws(() => assertManifest({ ...manifest, assets: manifest.assets.map((asset, index) => index === 0 ? { ...asset, platform: "arbitrary-platform" } : asset) }, identity), /platform inventory/u);
-  assert.throws(() => assertManifest({ ...manifest, assets: manifest.assets.map((asset, index) => index === 1 ? { ...asset, platform: "win32-amd64" } : asset) }, identity), /platform inventory/u);
-  assert.throws(() => assertManifest({ ...manifest, assets: manifest.assets.map((asset, index) => index === 0 ? { ...asset, executable: "service-lasso-tui" } : asset) }, identity), /platform inventory/u);
+  assert.throws(() => assertManifest({ ...manifest, assets: manifest.assets.map((asset, index) => index === 0 ? { ...asset, platform: "arbitrary-platform" } : asset) }, identity), /manifest asset|platform inventory/u);
+  assert.throws(() => assertManifest({ ...manifest, assets: manifest.assets.map((asset, index) => index === 1 ? { ...asset, platform: "win32-amd64" } : asset) }, identity), /manifest asset|platform inventory/u);
+  assert.throws(() => assertManifest({ ...manifest, assets: manifest.assets.map((asset, index) => index === 0 ? { ...asset, executable: "service-lasso-tui" } : asset) }, identity), /manifest asset|platform inventory/u);
+  assert.throws(() => assertManifest({ ...manifest, source: { ...manifest.source, unexpected: true } }, identity), /source has an unexpected shape/u);
+  assert.throws(() => assertManifest({ ...manifest, release: { ...manifest.release, unexpected: true } }, identity), /release has an unexpected shape/u);
+  assert.throws(() => assertManifest({ ...manifest, checksumManifest: { ...manifest.checksumManifest, unexpected: true } }, identity), /checksum manifest has an unexpected shape/u);
+  assert.throws(() => assertManifest({ ...manifest, assets: manifest.assets.map((asset, index) => index === 0 ? { ...asset, unexpected: true } : asset) }, identity), /asset has an unexpected shape/u);
   assert.throws(() => candidateIdentity({ ...identity, sourceRef: "refs/heads/main" }), /develop/u);
 });
 test("validates complete immutable metadata inventory before reading public bytes", () => {
@@ -102,4 +107,36 @@ test("rejects malformed public URLs and redirect escapes or loops", async () => 
 test("keeps authenticated uploads separate from headerless public downloads", () => {
   assert.equal(assertTransportPolicy({ uploadURL: "https://uploads.github.com/repos/service-lasso/service-lasso-tui/releases/1/assets", downloadURL: "https://github.com/service-lasso/service-lasso-tui/releases/download/tag/file", authorization: "Bearer" }), true);
   assert.throws(() => assertTransportPolicy({ uploadURL: "https://uploads.github.com/x", downloadURL: "https://github.com/file", authorization: "Basic" }), /Bearer/u);
+});
+
+test("rejects unexpected candidate files before a provider boundary", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "candidate-unexpected-file-"));
+  try {
+    await Promise.all(names.map(name => writeFile(path.join(directory, name), localBodies[name])));
+    await writeFile(path.join(directory, "candidate-local-assets.json"), JSON.stringify(localAssets));
+    await writeFile(path.join(directory, "service-lasso-tui-unexpected.zip"), "not adopted");
+    await assert.rejects(() => assertPublicationDirectory(directory, manifest), /unexpected files/u);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("rejects an identity swap between lstat and open", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "candidate-identity-swap-")); const name = names[0]; const file = path.join(directory, name);
+  try {
+    await writeFile(file, localBodies[name]); await writeFile(`${file}.replacement`, localBodies[name]);
+    await assert.rejects(() => readBoundedRegularLocalAsset(directory, name, 1024, async () => { await rename(`${file}.replacement`, file); }), /changed while opening/u);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("uploads the original held bytes if every source path is coherently replaced after verification", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "candidate-held-upload-")); const previousRepository = process.env.GITHUB_REPOSITORY; const previousToken = process.env.GH_TOKEN; const uploaded = [];
+  try {
+    await Promise.all(names.map(name => writeFile(path.join(directory, name), localBodies[name])));
+    await writeFile(path.join(directory, "candidate-local-assets.json"), JSON.stringify(localAssets));
+    process.env.GITHUB_REPOSITORY = "service-lasso/service-lasso-tui"; process.env.GH_TOKEN = "test-token";
+    await uploadVerifiedCandidateAssets({ assetDirectory: directory, localAssets: path.join(directory, "candidate-local-assets.json"), identity, releaseID: "123", upload: async (_url, bytes) => {
+      if (uploaded.length === 0) await Promise.all(names.map(name => writeFile(path.join(directory, name), Buffer.from(`replacement-${name}`, "utf8"))));
+      uploaded.push(Buffer.from(bytes));
+    } });
+    assert.deepEqual(uploaded, names.map(name => localBodies[name]));
+  } finally { previousRepository === undefined ? delete process.env.GITHUB_REPOSITORY : process.env.GITHUB_REPOSITORY = previousRepository; previousToken === undefined ? delete process.env.GH_TOKEN : process.env.GH_TOKEN = previousToken; await rm(directory, { recursive: true, force: true }); }
 });

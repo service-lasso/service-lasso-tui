@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -154,7 +156,7 @@ func TestClientConfigurationErrorsHaveClosedKinds(t *testing.T) {
 		{"ftp://runtime.example.test", "", ConfigurationErrorUnsupportedScheme},
 		{"https://operator:secret@runtime.example.test", "", ConfigurationErrorUserinfo},
 		{"https://runtime.example.test?next=/other", "", ConfigurationErrorQueryOrFragment},
-		{"http://runtime.example.test", "token", ConfigurationErrorInsecureTokenTransport},
+		{"http://runtime.example.test", "token", ConfigurationErrorRemoteProfileAdmission},
 	}
 	for _, test := range cases {
 		t.Run(string(test.kind), func(t *testing.T) {
@@ -169,13 +171,19 @@ func TestClientConfigurationErrorsHaveClosedKinds(t *testing.T) {
 
 func TestClientProtectsTokenTransport(t *testing.T) {
 	if _, err := NewClient("http://runtime.example.test", nil, "token"); err == nil {
-		t.Fatal("expected non-loopback HTTP token transport to be rejected")
+		t.Fatal("expected non-loopback local-admin client to be rejected")
 	}
 	if _, err := NewClient("http://127.0.0.1:17883", nil, "token"); err != nil {
 		t.Fatalf("expected loopback HTTP token transport to be allowed: %v", err)
 	}
-	if _, err := NewClient("https://runtime.example.test", nil, "token"); err != nil {
-		t.Fatalf("expected HTTPS token transport to be allowed: %v", err)
+	if _, err := NewClient("https://runtime.example.test", nil, "token"); err == nil {
+		t.Fatal("expected non-loopback local-admin client to be rejected")
+	}
+	if _, err := NewClientWithAuth("http://runtime.example.test", nil, "token", AuthModeOAuthBearer, "service-lasso:read", "service-lasso:lifecycle:write"); err == nil {
+		t.Fatal("expected remote HTTP bearer transport to be rejected")
+	}
+	if _, err := NewClientWithAuth("https://runtime.example.test", nil, "token", AuthModeOAuthBearer, "service-lasso:read", "service-lasso:lifecycle:write"); err != nil {
+		t.Fatalf("expected explicit HTTPS bearer client to be allowed: %v", err)
 	}
 	if _, err := NewClient("https://operator:secret@runtime.example.test", nil, ""); err == nil {
 		t.Fatal("expected URL userinfo to be rejected")
@@ -323,11 +331,40 @@ func TestOAuthBearerIsExplicitAndMalformedOperationNeverRenders(t *testing.T) {
 		_, _ = w.Write([]byte(`{"operation":{"operationId":"mcp-operation-12345678","action":"service_start\u001b[2J","status":"running","phase":"executing","progress":50,"outcome":null,"cancellationSupported":false,"ownership":"own"}}`))
 	}))
 	defer server.Close()
-	client, err := NewClientWithAuth(server.URL, server.Client(), "remote-token", AuthModeOAuthBearer)
+	client, err := NewClientWithAuth(server.URL, server.Client(), "remote-token", AuthModeOAuthBearer, "service-lasso:read", "service-lasso:lifecycle:write")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := client.Operation(context.Background(), "mcp-operation-12345678"); err == nil {
 		t.Fatal("unsafe operation payload was accepted")
+	}
+}
+
+func TestExplicitRemoteBearerSendsOnlyAuthorization(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host != "remote.example.test" {
+			t.Fatalf("request host = %q", r.Host)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer remote-token" {
+			t.Fatalf("authorization = %q", got)
+		}
+		if got := r.Header.Get("x-service-lasso-admin-token"); got != "" {
+			t.Fatalf("local-admin header leaked into bearer request: %q", got)
+		}
+		_, _ = w.Write([]byte(`{"status":"ok","api":{"status":"up","version":"test"}}`))
+	}))
+	defer server.Close()
+
+	transport := server.Client().Transport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // test server is reached through a non-loopback authority.
+	transport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
+	}
+	client, err := NewClientWithAuth("https://remote.example.test", &http.Client{Transport: transport}, "remote-token", AuthModeOAuthBearer, "service-lasso:read", "service-lasso:lifecycle:write")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Health(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }

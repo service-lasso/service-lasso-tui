@@ -301,7 +301,7 @@ func TestAcceptedOperationSurvivesProfileActivationAndDoesNotReplay(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	remote, err := api.NewClient("https://remote.example.test", nil, "remote-token")
+	remote, err := api.NewClientWithAuth("https://remote.example.test", nil, "remote-token", api.AuthModeOAuthBearer, "service-lasso:read", "service-lasso:lifecycle:write")
 	if err != nil {
 		t.Fatal(err)
 	}

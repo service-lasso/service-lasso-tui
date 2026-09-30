@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -61,6 +60,9 @@ func ResolveConnections(options ConnectionOptions) (*ConnectionManager, *Client,
 		if len(config.Profiles) == 0 {
 			return nil, nil, fmt.Errorf("connection configuration has no profiles")
 		}
+		if err := validateLoadedProfiles(config.Profiles); err != nil {
+			return nil, nil, err
+		}
 		profiles, defaultProfile = config.Profiles, config.Default
 	}
 	selected := firstNonEmpty(options.Profile, env("SERVICE_LASSO_API_PROFILE"), defaultProfile)
@@ -111,6 +113,10 @@ func (m *ConnectionManager) Client(name string) (*Client, error) {
 	if !ok {
 		return nil, fmt.Errorf("unknown connection profile %q", name)
 	}
+	mode, err := validateProfileAdmission(profile)
+	if err != nil {
+		return nil, fmt.Errorf("connection profile %q is not admissible: %w", name, err)
+	}
 	if profile.TokenEnv == "" {
 		return nil, fmt.Errorf("connection profile %q has no credential environment reference", name)
 	}
@@ -118,23 +124,33 @@ func (m *ConnectionManager) Client(name string) (*Client, error) {
 	if token == "" {
 		return nil, fmt.Errorf("connection profile %q credential is unavailable", name)
 	}
+	return NewClientWithAuth(profile.URL, nil, token, mode, profile.Scopes...)
+}
+
+func validateLoadedProfiles(profiles map[string]ConnectionProfile) error {
+	for name, profile := range profiles {
+		// An incomplete profile may receive a loopback URL through normal
+		// resolution. Once it names a URL, admit it before any profile can be
+		// selected and before its credential reference is read.
+		if profile.URL == "" {
+			continue
+		}
+		if _, err := validateProfileAdmission(profile); err != nil {
+			return fmt.Errorf("connection profile %q is not admissible: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func validateProfileAdmission(profile ConnectionProfile) (AuthMode, error) {
 	mode := profile.AuthMode
 	if mode == "" {
 		mode = AuthModeLocalAdmin
 	}
-	if mode == AuthModeOAuthBearer && !isLoopbackURL(profile.URL) && !hasRequiredScopes(profile.Scopes) {
-		return nil, fmt.Errorf("oauth-bearer profile %q lacks required lifecycle scopes", name)
+	if _, err := NewClientWithAuth(profile.URL, nil, "", mode, profile.Scopes...); err != nil {
+		return "", err
 	}
-	return NewClientWithAuth(profile.URL, nil, token, mode)
-}
-
-func isLoopbackURL(raw string) bool {
-	client, err := NewClient(raw, nil, "")
-	if err != nil {
-		return false
-	}
-	parsed, _ := url.Parse(client.baseURL)
-	return isLoopbackHost(parsed.Hostname())
+	return mode, nil
 }
 
 func hasRequiredScopes(scopes []string) bool {

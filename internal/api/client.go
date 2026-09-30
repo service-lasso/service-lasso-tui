@@ -47,6 +47,7 @@ const (
 	ConfigurationErrorUserinfo               ConfigurationErrorKind = "userinfo"
 	ConfigurationErrorQueryOrFragment        ConfigurationErrorKind = "query_or_fragment"
 	ConfigurationErrorInsecureTokenTransport ConfigurationErrorKind = "insecure_token_transport"
+	ConfigurationErrorRemoteProfileAdmission ConfigurationErrorKind = "remote_profile_admission"
 )
 
 // ConfigurationError reports only the closed validation class.
@@ -66,6 +67,8 @@ func (e *ConfigurationError) Error() string {
 		return "Service Lasso API URL must not contain a query or fragment"
 	case ConfigurationErrorInsecureTokenTransport:
 		return "operator token requires HTTPS for a non-loopback Service Lasso API URL"
+	case ConfigurationErrorRemoteProfileAdmission:
+		return "non-loopback Service Lasso API requires explicit oauth-bearer lifecycle scopes"
 	default:
 		return "invalid Service Lasso API configuration"
 	}
@@ -170,7 +173,38 @@ func NewClient(baseURL string, client *http.Client, operatorToken string) (*Clie
 	return NewClientWithAuth(baseURL, client, operatorToken, AuthModeLocalAdmin)
 }
 
-func NewClientWithAuth(baseURL string, client *http.Client, operatorToken string, authMode AuthMode) (*Client, error) {
+// NewClientWithAuth admits a non-loopback runtime only when its caller
+// explicitly declares the Core OAuth mode and both lifecycle scopes. The
+// declaration is a local configuration guard; Core validates the bearer token
+// and authorizes every request.
+func NewClientWithAuth(baseURL string, client *http.Client, operatorToken string, authMode AuthMode, scopes ...string) (*Client, error) {
+	parsed, err := parseBaseURL(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	if authMode == "" {
+		authMode = AuthModeLocalAdmin
+	}
+	if authMode != AuthModeLocalAdmin && authMode != AuthModeOAuthBearer {
+		return nil, &ConfigurationError{Kind: ConfigurationErrorInvalidURL}
+	}
+	if !isLoopbackHost(parsed.Hostname()) && (authMode != AuthModeOAuthBearer || !hasRequiredScopes(scopes)) {
+		return nil, &ConfigurationError{Kind: ConfigurationErrorRemoteProfileAdmission}
+	}
+	if !isLoopbackHost(parsed.Hostname()) && parsed.Scheme != "https" {
+		return nil, &ConfigurationError{Kind: ConfigurationErrorInsecureTokenTransport}
+	}
+	if client == nil {
+		client = &http.Client{Timeout: requestTimeout}
+	}
+	isolatedClient := *client
+	isolatedClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return &Client{baseURL: strings.TrimRight(parsed.String(), "/"), http: &isolatedClient, operatorToken: operatorToken, authMode: authMode}, nil
+}
+
+func parseBaseURL(baseURL string) (*url.URL, error) {
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return nil, &ConfigurationError{Kind: ConfigurationErrorInvalidURL}
@@ -184,20 +218,7 @@ func NewClientWithAuth(baseURL string, client *http.Client, operatorToken string
 	if parsed.RawQuery != "" || parsed.Fragment != "" {
 		return nil, &ConfigurationError{Kind: ConfigurationErrorQueryOrFragment}
 	}
-	if operatorToken != "" && parsed.Scheme != "https" && !isLoopbackHost(parsed.Hostname()) {
-		return nil, &ConfigurationError{Kind: ConfigurationErrorInsecureTokenTransport}
-	}
-	if authMode != AuthModeLocalAdmin && authMode != AuthModeOAuthBearer {
-		return nil, &ConfigurationError{Kind: ConfigurationErrorInvalidURL}
-	}
-	if client == nil {
-		client = &http.Client{Timeout: requestTimeout}
-	}
-	isolatedClient := *client
-	isolatedClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
-		return http.ErrUseLastResponse
-	}
-	return &Client{baseURL: strings.TrimRight(parsed.String(), "/"), http: &isolatedClient, operatorToken: operatorToken, authMode: authMode}, nil
+	return parsed, nil
 }
 
 func isLoopbackHost(host string) bool {

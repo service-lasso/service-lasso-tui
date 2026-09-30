@@ -12,8 +12,8 @@ const bodyFor = name => Buffer.from(`published-${name}`, "utf8");
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 const manifest = { schemaVersion: 2, kind: "develop-prerelease-candidate", source: { repository: "service-lasso/service-lasso-tui", ref: identity.sourceRef, commit: identity.sourceCommit }, release: { tag: identity.tag, prerelease: true, draft: false, immutable: true }, version: identity.version, checksumManifest: { name: "SHA256SUMS.txt", sha256: digest(bodyFor("SHA256SUMS.txt")) }, corePackagingIssue: "service-lasso/service-lasso#1461", assets: [{ platform: "win32-amd64", name: names[0], sha256: digest(bodyFor(names[0])), executable: "service-lasso-tui.exe" }, { platform: "linux-amd64", name: names[1], sha256: digest(bodyFor(names[1])), executable: "service-lasso-tui" }, { platform: "darwin-amd64", name: names[2], sha256: digest(bodyFor(names[2])), executable: "service-lasso-tui" }, { platform: "darwin-arm64", name: names[3], sha256: digest(bodyFor(names[3])), executable: "service-lasso-tui" }] };
 const localAssets = Object.fromEntries(names.map(name => { const body = bodyFor(name); return [name, { sha256: digest(body), size: body.length }]; }));
-const release = { tag_name: identity.tag, target_commitish: identity.sourceCommit, draft: false, prerelease: true, immutable: true, assets: names.map(name => ({ name, digest: `sha256:${localAssets[name].sha256}`, size: localAssets[name].size, browser_download_url: `https://github.com/service-lasso/service-lasso-tui/releases/download/${identity.tag}/${name}` })) };
-const preflight = { immutableReleases: { enabled: true }, environment: { name: "development-candidate", protection_rules: [{ type: "wait_timer", wait_timer: 10 }], deployment_branch_policy: { protected_branches: true, custom_branch_policies: false } }, branchProtection: { required_status_checks: { strict: true, contexts: ["Linux test and build", "Windows test and build", "macOS test and build", "Release asset cross-compilation"] }, required_pull_request_reviews: { required_approving_review_count: 0 } } };
+const release = { tag_name: identity.tag, target_commitish: identity.sourceCommit, draft: false, prerelease: true, immutable: true, assets: names.map((name, index) => ({ id: index + 101, url: `https://api.github.com/repos/service-lasso/service-lasso-tui/releases/assets/${index + 101}`, name, digest: `sha256:${localAssets[name].sha256}`, size: localAssets[name].size, browser_download_url: `https://github.com/service-lasso/service-lasso-tui/releases/download/${identity.tag}/${name}` })) };
+const preflight = { immutableReleases: { enabled: true }, environment: { name: "development-candidate", protection_rules: [{ type: "wait_timer", wait_timer: 10 }], deployment_branch_policy: { protected_branches: true, custom_branch_policies: false } }, branchProtection: { required_status_checks: { strict: true, contexts: ["Linux test and build", "Windows test and build", "macOS test and build", "Release asset cross-compilation"] }, required_pull_request_reviews: { required_approving_review_count: 0 }, allow_force_pushes: { enabled: false } } };
 
 function response(status, headers = {}, body) { return { status, headers: { get: key => headers[key.toLowerCase()] ?? null }, body: body === undefined ? undefined : (async function* () { yield body; })() }; }
 function publicFetch({ bodies = Object.fromEntries(names.map(name => [name, bodyFor(name)])), redirect = true, calls = [] } = {}) {
@@ -35,6 +35,9 @@ test("accepts a complete protected preflight without inventing a review count", 
 test("rejects disabled immutable releases and unbounded environment waits", () => {
   assert.throws(() => assertPreflight({ ...preflight, immutableReleases: { enabled: false } }), /immutable/u);
   assert.throws(() => assertPreflight({ ...preflight, environment: { ...preflight.environment, protection_rules: [{ type: "wait_timer", wait_timer: 31 }] } }), /bounded/u);
+  assert.throws(() => assertPreflight({ ...preflight, branchProtection: { ...preflight.branchProtection, allow_force_pushes: undefined } }), /force pushes/u);
+  assert.throws(() => assertPreflight({ ...preflight, branchProtection: { ...preflight.branchProtection, allow_force_pushes: { enabled: true } } }), /force pushes/u);
+  assert.throws(() => assertPreflight({ ...preflight, branchProtection: { ...preflight.branchProtection, allow_force_pushes: {} } }), /force pushes/u);
 });
 test("requires a full-SHA-bound four-platform candidate manifest", () => {
   assert.doesNotThrow(() => assertManifest(manifest, identity));
@@ -61,6 +64,12 @@ test("rejects public body mismatch, truncation, missing inventory, and over-boun
   await assert.rejects(() => verify({ release: { ...release, assets: release.assets.slice(1) } }), /inventory/u);
   const oversized = { ...Object.fromEntries(names.map(name => [name, bodyFor(name)])), [names[2]]: Buffer.concat([bodyFor(names[2]), Buffer.from("more")]) };
   await assert.rejects(() => verify({ bodies: oversized }), /body size|exceeds/u);
+});
+test("rejects missing, duplicate, and malformed asset IDs in the complete receipt pipeline", async () => {
+  await assert.rejects(() => verify({ release: { ...release, assets: release.assets.map((asset, index) => index === 0 ? { ...asset, id: undefined } : asset) } }), /asset ID/u);
+  await assert.rejects(() => verify({ release: { ...release, assets: release.assets.map((asset, index) => index === 1 ? { ...asset, id: release.assets[0].id, url: release.assets[0].url } : asset) } }), /asset ID/u);
+  await assert.rejects(() => verify({ release: { ...release, assets: release.assets.map((asset, index) => index === 2 ? { ...asset, id: 0, url: "https://api.github.com/repos/service-lasso/service-lasso-tui/releases/assets/0" } : asset) } }), /asset ID/u);
+  await assert.rejects(() => verify({ release: { ...release, assets: release.assets.map((asset, index) => index === 3 ? { ...asset, id: 999, url: "https://api.github.com/repos/service-lasso/service-lasso-tui/releases/assets/not-an-id" } : asset) } }), /record URL/u);
 });
 test("rejects malformed public URLs and redirect escapes or loops", async () => {
   for (const url of ["http://github.com/x", "https://user@github.com/x", "https://github.com:443/x", "https://github.com/x#fragment", "https://github.com/x?query=1"]) assert.throws(() => assertTransportPolicy({ uploadURL: "https://uploads.github.com/x", downloadURL: url, authorization: "Bearer" }));

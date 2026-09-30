@@ -175,6 +175,18 @@ jobs:
       CANDIDATE_SHA: ${{ needs.validate-source.outputs.sha }}
       GH_TOKEN: ${{ github.token }}
     steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.validate-source.outputs.sha }}
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.2'
+      - name: Bind checked-out source before candidate artifact retrieval
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/bind-candidate-publication-source.sh "$CANDIDATE_SHA" "$GITHUB_REF" "$RUNNER_TEMP/candidate-source-binding.json" "service-lasso-tui-candidate-${CANDIDATE_VERSION}-${CANDIDATE_SHA}"
       - uses: actions/download-artifact@v4
         with:
           name: service-lasso-tui-candidate-${{ needs.validate-source.outputs.version }}-${{ needs.validate-source.outputs.sha }}
@@ -228,5 +240,6 @@ jobs:
           path: |
             release-assets
             final-release.json
+            ${{ runner.temp }}/candidate-source-binding.json
           if-no-files-found: error
           retention-days: 90

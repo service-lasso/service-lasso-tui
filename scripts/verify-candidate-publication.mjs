@@ -34,6 +34,7 @@ export function assertPreflight({ immutableReleases, environment, branchProtecti
   const contexts = new Set(branchProtection.required_status_checks.contexts ?? []);
   if (!REQUIRED_CHECKS.every(check => contexts.has(check))) fail("develop branch protection is missing a current TUI CI check");
   if (!branchProtection?.required_pull_request_reviews) fail("develop branch protection must require pull-request review");
+  if (branchProtection?.allow_force_pushes?.enabled !== false) fail("develop branch protection must explicitly disable force pushes");
   return { environment: environment.name, waitMinutes: wait.wait_timer, requiredChecks: REQUIRED_CHECKS };
 }
 
@@ -68,9 +69,16 @@ export function assertReleaseReceipt(release, manifest, localAssets) {
   const names = release.assets.map(asset => asset?.name).sort();
   if (names.length !== requiredNames.length || names.some((name, index) => name !== requiredNames[index])) fail("release asset inventory is incomplete or unexpected");
   assertLocalAssets(localAssets, requiredNames);
+  const assetIDs = new Set();
   for (const name of requiredNames) {
     const remote = release.assets.find(asset => asset.name === name); const local = localAssets[name];
+    if (!Number.isSafeInteger(remote?.id) || remote.id <= 0 || assetIDs.has(remote.id)) fail(`release asset ID is invalid for ${name}`);
+    assetIDs.add(remote.id);
+    if (typeof remote?.url !== "string") fail(`release asset record URL is invalid for ${name}`);
+    const assetURL = new URL(remote.url);
+    if (assetURL.protocol !== "https:" || assetURL.hostname !== "api.github.com" || assetURL.port || assetURL.username || assetURL.password || assetURL.hash || assetURL.search || assetURL.pathname !== `/repos/service-lasso/service-lasso-tui/releases/assets/${remote.id}`) fail(`release asset record URL is invalid for ${name}`);
     if (remote?.digest !== `sha256:${local.sha256}` || positiveBoundedSize(remote?.size, `release ${name}`) !== local.size || typeof remote.browser_download_url !== "string") fail(`release asset receipt is invalid for ${name}`);
+    assertInitialAssetURL(remote.browser_download_url, release, name);
   }
   return { tag: release.tag_name, commit: release.target_commitish, immutable: release.immutable, assets: requiredNames };
 }

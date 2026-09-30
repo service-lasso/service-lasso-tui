@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -143,6 +145,37 @@ func TestErrorStateShowsRetryPath(t *testing.T) {
 	view := updated.(model).View()
 	if !strings.Contains(view, "Runtime API unavailable") || !strings.Contains(view, "Press r to retry") {
 		t.Fatalf("error view omitted retry path: %s", view)
+	}
+}
+
+func TestRenderedRuntimeErrorOmitsNon2xxResponseBody(t *testing.T) {
+	const marker = "SYNTHETIC_SECRET_NON_2XX_BODY_DO_NOT_RENDER"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/health":
+			_, _ = w.Write([]byte(`{"status":"ok","api":{"status":"up"}}`))
+		case "/api/services":
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"message":"` + marker + `"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := api.NewClient(server.URL, server.Client(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := New(client, context.Background()).(model)
+	message := initial.refresh()()
+	updated, _ := initial.Update(message)
+	view := updated.(model).View()
+	if strings.Contains(view, marker) {
+		t.Fatalf("rendered terminal output leaked a non-2xx response body: %q", view)
+	}
+	if !strings.Contains(view, "GET /api/services") || !strings.Contains(view, "403 Forbidden") || !strings.Contains(view, "Press r to retry") {
+		t.Fatalf("rendered terminal output omitted useful safe failure context: %q", view)
 	}
 }
 

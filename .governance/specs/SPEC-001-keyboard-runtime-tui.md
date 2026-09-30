@@ -8,6 +8,9 @@ The client validates an HTTP(S) runtime URL, retrieves `/api/health`, and clearl
 shows connected, unavailable, and retry states without replaying mutations.
 It never follows redirects: a redirect response is a failed runtime request, so
 the operator token cannot reach another origin or a downgraded transport.
+For every non-2xx response, the error retains only the request method, path,
+and HTTP status. It never parses, retains, or renders the runtime response
+body.
 
 ## TUI-DASHBOARD
 

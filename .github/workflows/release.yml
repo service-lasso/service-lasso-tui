@@ -59,14 +59,27 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - name: Test source
-        run: go test ./...
+      - name: Test clean source
+        shell: bash
+        env:
+          GOFLAGS: ""
+          GOWORK: "off"
+        run: |
+          node scripts/assert-go-source-provenance.mjs
+          go test -mod=readonly ./...
       - name: Build and smoke the attached-terminal entrypoint
         shell: bash
+        env:
+          GOFLAGS: ""
+          GOWORK: "off"
         run: |
           set -euo pipefail
-          go build -trimpath -ldflags='-s -w' -o service-lasso-tui ./cmd/service-lasso-tui
-          ./service-lasso-tui --help >/dev/null
+          node scripts/assert-go-source-provenance.mjs
+          binary="$RUNNER_TEMP/service-lasso-tui"
+          go build -mod=readonly -buildvcs=true -trimpath -ldflags='-s -w' -o "$binary" ./cmd/service-lasso-tui
+          go version -m "$binary" | grep -F "vcs.revision=${{ needs.validate-source.outputs.sha }}" >/dev/null
+          go version -m "$binary" | grep -F 'vcs.modified=false' >/dev/null
+          "$binary" --help >/dev/null
   package-candidate:
     needs:
       - validate-source
@@ -95,8 +108,12 @@ jobs:
           test "${CANDIDATE_VERSION##*-}" = "${CANDIDATE_SHA:0:7}"
       - name: Build and archive exact platform assets
         shell: bash
+        env:
+          GOFLAGS: ""
+          GOWORK: "off"
         run: |
           set -euo pipefail
+          node scripts/assert-go-source-provenance.mjs
           mkdir -p release-assets/stage
           declare -a targets=(
             "windows amd64 zip service-lasso-tui.exe win32-amd64"
@@ -108,9 +125,11 @@ jobs:
             read -r goos goarch archive_kind executable suffix <<< "$target"
             staged="release-assets/stage/$executable"
             asset_base="service-lasso-tui-${CANDIDATE_VERSION}-${suffix}"
-            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags='-s -w' -o "$staged" ./cmd/service-lasso-tui
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -mod=readonly -buildvcs=true -trimpath -ldflags='-s -w' -o "$staged" ./cmd/service-lasso-tui
             test -s "$staged"
             go tool buildid "$staged" >/dev/null
+            go version -m "$staged" | grep -F "vcs.revision=$CANDIDATE_SHA" >/dev/null
+            go version -m "$staged" | grep -F 'vcs.modified=false' >/dev/null
             if [ "$archive_kind" = zip ]; then
               (cd release-assets/stage && zip -q "../${asset_base}.zip" "$executable")
             else

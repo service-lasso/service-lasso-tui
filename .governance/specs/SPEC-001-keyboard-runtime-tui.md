@@ -83,6 +83,13 @@ as surrogate evidence until native hardware acceptance is available.
 Core #1461 may consume a candidate only after independent release review pins
 the candidate version, full source SHA, manifest, assets, and digests; a
 mutable release selector or incomplete asset set is rejected.
+Every source test and build path first requires a clean checkout, explicitly
+clears `GOFLAGS`, sets `GOWORK=off`, verifies the effective module and Go
+environment, and uses `-mod=readonly`. It builds with `-buildvcs=true`; the
+release workflow verifies each staged binary's `vcs.revision` and
+`vcs.modified=false` before archiving. This rejects ambient overlays and
+workspaces: a clean VCS stamp and self-hash alone do not prove that imported Go
+source was not replaced during compilation.
 
 `TUI-DISTRIBUTION-002`: Windows candidate-asset ConPTY acceptance must prepare
 an isolated Core source checkout at the pinned commit with `npm ci` and

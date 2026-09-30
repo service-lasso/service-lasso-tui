@@ -138,10 +138,16 @@ func startupProbeMarkerWithIdentity(nonce string, boundary startupBoundary, sour
 }
 
 func reportStartupFailure(writer io.Writer, boundary startupBoundary, err error) {
-	if marker, ok := startupProbeMarker(os.Getenv(startupProbeNonceEnvironment), boundary); ok {
-		// This opt-in marker is consumed in memory by the owned ConPTY helper.
-		// It intentionally contains neither the original error nor environment data.
-		fmt.Fprint(writer, marker)
+	nonce := os.Getenv(startupProbeNonceEnvironment)
+	if startupProbeNoncePattern.MatchString(nonce) {
+		if marker, ok := startupProbeMarker(nonce, boundary); ok {
+			// This opt-in marker is consumed in memory by the owned ConPTY helper.
+			// It intentionally contains neither the original error nor environment data.
+			fmt.Fprint(writer, marker)
+		}
+		// A valid probe nonce opts out of operator-facing output even when this
+		// binary cannot establish its own identity. A raw startup error could
+		// otherwise expose a URL, token, or runtime detail to the probe capture.
 		return
 	}
 	fmt.Fprintln(writer, err)

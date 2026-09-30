@@ -104,8 +104,8 @@ func TestStartupProbeDoesNotEmitRawErrorWhenExplicitlyEnabled(t *testing.T) {
 	t.Setenv(startupProbeNonceEnvironment, probeNonce)
 	var output bytes.Buffer
 	reportStartupFailure(&output, startupBoundaryProgramRunError, errors.New("SYNTHETIC_SECRET"))
-	if output.String() != "SYNTHETIC_SECRET\n" {
-		t.Fatalf("unbound probe output = %q", output.String())
+	if output.String() != "" {
+		t.Fatalf("identity-unavailable probe output = %q", output.String())
 	}
 }
 

@@ -28,8 +28,19 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - run: go test ./...
-      - run: go build ./cmd/service-lasso-tui
+      - name: Test clean source and build the checked revision
+        shell: pwsh
+        env:
+          GOFLAGS: ""
+          GOWORK: "off"
+        run: |
+          node scripts/assert-go-source-provenance.mjs
+          go test -mod=readonly ./...
+          $sourceCommit = (git rev-parse HEAD).Trim()
+          $binary = Join-Path $env:RUNNER_TEMP 'service-lasso-tui-check'
+          go build -mod=readonly -buildvcs=true -o $binary ./cmd/service-lasso-tui
+          $metadata = go version -m $binary
+          if ($metadata -notmatch "vcs.revision=$sourceCommit" -or $metadata -notmatch 'vcs.modified=false') { throw 'built binary does not carry the clean checked-out VCS identity' }
       - name: Install pinned Windows ConPTY helper
         if: runner.os == 'Windows'
         uses: actions/setup-python@v6
@@ -38,14 +49,20 @@ jobs:
       - name: Run real Windows ConPTY unavailable-state probe
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          GOFLAGS: ""
+          GOWORK: "off"
         run: |
+          node scripts/assert-go-source-provenance.mjs
           python -m pip install --require-hashes --only-binary=:all: --no-deps -r scripts/requirements-conpty.txt
           $sourceCommit = (git rev-parse HEAD).Trim()
           if ($sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'invalid checked-out source identity' }
-          if ((go list -m) -ne 'github.com/service-lasso/service-lasso-tui') { throw 'unexpected Go module identity' }
-          go build -buildvcs=true -o service-lasso-tui.exe ./cmd/service-lasso-tui
-          $binarySHA256 = (Get-FileHash -Algorithm SHA256 -LiteralPath service-lasso-tui.exe).Hash.ToLowerInvariant()
-          python scripts/verify-release-asset-conpty.py --executable service-lasso-tui.exe --mode unavailable --api-url http://127.0.0.1:1 --source-commit $sourceCommit --expected-executable-sha256 $binarySHA256
+          $binary = Join-Path $env:RUNNER_TEMP 'service-lasso-tui.exe'
+          go build -mod=readonly -buildvcs=true -o $binary ./cmd/service-lasso-tui
+          $metadata = go version -m $binary
+          if ($metadata -notmatch "vcs.revision=$sourceCommit" -or $metadata -notmatch 'vcs.modified=false') { throw 'probe binary does not carry the clean checked-out VCS identity' }
+          $binarySHA256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $binary).Hash.ToLowerInvariant()
+          python scripts/verify-release-asset-conpty.py --executable $binary --mode unavailable --api-url http://127.0.0.1:1 --source-commit $sourceCommit --expected-executable-sha256 $binarySHA256
       - name: Test direct-probe evidence guards
         run: |
           python scripts/verify-release-asset-conpty-python.test.py
@@ -60,11 +77,19 @@ jobs:
           go-version-file: go.mod
       - name: Compile declared release targets
         shell: bash
+        env:
+          GOFLAGS: ""
+          GOWORK: "off"
         run: |
+          node scripts/assert-go-source-provenance.mjs
+          source_commit="$(git rev-parse HEAD)"
           for target in windows/amd64 linux/amd64 darwin/amd64 darwin/arm64; do
             os="${target%/*}"
             arch="${target#*/}"
             extension=""
             if [ "$os" = windows ]; then extension=.exe; fi
-            GOOS="$os" GOARCH="$arch" go build -o "service-lasso-tui-${os}-${arch}${extension}" ./cmd/service-lasso-tui
+            binary="$RUNNER_TEMP/service-lasso-tui-${os}-${arch}${extension}"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -mod=readonly -buildvcs=true -o "$binary" ./cmd/service-lasso-tui
+            go version -m "$binary" | grep -F "vcs.revision=$source_commit" >/dev/null
+            go version -m "$binary" | grep -F 'vcs.modified=false' >/dev/null
           done

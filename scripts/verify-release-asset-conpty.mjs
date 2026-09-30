@@ -46,13 +46,19 @@ async function preflightStep(reason, operation) {
 const sha256 = value => createHash("sha256").update(value).digest("hex");
 const run = (command, args, options = {}) => execFileAsync(command, args, { cwd: options.cwd, windowsHide: true, timeout: options.timeout ?? 120000 });
 
-export function npmCiCommand(platform = process.platform) {
+export function npmCommand(operation, platform = process.platform) {
   // Node cannot directly spawn npm.cmd through execFile on Windows. Keep the
-  // cmd command line entirely constant so the caller-provided Core path never
-  // becomes shell input.
+  // supported command lines entirely fixed so the caller-provided Core path
+  // never becomes shell input.
+  const commands = {
+    ci: { npmArgs: ["ci"], windowsCommand: "npm.cmd ci" },
+    build: { npmArgs: ["run", "build"], windowsCommand: "npm.cmd run build" },
+  };
+  const selected = commands[operation];
+  if (!selected) throw new Error("unsupported npm preflight operation");
   return platform === "win32"
-    ? { program: "cmd.exe", args: ["/d", "/s", "/c", "npm.cmd ci"] }
-    : { program: "npm", args: ["ci"] };
+    ? { program: "cmd.exe", args: ["/d", "/s", "/c", selected.windowsCommand] }
+    : { program: "npm", args: selected.npmArgs };
 }
 
 export function assertCandidateManifest(manifest) {
@@ -114,9 +120,10 @@ export async function prepareSourceBuiltCore({ coreRoot, tempRoot, command = run
   await preflightStep("isolated_checkout_failed", () => command("git", ["-C", isolatedRoot, "checkout", "--detach", coreDevelop]));
   const { stdout: isolatedHead } = await preflightStep("isolated_identity_unavailable", () => command("git", ["-C", isolatedRoot, "rev-parse", "HEAD"]));
   if (isolatedHead.trim() !== coreDevelop) throw new CorePreflightFailure("isolated_identity_mismatch");
-  const npmCi = npmCiCommand(platform);
+  const npmCi = npmCommand("ci", platform);
   await preflightStep("dependency_install_failed", () => command(npmCi.program, npmCi.args, { cwd: isolatedRoot, timeout: 300_000 }));
-  await preflightStep("source_build_failed", () => command("npm", ["run", "build"], { cwd: isolatedRoot, timeout: 300_000 }));
+  const npmBuild = npmCommand("build", platform);
+  await preflightStep("source_build_failed", () => command(npmBuild.program, npmBuild.args, { cwd: isolatedRoot, timeout: 300_000 }));
   await assertRuntimeDist(isolatedRoot, "runtime_dist_unavailable");
   return { coreRoot: isolatedRoot, evidence: "source-built" };
 }

@@ -5,7 +5,7 @@ import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertCandidateManifest, cleanupOutcome, cleanupResources, npmCiCommand, parseArgs, prepareCoreRuntime, prepareSourceBuiltCore, stopProbe } from "./verify-release-asset-conpty.mjs";
+import { assertCandidateManifest, cleanupOutcome, cleanupResources, npmCommand, parseArgs, prepareCoreRuntime, prepareSourceBuiltCore, stopProbe } from "./verify-release-asset-conpty.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -81,9 +81,44 @@ test("source Core preparation clones, pins, installs, and builds an isolated run
   }
 });
 
-test("dependency-install command uses a constant Windows cmd.exe npm.cmd preflight", () => {
-  assert.deepEqual(npmCiCommand("win32"), { program: "cmd.exe", args: ["/d", "/s", "/c", "npm.cmd ci"] });
-  assert.deepEqual(npmCiCommand("linux"), { program: "npm", args: ["ci"] });
+test("npm preflight commands use fixed Windows cmd.exe npm.cmd boundaries", () => {
+  assert.deepEqual(npmCommand("ci", "win32"), { program: "cmd.exe", args: ["/d", "/s", "/c", "npm.cmd ci"] });
+  assert.deepEqual(npmCommand("build", "win32"), { program: "cmd.exe", args: ["/d", "/s", "/c", "npm.cmd run build"] });
+  assert.deepEqual(npmCommand("ci", "linux"), { program: "npm", args: ["ci"] });
+  assert.deepEqual(npmCommand("build", "linux"), { program: "npm", args: ["run", "build"] });
+  assert.throws(() => npmCommand("test", "win32"), /unsupported npm preflight operation/u);
+});
+
+test("Windows source Core preparation sends both npm ci and npm run build through fixed cmd.exe boundaries", async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-core-preflight-windows-${process.pid}-${Date.now()}`);
+  await mkdir(tempRoot, { recursive: true });
+  const isolatedRoot = path.join(tempRoot, "core-source");
+  const commands = [];
+  const command = async (program, args) => {
+    commands.push([program, args]);
+    if (program === "git" && args.includes("rev-parse")) return { stdout: "10e4d72b75c66977ad1dd629991a27443ffc0fd3\n" };
+    if (program === "cmd.exe" && args.join(" ") === "/d /s /c npm.cmd run build") {
+      await Promise.all([
+        mkdir(path.join(isolatedRoot, "packages", "core"), { recursive: true }),
+        mkdir(path.join(isolatedRoot, "dist", "server"), { recursive: true }),
+      ]);
+      await Promise.all([
+        writeFile(path.join(isolatedRoot, "package.json"), "{}"),
+        writeFile(path.join(isolatedRoot, "packages", "core", "index.js"), ""),
+        writeFile(path.join(isolatedRoot, "dist", "server", "index.js"), ""),
+      ]);
+    }
+    return { stdout: "" };
+  };
+  try {
+    await prepareSourceBuiltCore({ coreRoot: "supplied-core", tempRoot, command, platform: "win32" });
+    assert.deepEqual(commands.slice(-2), [
+      ["cmd.exe", ["/d", "/s", "/c", "npm.cmd ci"]],
+      ["cmd.exe", ["/d", "/s", "/c", "npm.cmd run build"]],
+    ]);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("Windows can actually spawn npm.cmd through the fixed cmd.exe boundary", { skip: process.platform !== "win32" }, async () => {

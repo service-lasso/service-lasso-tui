@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/service-lasso/service-lasso-tui/internal/api"
 )
 
 const probeNonce = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -36,6 +37,29 @@ func TestStartupProbeClassifiesOnlyBubbleTeaSentinels(t *testing.T) {
 	}
 	if got := startupBoundaryForProgramError(errors.New("SYNTHETIC_SECRET")); got != startupBoundaryProgramRunError {
 		t.Fatalf("generic boundary = %q", got)
+	}
+}
+
+func TestStartupProbeClassifiesOnlyTypedAPIConfigurationErrors(t *testing.T) {
+	cases := []struct {
+		kind     api.ConfigurationErrorKind
+		boundary startupBoundary
+	}{
+		{api.ConfigurationErrorInvalidURL, startupBoundaryAPIURLInvalid},
+		{api.ConfigurationErrorUnsupportedScheme, startupBoundaryAPIURLScheme},
+		{api.ConfigurationErrorUserinfo, startupBoundaryAPIURLUserinfo},
+		{api.ConfigurationErrorQueryOrFragment, startupBoundaryAPIURLQueryOrFragment},
+		{api.ConfigurationErrorInsecureTokenTransport, startupBoundaryAPITokenTransport},
+	}
+	for _, test := range cases {
+		t.Run(string(test.kind), func(t *testing.T) {
+			if got := startupBoundaryForAPIError(&api.ConfigurationError{Kind: test.kind}); got != test.boundary {
+				t.Fatalf("boundary = %q, want %q", got, test.boundary)
+			}
+		})
+	}
+	if got := startupBoundaryForAPIError(errors.New("SYNTHETIC_SECRET")); got != startupBoundaryAPIClientError {
+		t.Fatalf("generic API boundary = %q", got)
 	}
 }
 

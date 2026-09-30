@@ -160,7 +160,7 @@ test("Windows native receipt writer accepts only the closed startup-boundary ext
   try {
     const receipt = { stage: "startup", outcome: "error", closedReason: "terminal_exit_code_1", startupBoundary: "program_run_error" };
     assert.deepEqual(await publishReceipt(sinks.helper, receipt), receipt);
-    const apiReceipt = { stage: "startup", outcome: "error", closedReason: "terminal_exit_code_2", startupBoundary: "api_client_error" };
+    const apiReceipt = { stage: "startup", outcome: "error", closedReason: "terminal_exit_code_2", startupBoundary: "api_url_invalid" };
     assert.deepEqual(await publishReceipt(sinks.node, apiReceipt), apiReceipt);
     await assert.rejects(() => publishReceipt(sinks.node, { ...receipt, startupBoundary: "SENTINEL_SECRET" }), /invalid reconnect receipt/u);
   } finally {
@@ -347,7 +347,7 @@ test("native-owned receipt roots are retained instead of path-recursive deletion
 test("reconnect receipts are closed schema and reject terminal sentinel text", () => {
   assert.deepEqual(validateReceipt({ stage: "reconnect", outcome: "timeout", closedReason: "timed_out" }), { stage: "reconnect", outcome: "timeout", closedReason: "timed_out" });
   assert.deepEqual(validateReceipt({ stage: "startup", outcome: "error", closedReason: "terminal_exit_code_1", startupBoundary: "program_run_error" }), { stage: "startup", outcome: "error", closedReason: "terminal_exit_code_1", startupBoundary: "program_run_error" });
-  assert.deepEqual(validateReceipt({ stage: "startup", outcome: "error", closedReason: "terminal_exit_code_2", startupBoundary: "api_client_error" }), { stage: "startup", outcome: "error", closedReason: "terminal_exit_code_2", startupBoundary: "api_client_error" });
+  assert.deepEqual(validateReceipt({ stage: "startup", outcome: "error", closedReason: "terminal_exit_code_2", startupBoundary: "api_url_invalid" }), { stage: "startup", outcome: "error", closedReason: "terminal_exit_code_2", startupBoundary: "api_url_invalid" });
   assert.throws(() => validateReceipt({ stage: "startup", outcome: "error", closedReason: "terminal_closed" }), /invalid reconnect receipt/u);
   assert.throws(() => validateReceipt({ stage: "startup", outcome: "error", closedReason: "terminal_exit_code_1", startupBoundary: "SENTINEL_SECRET" }), /invalid reconnect receipt/u);
   assert.throws(() => validateReceipt({ stage: "reconnect", outcome: "error", closedReason: "terminal_exit_code_1", startupBoundary: "program_run_error" }), /invalid reconnect receipt/u);

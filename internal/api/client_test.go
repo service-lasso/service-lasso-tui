@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -164,6 +165,33 @@ func TestClientPostsConfirmedLifecycleAction(t *testing.T) {
 func TestClientRejectsInvalidBaseURL(t *testing.T) {
 	if _, err := NewClient("not a URL", nil, ""); err == nil {
 		t.Fatal("expected URL validation error")
+	} else {
+		var configurationError *ConfigurationError
+		if !errors.As(err, &configurationError) || configurationError.Kind != ConfigurationErrorInvalidURL {
+			t.Fatalf("unexpected configuration error: %#v", err)
+		}
+	}
+}
+
+func TestClientConfigurationErrorsHaveClosedKinds(t *testing.T) {
+	cases := []struct {
+		url   string
+		token string
+		kind  ConfigurationErrorKind
+	}{
+		{"ftp://runtime.example.test", "", ConfigurationErrorUnsupportedScheme},
+		{"https://operator:secret@runtime.example.test", "", ConfigurationErrorUserinfo},
+		{"https://runtime.example.test?next=/other", "", ConfigurationErrorQueryOrFragment},
+		{"http://runtime.example.test", "token", ConfigurationErrorInsecureTokenTransport},
+	}
+	for _, test := range cases {
+		t.Run(string(test.kind), func(t *testing.T) {
+			_, err := NewClient(test.url, nil, test.token)
+			var configurationError *ConfigurationError
+			if !errors.As(err, &configurationError) || configurationError.Kind != test.kind {
+				t.Fatalf("configuration error = %#v, want %q", err, test.kind)
+			}
+		})
 	}
 }
 

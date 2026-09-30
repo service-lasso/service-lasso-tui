@@ -103,7 +103,9 @@ nonce and may return a framed marker after its API-client setup or Bubble Tea
 `Program.Run` error path. The helper accepts only a matching nonce and one of
 the documented boundary categories, discards terminal text in memory, and
 records no nonce or error text. A missing or untrusted marker remains
-`unclassified`.
+`unclassified`. Typed API configuration errors distinguish invalid URL,
+scheme, userinfo, query or fragment, and insecure token transport without
+recording the supplied URL or token.
 
 See [the runtime API contract](docs/runtime-api-contract.md), [the Core
 integration and release contract](docs/core-integration-contract.md), and [the

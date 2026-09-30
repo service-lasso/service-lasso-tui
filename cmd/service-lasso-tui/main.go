@@ -21,7 +21,7 @@ func main() {
 
 	client, err := api.NewClient(*apiURL, nil, os.Getenv("SERVICE_LASSO_API_TOKEN"))
 	if err != nil {
-		reportStartupFailure(os.Stderr, startupBoundaryAPIClientError, err)
+		reportStartupFailure(os.Stderr, startupBoundaryForAPIError(err), err)
 		os.Exit(2)
 	}
 

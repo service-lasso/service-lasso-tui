@@ -49,7 +49,7 @@ RECEIPT_STAGES = {"launch", "startup", "wait-reconnect", "reconnect", "navigatio
 RECEIPT_OUTCOMES = {"normal", "error", "timeout"}
 RECEIPT_REASONS = {"completed", "stage_failed", "timed_out", "shutdown_requested", "terminal_exited_zero", "terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown"}
 TERMINAL_CLOSE_REASONS = {"terminal_exited_zero", "terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown"}
-STARTUP_BOUNDARIES = {"unclassified", "api_client_error", "program_run_error", "program_run_killed", "program_run_panic", "program_run_interrupted"}
+STARTUP_BOUNDARIES = {"unclassified", "api_url_invalid", "api_url_scheme", "api_url_userinfo", "api_url_query_or_fragment", "api_token_transport", "api_client_error", "program_run_error", "program_run_killed", "program_run_panic", "program_run_interrupted"}
 STARTUP_MARKER_PREFIX = "\x1eSERVICE_LASSO_TUI_STARTUP_BOUNDARY:"
 STARTUP_MARKER_SUFFIX = "\x1f"
 

@@ -148,6 +148,14 @@ class ReceiptTests(unittest.TestCase):
         self.assertEqual(closed.exception.startup_boundary, "program_run_error")
         self.assertNotIn(nonce, str(closed.exception))
 
+    def test_exact_attempt_marker_accepts_only_a_closed_typed_api_boundary(self):
+        nonce = "0123456789abcdef" * 4
+        process = MarkerThenExitPty(probe_module.STARTUP_MARKER_PREFIX + nonce + ":api_url_invalid" + probe_module.STARTUP_MARKER_SUFFIX, exitstatus=2)
+        with self.assertRaises(probe_module.TerminalClosed) as closed:
+            probe_module.wait_for(process, ("ready",), 1, startup_probe_nonce=nonce, select_fn=lambda *_args: ([process], [], []))
+        self.assertEqual(closed.exception.reason, "terminal_exit_code_2")
+        self.assertEqual(closed.exception.startup_boundary, "api_url_invalid")
+
     def test_untrusted_or_wrong_attempt_markers_are_unclassified_and_never_reach_the_receipt(self):
         nonce = "0123456789abcdef" * 4
         process = MarkerThenExitPty("SYNTHETIC_SECRET " + probe_module.STARTUP_MARKER_PREFIX + ("f" * 64) + ":program_run_error" + probe_module.STARTUP_MARKER_SUFFIX)

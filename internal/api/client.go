@@ -26,6 +26,40 @@ type Client struct {
 	operatorToken string
 }
 
+// ConfigurationErrorKind classifies a rejected local API-client configuration
+// without retaining the supplied URL or operator token.
+type ConfigurationErrorKind string
+
+const (
+	ConfigurationErrorInvalidURL             ConfigurationErrorKind = "invalid_url"
+	ConfigurationErrorUnsupportedScheme      ConfigurationErrorKind = "unsupported_scheme"
+	ConfigurationErrorUserinfo               ConfigurationErrorKind = "userinfo"
+	ConfigurationErrorQueryOrFragment        ConfigurationErrorKind = "query_or_fragment"
+	ConfigurationErrorInsecureTokenTransport ConfigurationErrorKind = "insecure_token_transport"
+)
+
+// ConfigurationError reports only the closed validation class.
+type ConfigurationError struct {
+	Kind ConfigurationErrorKind
+}
+
+func (e *ConfigurationError) Error() string {
+	switch e.Kind {
+	case ConfigurationErrorInvalidURL:
+		return "invalid Service Lasso API URL"
+	case ConfigurationErrorUnsupportedScheme:
+		return "Service Lasso API URL must use HTTP or HTTPS"
+	case ConfigurationErrorUserinfo:
+		return "Service Lasso API URL must not contain userinfo"
+	case ConfigurationErrorQueryOrFragment:
+		return "Service Lasso API URL must not contain a query or fragment"
+	case ConfigurationErrorInsecureTokenTransport:
+		return "operator token requires HTTPS for a non-loopback Service Lasso API URL"
+	default:
+		return "invalid Service Lasso API configuration"
+	}
+}
+
 type Health struct {
 	Status string `json:"status"`
 	API    struct {
@@ -101,19 +135,19 @@ type LifecycleResult struct {
 func NewClient(baseURL string, client *http.Client, operatorToken string) (*Client, error) {
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return nil, fmt.Errorf("invalid Service Lasso API URL %q", baseURL)
+		return nil, &ConfigurationError{Kind: ConfigurationErrorInvalidURL}
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return nil, fmt.Errorf("Service Lasso API URL must use HTTP or HTTPS")
+		return nil, &ConfigurationError{Kind: ConfigurationErrorUnsupportedScheme}
 	}
 	if parsed.User != nil {
-		return nil, fmt.Errorf("Service Lasso API URL must not contain userinfo")
+		return nil, &ConfigurationError{Kind: ConfigurationErrorUserinfo}
 	}
 	if parsed.RawQuery != "" || parsed.Fragment != "" {
-		return nil, fmt.Errorf("Service Lasso API URL must not contain a query or fragment")
+		return nil, &ConfigurationError{Kind: ConfigurationErrorQueryOrFragment}
 	}
 	if operatorToken != "" && parsed.Scheme != "https" && !isLoopbackHost(parsed.Hostname()) {
-		return nil, fmt.Errorf("operator token requires HTTPS for a non-loopback Service Lasso API URL")
+		return nil, &ConfigurationError{Kind: ConfigurationErrorInsecureTokenTransport}
 	}
 	if client == nil {
 		client = &http.Client{Timeout: requestTimeout}

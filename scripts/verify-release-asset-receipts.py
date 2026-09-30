@@ -118,7 +118,7 @@ def valid(receipt):
         return False
     if set(receipt) == {"stage", "outcome", "closedReason"}:
         return True
-    return set(receipt) == {"stage", "outcome", "closedReason", "startupBoundary"} and receipt["stage"] == "startup" and receipt["outcome"] == "error" and receipt["closedReason"] in {"terminal_exited_zero", "terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown"} and receipt["startupBoundary"] in {"unclassified", "api_client_error", "program_run_error", "program_run_killed", "program_run_panic", "program_run_interrupted"}
+    return set(receipt) == {"stage", "outcome", "closedReason", "startupBoundary"} and receipt["stage"] == "startup" and receipt["outcome"] == "error" and receipt["closedReason"] in {"terminal_exited_zero", "terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown"} and receipt["startupBoundary"] in {"unclassified", "api_url_invalid", "api_url_scheme", "api_url_userinfo", "api_url_query_or_fragment", "api_token_transport", "api_client_error", "program_run_error", "program_run_killed", "program_run_panic", "program_run_interrupted"}
 
 def write(handle, receipt):
     data = json.dumps(receipt, separators=(",", ":")).encode("utf-8")

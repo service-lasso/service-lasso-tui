@@ -100,7 +100,9 @@ command output, paths, environment values, or credentials in that record.
 When the reconnect helper has started, it atomically records only `stage`,
 `outcome`, and `closedReason` in its attempt-owned temporary root. A startup
 terminal-close receipt may additionally contain `startupBoundary`, from the
-closed set `unclassified`, `api_client_error`, `program_run_error`,
+closed set `unclassified`, `api_url_invalid`, `api_url_scheme`,
+`api_url_userinfo`, `api_url_query_or_fragment`, `api_token_transport`,
+`api_client_error`, `program_run_error`,
 `program_run_killed`, `program_run_panic`, and `program_run_interrupted`; no
 other receipt may contain that field. EOF is not an exit result: while its owned
 PTY remains live the helper retains its existing bounded wait, and after exit it
@@ -113,10 +115,12 @@ accepts a non-`unclassified` startup boundary only from the exact framed marker
 emitted by the checked TUI when its explicit probe nonce matches the fresh
 attempt nonce. The marker is processed in memory and its nonce, terminal text,
 paths, errors, and environment values are never emitted or stored. The
-`program_run_*` values are emitted only after the application receives a
-non-nil result from Bubble Tea `Program.Run`; typed Bubble Tea sentinel errors
-select the killed, panic, or interrupted values, and any other returned error
-selects `program_run_error`. On Windows,
+`api_*` values are emitted only after the application receives a typed
+configuration error from its API client; `api_client_error` is the fallback for
+an unclassified API-client return. The `program_run_*` values are emitted only
+after the application receives a non-nil result from Bubble Tea `Program.Run`;
+typed Bubble Tea sentinel errors select the killed, panic, or interrupted
+values, and any other returned error selects `program_run_error`. On Windows,
 a native receipt-writer reaches the requested temporary base from a held volume
 root one directory component at a time, keeps that base and every ancestor
 handle live, and creates that root and both receipt files relative to held

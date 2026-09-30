@@ -143,17 +143,60 @@ func TestLifecycleDoubleConfirmDispatchesOnce(t *testing.T) {
 	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
 	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
-	submitted, command := updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	submittedModel, command := updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	submitted := submittedModel.(model)
 	if command == nil {
 		t.Fatal("first confirmation did not dispatch")
 	}
-	_, second := submitted.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, second := submitted.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	if second != nil {
 		t.Fatal("second confirmation dispatched another command")
 	}
 	_ = command()
 	if client.calls != 1 {
 		t.Fatalf("lifecycle request count = %d, want 1", client.calls)
+	}
+}
+
+func TestSubmittedLifecycleBlocksNavigationAndRendersOriginalResult(t *testing.T) {
+	client := &countingClient{fakeClient: fakeClient{
+		services:        []api.Service{{ID: "echo", Name: "Echo"}},
+		lifecycleResult: api.LifecycleResult{OK: true},
+	}}
+	local, err := api.NewClient("http://127.0.0.1:17883", nil, "local-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote, err := api.NewClient("https://remote.example.test", nil, "remote-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	connections := &fakeConnectionManager{current: "local", clients: map[string]*api.Client{"local": local, "remote": remote}}
+	initial := NewWithConnections(client, connections, context.Background()).(model)
+	updated, _ := initial.Update(loadedMsg{services: client.services})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	submittedModel, command := updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	submitted := submittedModel.(model)
+	if command == nil || !submitted.submittingAction {
+		t.Fatal("confirmation did not submit lifecycle request")
+	}
+	for _, key := range []rune{'d', 'p'} {
+		next, blocked := submitted.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
+		if blocked != nil {
+			t.Fatalf("%q started a command while lifecycle submission was pending", key)
+		}
+		submitted = next.(model)
+	}
+	if submitted.screen != detailScreen || submitted.connectionName != "local" || connections.current != "local" {
+		t.Fatalf("pending submission changed context: %#v", submitted)
+	}
+
+	completed, _ := submitted.Update(command())
+	view := completed.(model).View()
+	if client.calls != 1 || strings.Count(view, "Last runtime result: Core completed start.") != 1 {
+		t.Fatalf("original lifecycle result was not rendered exactly once: calls=%d view=%s", client.calls, view)
 	}
 }
 

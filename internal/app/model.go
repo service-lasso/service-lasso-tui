@@ -254,6 +254,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastResult = fmt.Sprintf("Core %s %s.", outcome, message.action)
 		}
 	case tea.KeyMsg:
+		if m.submittingAction {
+			switch message.String() {
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			default:
+				// A lifecycle request has already reached Core. Keep its original
+				// connection and detail context until the one result arrives.
+				return m, nil
+			}
+		}
 		if message.Type == tea.KeyRunes && string(message.Runes) == "/" {
 			m.searching = true
 			return m, nil

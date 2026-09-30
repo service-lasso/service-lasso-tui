@@ -55,13 +55,23 @@ func ResolveConnections(options ConnectionOptions) (*ConnectionManager, *Client,
 		if err := json.Unmarshal(contents, &config); err != nil {
 			return nil, nil, fmt.Errorf("decode connection configuration: %w", err)
 		}
+		if len(config.Profiles) == 0 {
+			return nil, nil, fmt.Errorf("connection configuration has no profiles")
+		}
 		profiles, defaultProfile = config.Profiles, config.Default
 	}
 	selected := firstNonEmpty(options.Profile, env("SERVICE_LASSO_API_PROFILE"), defaultProfile)
-	if selected == "" {
+	profile := ConnectionProfile{}
+	if selected != "" {
+		var ok bool
+		profile, ok = profiles[selected]
+		if !ok {
+			return nil, nil, fmt.Errorf("unknown connection profile %q", selected)
+		}
+	} else {
 		selected = "default"
+		profile = profiles[selected]
 	}
-	profile := profiles[selected]
 	apiURL := firstNonEmpty(options.APIURL, env("SERVICE_LASSO_API_URL"), profile.URL, "http://127.0.0.1:17883")
 	tokenEnv := firstNonEmpty(options.TokenEnv, env("SERVICE_LASSO_API_TOKEN_ENV"), profile.TokenEnv, "SERVICE_LASSO_API_TOKEN")
 	profiles[selected] = ConnectionProfile{URL: apiURL, TokenEnv: tokenEnv}

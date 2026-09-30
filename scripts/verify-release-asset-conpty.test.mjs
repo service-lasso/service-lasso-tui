@@ -109,13 +109,14 @@ test("fault cleanup requires the helper's explicit close acknowledgement and nev
       child,
       shutdownRequestPath: request,
       shutdownAcknowledgementPath: acknowledgement,
+      shutdownToken: "per-probe-capability",
       exited: Promise.resolve(),
       completedSuccessfully: false,
     }, {
       waitForAck: async file => {
         assert.equal(file, acknowledgement);
-        assert.equal(await readFile(request, "utf8"), "close\n");
-        await writeFile(acknowledgement, "closed\n", { flag: "wx" });
+        assert.equal(await readFile(request, "utf8"), "per-probe-capability\n");
+        await writeFile(acknowledgement, "per-probe-capability\n", { flag: "wx" });
         child.exitCode = 1;
         return true;
       },
@@ -130,6 +131,21 @@ test("helper exit or PID reuse without acknowledgement fails cleanup closed", as
     child: { pid: 4242, exitCode: 1 },
     completedSuccessfully: false,
   }), false);
+});
+
+test("a mismatched acknowledgement is not cleanup proof", async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-cooperative-cleanup-mismatch-${process.pid}-${Date.now()}`);
+  const request = path.join(tempRoot, "request");
+  const acknowledgement = path.join(tempRoot, "acknowledgement");
+  await mkdir(tempRoot, { recursive: true });
+  try {
+    await writeFile(acknowledgement, "unexpected\n", { flag: "wx" });
+    assert.equal(await stopProbe({
+      child: { exitCode: null }, shutdownRequestPath: request, shutdownAcknowledgementPath: acknowledgement, shutdownToken: "expected", exited: Promise.resolve(),
+    }), false);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("cleanup unconfirmed retains the extracted root and preserves the primary failure", async () => {

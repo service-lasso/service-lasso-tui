@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -148,7 +148,7 @@ function parseProbe(stdout, mode) {
   throw new Error("release-asset ConPTY probe did not complete its bounded assertions");
 }
 
-function startReconnectProbe(executable, apiURL, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath) {
+function startReconnectProbe(executable, apiURL, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath, shutdownToken) {
   const child = spawn("python", [
     helper,
     "--executable", executable,
@@ -158,6 +158,7 @@ function startReconnectProbe(executable, apiURL, readyPath, reconnectPath, shutd
     "--reconnect-file", reconnectPath,
     "--shutdown-request-file", shutdownRequestPath,
     "--shutdown-acknowledgement-file", shutdownAcknowledgementPath,
+    "--shutdown-token", shutdownToken,
   ], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   child.stdout.setEncoding("utf8");
@@ -174,7 +175,7 @@ function startReconnectProbe(executable, apiURL, readyPath, reconnectPath, shutd
       }
     });
   });
-  const probe = { child, completed, exited, shutdownRequestPath, shutdownAcknowledgementPath, completedSuccessfully: false };
+  const probe = { child, completed, exited, shutdownRequestPath, shutdownAcknowledgementPath, shutdownToken, completedSuccessfully: false };
   completed.then(() => { probe.completedSuccessfully = true; }, () => undefined);
   return probe;
 }
@@ -193,11 +194,11 @@ async function waitForFile(file, timeoutMs = 20_000) {
   throw new Error("release-asset ConPTY probe did not reach unavailable state");
 }
 
-async function waitForAcknowledgement(file, timeoutMs = 5_000) {
+async function waitForAcknowledgement(file, token, timeoutMs = 5_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      if ((await readFile(file, "utf8")) === "closed\n") return true;
+      if ((await readFile(file, "utf8")) === `${token}\n`) return true;
       return false;
     } catch (error) {
       if (error?.code !== "ENOENT") return false;
@@ -221,13 +222,13 @@ export async function stopProbe(probe, { write = writeFile, waitForAck = waitFor
   // must explicitly confirm that its own close completed before its temporary
   // extraction can be removed.
   if (probe.child.exitCode !== null) return probe.completedSuccessfully === true;
-  if (!probe.shutdownRequestPath || !probe.shutdownAcknowledgementPath) return false;
+  if (!probe.shutdownRequestPath || !probe.shutdownAcknowledgementPath || !probe.shutdownToken) return false;
   try {
-    await write(probe.shutdownRequestPath, "close\n", { flag: "wx" });
+    await write(probe.shutdownRequestPath, `${probe.shutdownToken}\n`, { flag: "wx" });
   } catch {
     return false;
   }
-  if (!await waitForAck(probe.shutdownAcknowledgementPath)) return false;
+  if (!await waitForAck(probe.shutdownAcknowledgementPath, probe.shutdownToken)) return false;
   return waitForHelperExit(probe.exited);
 }
 
@@ -296,7 +297,7 @@ async function main() {
     const reconnectPath = path.join(tempRoot, "probe-reconnect");
     const shutdownRequestPath = path.join(tempRoot, "probe-shutdown-request");
     const shutdownAcknowledgementPath = path.join(tempRoot, "probe-shutdown-acknowledgement");
-    probe = startReconnectProbe(executable, unavailable.url, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath);
+    probe = startReconnectProbe(executable, unavailable.url, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath, randomUUID());
     await waitForFile(readyPath);
     const loopbackPort = unavailable.port;
     await unavailable.close(); unavailable = undefined;

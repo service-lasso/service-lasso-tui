@@ -34,6 +34,16 @@ refreshes; `?` shows contextual help; `/` filters locally; `n` narrows the
 layout; and resize preserves the current view. Lifecycle shortcuts are visible
 in the detail screen and require `y` to confirm or Escape to cancel.
 
+`TUI-ACCEPTANCE-001`: Direct Windows read acceptance builds the current TUI
+binary and runs it through a real ConPTY against an exact pinned Core `develop`
+source. The Core API starts only on a loopback ephemeral port with temporary
+workspace and service roots. The probe verifies the connected dashboard, `d`
+dashboard navigation, `?` help, `q` exit, and a separately launched unavailable
+API state. It retains only closed-schema, metadata-only results and removes all
+temporary state. It does not autostart a managed Core service, persist operator
+credentials, perform a lifecycle mutation, or establish cross-platform, release,
+deployment, or GA acceptance.
+
 ## TUI-OPERATIONS
 
 The Core action-run API is available but exposes server-side completed action

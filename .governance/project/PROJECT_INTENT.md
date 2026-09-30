@@ -13,3 +13,8 @@ Distribution candidates are immutable, explicitly dispatched from `develop`,
 and checksum-bound to their source commit. After all platform smoke jobs pass,
 the manual dispatch creates a clearly labelled prerelease candidate with the
 same retained assets for later Core packaging review; it does not establish GA.
+
+Issue #18 refines that contract: a candidate publication must fail closed until
+GitHub reports immutable releases and a protected `development-candidate`
+environment. Candidate binaries remain development evidence, never a claim of
+GA, promotion, deployment, or a successful Core operation.

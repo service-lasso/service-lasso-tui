@@ -29,7 +29,9 @@ const helperReceiptName = "helper-outcome.json";
 const nodeReceiptName = "node-exit-outcome.json";
 const receiptStages = new Set(["launch", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit", "helper-exit"]);
 const receiptOutcomes = new Set(["normal", "error", "timeout"]);
-const receiptReasons = new Set(["completed", "stage_failed", "timed_out", "shutdown_requested", "terminal_exited_zero", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown", "helper_exit_nonzero", "helper_exit_signal", "helper_exit_spawn_error"]);
+const receiptReasons = new Set(["completed", "stage_failed", "timed_out", "shutdown_requested", "terminal_exited_zero", "terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown", "helper_exit_nonzero", "helper_exit_signal", "helper_exit_spawn_error"]);
+const terminalCloseReasons = new Set(["terminal_exited_zero", "terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown"]);
+const startupBoundaries = new Set(["unclassified", "api_client_error", "program_run_error", "program_run_killed", "program_run_panic", "program_run_interrupted"]);
 let stage = "setup";
 let failureReason;
 
@@ -206,7 +208,10 @@ export function parseProbe(stdout, mode) {
 }
 
 export function validateReceipt(receipt) {
-  if (!receipt || Object.keys(receipt).length !== 3 || !receiptStages.has(receipt.stage) || !receiptOutcomes.has(receipt.outcome) || !receiptReasons.has(receipt.closedReason)) {
+  const keys = Object.keys(receipt ?? {}).sort();
+  const hasStartupBoundary = keys.length === 4 && keys.every((key, index) => key === ["closedReason", "outcome", "stage", "startupBoundary"][index]);
+  const hasBaseShape = keys.length === 3 && keys.every((key, index) => key === ["closedReason", "outcome", "stage"][index]);
+  if (!receipt || (!hasBaseShape && !hasStartupBoundary) || !receiptStages.has(receipt.stage) || !receiptOutcomes.has(receipt.outcome) || !receiptReasons.has(receipt.closedReason) || (hasStartupBoundary && (receipt.stage !== "startup" || receipt.outcome !== "error" || !terminalCloseReasons.has(receipt.closedReason) || !startupBoundaries.has(receipt.startupBoundary)))) {
     throw new Error("invalid reconnect receipt");
   }
   return receipt;

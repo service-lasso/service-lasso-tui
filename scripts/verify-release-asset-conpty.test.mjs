@@ -5,7 +5,7 @@ import { access, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promise
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertCandidateManifest, cleanupOutcome, cleanupResources, closeReceiptSinks, createReceiptSinks, finalizeReconnectExit, npmCommand, parseArgs, parseProbe, persistNodeExitReceipt, prepareCoreRuntime, prepareSourceBuiltCore, stopProbe, validateReceipt } from "./verify-release-asset-conpty.mjs";
+import { assertCandidateManifest, cleanupOutcome, cleanupResources, closeReceiptSinks, createReceiptSinks, finalizeReconnectExit, npmCommand, parseArgs, parseProbe, persistNodeExitReceipt, prepareCoreRuntime, prepareSourceBuiltCore, publishReceipt, stopProbe, validateReceipt } from "./verify-release-asset-conpty.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -149,6 +149,22 @@ test("Windows native receipt ownership denies a concurrent writer and reads the 
     });
     assert.deepEqual(JSON.parse(stdout), { ok: true, event: "ownership-self-test" });
   } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Windows native receipt writer accepts only the closed startup-boundary extension", { skip: process.platform !== "win32" }, async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-receipt-startup-boundary-${process.pid}-${Date.now()}`);
+  await mkdir(tempRoot, { recursive: true });
+  const sinks = await createReceiptSinks(tempRoot);
+  try {
+    const receipt = { stage: "startup", outcome: "error", closedReason: "terminal_exit_code_1", startupBoundary: "program_run_error" };
+    assert.deepEqual(await publishReceipt(sinks.helper, receipt), receipt);
+    const apiReceipt = { stage: "startup", outcome: "error", closedReason: "terminal_exit_code_2", startupBoundary: "api_client_error" };
+    assert.deepEqual(await publishReceipt(sinks.node, apiReceipt), apiReceipt);
+    await assert.rejects(() => publishReceipt(sinks.node, { ...receipt, startupBoundary: "SENTINEL_SECRET" }), /invalid reconnect receipt/u);
+  } finally {
+    await closeReceiptSinks(sinks);
     await rm(tempRoot, { recursive: true, force: true });
   }
 });
@@ -330,8 +346,11 @@ test("native-owned receipt roots are retained instead of path-recursive deletion
 
 test("reconnect receipts are closed schema and reject terminal sentinel text", () => {
   assert.deepEqual(validateReceipt({ stage: "reconnect", outcome: "timeout", closedReason: "timed_out" }), { stage: "reconnect", outcome: "timeout", closedReason: "timed_out" });
-  assert.deepEqual(validateReceipt({ stage: "startup", outcome: "error", closedReason: "terminal_exited_nonzero" }), { stage: "startup", outcome: "error", closedReason: "terminal_exited_nonzero" });
+  assert.deepEqual(validateReceipt({ stage: "startup", outcome: "error", closedReason: "terminal_exit_code_1", startupBoundary: "program_run_error" }), { stage: "startup", outcome: "error", closedReason: "terminal_exit_code_1", startupBoundary: "program_run_error" });
+  assert.deepEqual(validateReceipt({ stage: "startup", outcome: "error", closedReason: "terminal_exit_code_2", startupBoundary: "api_client_error" }), { stage: "startup", outcome: "error", closedReason: "terminal_exit_code_2", startupBoundary: "api_client_error" });
   assert.throws(() => validateReceipt({ stage: "startup", outcome: "error", closedReason: "terminal_closed" }), /invalid reconnect receipt/u);
+  assert.throws(() => validateReceipt({ stage: "startup", outcome: "error", closedReason: "terminal_exit_code_1", startupBoundary: "SENTINEL_SECRET" }), /invalid reconnect receipt/u);
+  assert.throws(() => validateReceipt({ stage: "reconnect", outcome: "error", closedReason: "terminal_exit_code_1", startupBoundary: "program_run_error" }), /invalid reconnect receipt/u);
   assert.throws(() => validateReceipt({ stage: "reconnect", outcome: "timeout", closedReason: "timed_out", terminal: "SENTINEL_SECRET" }), /invalid reconnect receipt/u);
   assert.throws(() => validateReceipt({ stage: "reconnect", outcome: "SENTINEL_SECRET", closedReason: "timed_out" }), /invalid reconnect receipt/u);
 });
@@ -349,7 +368,7 @@ test("probe parser closes unavailable and failure schemas as well as reconnect s
   assert.throws(() => parseProbe(JSON.stringify({ ok: true, mode: "unavailable", exit: "q", terminal: "SENTINEL_SECRET" }), "unavailable"), /bounded assertions/u);
   assert.throws(() => parseProbe(JSON.stringify({ ok: false, stage: "startup", receipt: { stage: "startup", outcome: "timeout", closedReason: "timed_out" }, terminal: "SENTINEL_SECRET" }), "reconnect"), /bounded assertions/u);
   assert.throws(() => parseProbe(JSON.stringify({ ok: false, stage: "startup", receipt: { stage: "exit", outcome: "timeout", closedReason: "timed_out" } }), "reconnect"), /bounded assertions/u);
-  assert.throws(() => parseProbe(JSON.stringify({ ok: false, stage: "startup", receipt: { stage: "startup", outcome: "error", closedReason: "terminal_exited_nonzero", terminal: "SENTINEL_SECRET" } }), "reconnect"), /bounded assertions/u);
+  assert.throws(() => parseProbe(JSON.stringify({ ok: false, stage: "startup", receipt: { stage: "startup", outcome: "error", closedReason: "terminal_exit_code_1", startupBoundary: "program_run_error", terminal: "SENTINEL_SECRET" } }), "reconnect"), /bounded assertions/u);
 });
 
 test("held receipt handles bind publication despite attempt-root substitution", async () => {

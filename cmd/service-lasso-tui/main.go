@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -22,14 +21,14 @@ func main() {
 
 	client, err := api.NewClient(*apiURL, nil, os.Getenv("SERVICE_LASSO_API_TOKEN"))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		reportStartupFailure(os.Stderr, startupBoundaryAPIClientError, err)
 		os.Exit(2)
 	}
 
 	model := app.New(client, context.Background())
 	program := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := program.Run(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		reportStartupFailure(os.Stderr, startupBoundaryForProgramError(err), err)
 		os.Exit(1)
 	}
 }

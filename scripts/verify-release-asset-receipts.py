@@ -114,7 +114,11 @@ def secure_root(base_root):
         raise
 
 def valid(receipt):
-    return isinstance(receipt, dict) and set(receipt) == {"stage", "outcome", "closedReason"} and receipt["stage"] in {"launch", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit", "helper-exit"} and receipt["outcome"] in {"normal", "error", "timeout"} and receipt["closedReason"] in {"completed", "stage_failed", "timed_out", "shutdown_requested", "terminal_exited_zero", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown", "helper_exit_nonzero", "helper_exit_signal", "helper_exit_spawn_error"}
+    if not isinstance(receipt, dict) or receipt.get("stage") not in {"launch", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit", "helper-exit"} or receipt.get("outcome") not in {"normal", "error", "timeout"} or receipt.get("closedReason") not in {"completed", "stage_failed", "timed_out", "shutdown_requested", "terminal_exited_zero", "terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown", "helper_exit_nonzero", "helper_exit_signal", "helper_exit_spawn_error"}:
+        return False
+    if set(receipt) == {"stage", "outcome", "closedReason"}:
+        return True
+    return set(receipt) == {"stage", "outcome", "closedReason", "startupBoundary"} and receipt["stage"] == "startup" and receipt["outcome"] == "error" and receipt["closedReason"] in {"terminal_exited_zero", "terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown"} and receipt["startupBoundary"] in {"unclassified", "api_client_error", "program_run_error", "program_run_killed", "program_run_panic", "program_run_interrupted"}
 
 def write(handle, receipt):
     data = json.dumps(receipt, separators=(",", ":")).encode("utf-8")

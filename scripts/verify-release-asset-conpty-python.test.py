@@ -47,6 +47,23 @@ class ExitedPty(EarlyClosingPty):
         self.signalstatus = signalstatus
 
 
+class MarkerThenExitPty(ExitedPty):
+    def __init__(self, marker, exitstatus=1):
+        super().__init__(exitstatus=exitstatus)
+        self.marker = marker
+        self.reads = 0
+
+    @staticmethod
+    def spawn(*_args, **_kwargs):
+        raise AssertionError("inject an instance through wait_for")
+
+    def read(self):
+        self.reads += 1
+        if self.reads == 1:
+            return self.marker
+        raise EOFError()
+
+
 class LiveEofThenOutputPty(FakePty):
     def __init__(self):
         self.reads = 0
@@ -100,6 +117,8 @@ class ReceiptTests(unittest.TestCase):
     def test_eof_classifies_only_owned_process_lifecycle_metadata(self):
         cases = (
             (ExitedPty(exitstatus=0), "terminal_exited_zero"),
+            (ExitedPty(exitstatus=1), "terminal_exit_code_1"),
+            (ExitedPty(exitstatus=2), "terminal_exit_code_2"),
             (ExitedPty(exitstatus=4), "terminal_exited_nonzero"),
             (ExitedPty(exitstatus=0, signalstatus=9), "terminal_signaled"),
             (ExitedPty(exitstatus="SENTINEL_SECRET"), "terminal_unknown"),
@@ -120,6 +139,33 @@ class ReceiptTests(unittest.TestCase):
         self.assertEqual(closed.exception.reason, "terminal_unknown")
         self.assertNotIn("SENTINEL_SECRET", str(closed.exception))
 
+    def test_exact_attempt_marker_classifies_the_program_run_boundary_without_retaining_terminal_text(self):
+        nonce = "0123456789abcdef" * 4
+        process = MarkerThenExitPty(probe_module.STARTUP_MARKER_PREFIX + nonce + ":program_run_error" + probe_module.STARTUP_MARKER_SUFFIX)
+        with self.assertRaises(probe_module.TerminalClosed) as closed:
+            probe_module.wait_for(process, ("ready",), 1, startup_probe_nonce=nonce, select_fn=lambda *_args: ([process], [], []))
+        self.assertEqual(closed.exception.reason, "terminal_exit_code_1")
+        self.assertEqual(closed.exception.startup_boundary, "program_run_error")
+        self.assertNotIn(nonce, str(closed.exception))
+
+    def test_untrusted_or_wrong_attempt_markers_are_unclassified_and_never_reach_the_receipt(self):
+        nonce = "0123456789abcdef" * 4
+        process = MarkerThenExitPty("SYNTHETIC_SECRET " + probe_module.STARTUP_MARKER_PREFIX + ("f" * 64) + ":program_run_error" + probe_module.STARTUP_MARKER_SUFFIX)
+        with self.assertRaises(probe_module.TerminalClosed) as closed:
+            probe_module.wait_for(process, ("ready",), 1, startup_probe_nonce=nonce, select_fn=lambda *_args: ([process], [], []))
+        self.assertEqual(closed.exception.startup_boundary, "unclassified")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = probe_module.probe(
+                "candidate.exe", "unavailable", "http://127.0.0.1:1", None, None, None, None, None,
+                pty_process=EarlyClosingPty,
+                wait=lambda *_args: (_ for _ in ()).throw(closed.exception), backend=None,
+            )
+        self.assertEqual(result, 1)
+        receipt = json.loads(output.getvalue())["receipt"]
+        self.assertEqual(receipt, {"stage": "startup", "outcome": "error", "closedReason": "terminal_exit_code_1", "startupBoundary": "unclassified"})
+        self.assertNotIn("SYNTHETIC_SECRET", output.getvalue())
+
     def test_exited_terminal_eof_has_a_closed_lifecycle_receipt(self):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
@@ -130,7 +176,7 @@ class ReceiptTests(unittest.TestCase):
                 backend=None,
             )
         self.assertEqual(result, 1)
-        self.assertEqual(json.loads(output.getvalue()), {"ok": False, "stage": "startup", "receipt": {"stage": "startup", "outcome": "error", "closedReason": "terminal_exited_zero"}})
+        self.assertEqual(json.loads(output.getvalue()), {"ok": False, "stage": "startup", "receipt": {"stage": "startup", "outcome": "error", "closedReason": "terminal_exited_zero", "startupBoundary": "unclassified"}})
 
     def test_launch_resolves_a_relative_candidate_before_passing_it_to_pywinpty(self):
         output = io.StringIO()

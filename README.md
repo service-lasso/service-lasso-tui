@@ -94,6 +94,17 @@ The output is a closed-schema direct release-asset read record. Linux and
 macOS assets, authenticated reads, lifecycle operations, and independent
 release review remain outside this evidence.
 
+When the owned Windows terminal closes during startup, the helper records its
+observed exit category. Numeric codes one and two are retained as
+`terminal_exit_code_1` and `terminal_exit_code_2`, neither of which infers an
+application failure location.
+For the CI-only unavailable-state probe, the TUI receives a fresh private
+nonce and may return a framed marker after its API-client setup or Bubble Tea
+`Program.Run` error path. The helper accepts only a matching nonce and one of
+the documented boundary categories, discards terminal text in memory, and
+records no nonce or error text. A missing or untrusted marker remains
+`unclassified`.
+
 See [the runtime API contract](docs/runtime-api-contract.md), [the Core
 integration and release contract](docs/core-integration-contract.md), and [the
 framework decision](docs/framework-decision.md).

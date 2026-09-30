@@ -98,10 +98,25 @@ identity, `source_clone_failed`, `isolated_checkout_failed`,
 `runtime_dist_unavailable`, or `packaged_runtime_invalid`). It never includes
 command output, paths, environment values, or credentials in that record.
 When the reconnect helper has started, it atomically records only `stage`,
-`outcome`, and `closedReason` in its attempt-owned temporary root. EOF is not
-an exit result: while its owned PTY remains live the helper retains its existing
-bounded wait, and after exit it records only one of `terminal_exited_zero`,
-`terminal_exited_nonzero`, `terminal_signaled`, or `terminal_unknown`. On Windows,
+`outcome`, and `closedReason` in its attempt-owned temporary root. A startup
+terminal-close receipt may additionally contain `startupBoundary`, from the
+closed set `unclassified`, `api_client_error`, `program_run_error`,
+`program_run_killed`, `program_run_panic`, and `program_run_interrupted`; no
+other receipt may contain that field. EOF is not an exit result: while its owned
+PTY remains live the helper retains its existing bounded wait, and after exit it
+records only one of `terminal_exited_zero`, `terminal_exit_code_1`,
+`terminal_exit_code_2`, `terminal_exited_nonzero`, `terminal_signaled`, or
+`terminal_unknown`. The two numeric categories mean only that the owned PTY
+reported that exit code; neither implies that the TUI reached `main` or
+`Program.Run`. The helper
+accepts a non-`unclassified` startup boundary only from the exact framed marker
+emitted by the checked TUI when its explicit probe nonce matches the fresh
+attempt nonce. The marker is processed in memory and its nonce, terminal text,
+paths, errors, and environment values are never emitted or stored. The
+`program_run_*` values are emitted only after the application receives a
+non-nil result from Bubble Tea `Program.Run`; typed Bubble Tea sentinel errors
+select the killed, panic, or interrupted values, and any other returned error
+selects `program_run_error`. On Windows,
 a native receipt-writer reaches the requested temporary base from a held volume
 root one directory component at a time, keeps that base and every ancestor
 handle live, and creates that root and both receipt files relative to held

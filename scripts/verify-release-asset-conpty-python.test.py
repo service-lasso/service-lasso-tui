@@ -88,12 +88,64 @@ class ReceiptTests(unittest.TestCase):
         self.assertEqual(expected_binary_sha256, self.binary_sha256)
 
         class Held:
+            path = os.path.abspath(executable)
             receipt = {"sourceCommit": source_commit, "binarySHA256": expected_binary_sha256}
 
             def close(self):
                 pass
 
         return os.path.abspath(executable), Held()
+
+    def test_direct_constructor_requires_exact_invalid_url_marker_without_exposing_terminal_text(self):
+        nonce = "0123456789abcdef" * 4
+        marker = probe_module.STARTUP_MARKER_PREFIX + nonce + ":api_url_invalid:" + self.source_commit + ":" + self.binary_sha256 + probe_module.STARTUP_MARKER_SUFFIX
+        observed = {}
+
+        class Completed:
+            returncode = 2
+            stderr = marker.encode("utf-8")
+
+        def runner(args, **kwargs):
+            observed.update({"args": args, "environment": kwargs["env"]})
+            return Completed()
+
+        result = probe_module.direct_constructor_assertion("candidate.exe", {"sourceCommit": self.source_commit, "binarySHA256": self.binary_sha256}, runner=runner, nonce=nonce)
+        self.assertEqual(result, {"exit": "exit_code_2", "startupBoundary": "api_url_invalid", "candidateIdentity": {"sourceCommit": self.source_commit, "binarySHA256": self.binary_sha256}})
+        self.assertEqual(observed["args"], ["candidate.exe"])
+        self.assertEqual(observed["environment"]["SERVICE_LASSO_API_URL"], "://invalid")
+        self.assertNotIn("SERVICE_LASSO_API_TOKEN", observed["environment"])
+        self.assertNotIn(marker, json.dumps(result))
+
+    def test_direct_constructor_rejects_wrong_exit_or_extra_terminal_text(self):
+        nonce = "0123456789abcdef" * 4
+        marker = probe_module.STARTUP_MARKER_PREFIX + nonce + ":api_url_invalid:" + self.source_commit + ":" + self.binary_sha256 + probe_module.STARTUP_MARKER_SUFFIX
+
+        class Completed:
+            def __init__(self, returncode, stderr):
+                self.returncode = returncode
+                self.stderr = stderr.encode("utf-8")
+
+        identity = {"sourceCommit": self.source_commit, "binarySHA256": self.binary_sha256}
+        self.assertIsNone(probe_module.direct_constructor_assertion("candidate.exe", identity, runner=lambda *_args, **_kwargs: Completed(1, marker), nonce=nonce))
+        self.assertIsNone(probe_module.direct_constructor_assertion("candidate.exe", identity, runner=lambda *_args, **_kwargs: Completed(2, "SYNTHETIC_SECRET" + marker), nonce=nonce))
+
+    def test_discriminator_keeps_one_held_identity_through_direct_then_conpty(self):
+        direct_identity = {"sourceCommit": self.source_commit, "binarySHA256": self.binary_sha256}
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = probe_module.discriminate_constructor_then_probe(
+                "candidate.exe", "unavailable", "http://127.0.0.1:1", None, None, None, None, None,
+                pty_process=FakePty,
+                wait=lambda *_args: "Service Lasso TUI q quit Runtime API unavailable",
+                backend=None,
+                source_commit=self.source_commit,
+                expected_binary_sha256=self.binary_sha256,
+                identity_acquirer=self.identity_acquirer,
+                direct_assertion=lambda executable, identity: {"exit": "exit_code_2", "startupBoundary": "api_url_invalid", "candidateIdentity": identity} if identity == direct_identity else None,
+            )
+        self.assertEqual(result, 0)
+        payload = json.loads(output.getvalue())
+        self.assertEqual(payload["directConstructor"]["candidateIdentity"], payload["receipt"]["candidateIdentity"])
 
     def run_probe(self, *args, **kwargs):
         kwargs.setdefault("source_commit", self.source_commit)

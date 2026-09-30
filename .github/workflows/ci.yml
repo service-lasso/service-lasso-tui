@@ -62,7 +62,24 @@ jobs:
           $metadata = (go version -m $binary) -join "`n"
           if ($metadata -notmatch "vcs.revision=$sourceCommit" -or $metadata -notmatch 'vcs.modified=false') { throw 'probe binary does not carry the clean checked-out VCS identity' }
           $binarySHA256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $binary).Hash.ToLowerInvariant()
+          [ordered]@{
+            sourceCommit = $sourceCommit
+            binarySHA256 = $binarySHA256
+            build = 'go-build-mod-readonly-buildvcs-true'
+            goflags = 'cleared'
+            gowork = 'off'
+          } | ConvertTo-Json -Compress | Set-Content -NoNewline -Encoding utf8 (Join-Path $env:RUNNER_TEMP 'service-lasso-tui-probe-provenance.json')
           python scripts/verify-release-asset-conpty.py --executable $binary --mode unavailable --api-url http://127.0.0.1:1 --source-commit $sourceCommit --expected-executable-sha256 $binarySHA256
+      - name: Retain failed Windows constructor candidate
+        if: runner.os == 'Windows' && failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-lasso-tui-windows-constructor-failure-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/service-lasso-tui.exe
+            ${{ runner.temp }}/service-lasso-tui-probe-provenance.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Test direct-probe evidence guards
         run: |
           python scripts/verify-release-asset-conpty-python.test.py

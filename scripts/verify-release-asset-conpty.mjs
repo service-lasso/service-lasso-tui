@@ -27,7 +27,7 @@ const candidate = Object.freeze({
 const coreDevelop = "10e4d72b75c66977ad1dd629991a27443ffc0fd3";
 const helperReceiptName = "helper-outcome.json";
 const nodeReceiptName = "node-exit-outcome.json";
-const receiptStages = new Set(["launch", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit", "helper-exit"]);
+const receiptStages = new Set(["launch", "direct-constructor", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit", "helper-exit"]);
 const receiptOutcomes = new Set(["normal", "error", "timeout"]);
 const receiptReasons = new Set(["completed", "stage_failed", "timed_out", "shutdown_requested", "terminal_exited_zero", "terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown", "helper_exit_nonzero", "helper_exit_signal", "helper_exit_spawn_error"]);
 const terminalCloseReasons = new Set(["terminal_exited_zero", "terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown"]);
@@ -185,7 +185,7 @@ export function parseProbe(stdout, mode) {
   try {
     const result = JSON.parse(stdout.trim());
     const expectedKeys = mode === "unavailable"
-      ? ["exit", "mode", "ok", "receipt"]
+      ? ["directConstructor", "exit", "mode", "ok", "receipt"]
       : ["exit", "mode", "narrowResize", "navigation", "ok", "receipt", "reconnect"];
     const actualKeys = Object.keys(result ?? {}).sort();
     const successReceipt = result?.receipt;
@@ -194,7 +194,8 @@ export function parseProbe(stdout, mode) {
       actualKeys.length === expectedKeys.length && actualKeys.every((key, index) => key === expectedKeys[index]) &&
       mode === "unavailable" && result.exit === "q" &&
       validateReceipt(successReceipt).stage === "exit" && successReceipt.outcome === "normal" && successReceipt.closedReason === "completed" &&
-      validCandidateIdentity(successReceipt.candidateIdentity)
+      validCandidateIdentity(successReceipt.candidateIdentity) &&
+      validDirectConstructor(result.directConstructor, successReceipt.candidateIdentity)
     ) return result;
     if (
       result?.ok === true && result.mode === mode &&
@@ -233,6 +234,14 @@ export function validateReceipt(receipt) {
 function validCandidateIdentity(identity) {
   return identity && Object.keys(identity).length === 2 &&
     /^[a-f0-9]{40}$/u.test(identity.sourceCommit) && /^[a-f0-9]{64}$/u.test(identity.binarySHA256);
+}
+
+function validDirectConstructor(directConstructor, candidateIdentity) {
+  return directConstructor && Object.keys(directConstructor).sort().join(",") === "candidateIdentity,exit,startupBoundary" &&
+    directConstructor.exit === "exit_code_2" && directConstructor.startupBoundary === "api_url_invalid" &&
+    validCandidateIdentity(directConstructor.candidateIdentity) &&
+    directConstructor.candidateIdentity.sourceCommit === candidateIdentity.sourceCommit &&
+    directConstructor.candidateIdentity.binarySHA256 === candidateIdentity.binarySHA256;
 }
 
 function startWriterRequest(writer, message) {

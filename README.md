@@ -113,6 +113,14 @@ records no nonce or error text. A missing or untrusted marker remains
 scheme, userinfo, query or fragment, and insecure token transport without
 recording the supplied URL or token.
 
+When the Windows unavailable-state ConPTY probe is narrowed to constructor
+classification, it first launches the newly built, held executable directly
+with a deliberately invalid URL. It requires exit code 2 and an exact
+`api_url_invalid` marker whose commit and SHA-256 match the held executable,
+then carries that same held identity into ConPTY. The closed result records
+only the direct outcome and candidate identity; it never records the nonce,
+URL, terminal text, or raw error.
+
 See [the runtime API contract](docs/runtime-api-contract.md), [the Core
 integration and release contract](docs/core-integration-contract.md), and [the
 framework decision](docs/framework-decision.md).

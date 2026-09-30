@@ -8,6 +8,7 @@ import re
 import select
 import secrets
 import stat
+import subprocess
 import sys
 import time
 
@@ -53,7 +54,7 @@ class TerminalClosed(Exception):
         super().__init__(self.reason)
 
 RECEIPT_NAME = "helper-outcome.json"
-RECEIPT_STAGES = {"launch", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit"}
+RECEIPT_STAGES = {"launch", "direct-constructor", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit"}
 RECEIPT_OUTCOMES = {"normal", "error", "timeout"}
 RECEIPT_REASONS = {"completed", "stage_failed", "timed_out", "shutdown_requested", "terminal_exited_zero", "terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown"}
 TERMINAL_CLOSE_REASONS = {"terminal_exited_zero", "terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown"}
@@ -72,8 +73,9 @@ def valid_candidate_identity(identity):
     return isinstance(identity, dict) and set(identity) == {"sourceCommit", "binarySHA256"} and isinstance(identity["sourceCommit"], str) and isinstance(identity["binarySHA256"], str) and SOURCE_COMMIT_PATTERN.fullmatch(identity["sourceCommit"]) is not None and SHA256_PATTERN.fullmatch(identity["binarySHA256"]) is not None
 
 class CandidateIdentity:
-    def __init__(self, file, source_commit, binary_sha256):
+    def __init__(self, file, path, source_commit, binary_sha256):
         self.file = file
+        self.path = path
         self.receipt = {"sourceCommit": source_commit, "binarySHA256": binary_sha256}
 
     def close(self):
@@ -108,7 +110,7 @@ def acquire_candidate_identity(executable, source_commit, expected_binary_sha256
         observed = digest.hexdigest()
         if observed != expected_binary_sha256:
             raise ValueError("candidate executable digest mismatch")
-        return executable, CandidateIdentity(file, source_commit, observed)
+        return executable, CandidateIdentity(file, executable, source_commit, observed)
     except Exception:
         file.close()
         raise
@@ -158,6 +160,25 @@ def startup_boundary_from_terminal_text(text, nonce, candidate_identity):
         return "unclassified"
     return frame.group("boundary")
 
+def direct_constructor_assertion(executable, candidate_identity, runner=subprocess.run, nonce=None):
+    # Run the candidate outside ConPTY first. The owned executable handle is
+    # retained by the caller; stderr is processed only in memory and discarded.
+    nonce = nonce or secrets.token_hex(32)
+    if len(nonce) != 64 or any(character not in "0123456789abcdef" for character in nonce):
+        return None
+    environment = {key: os.environ[key] for key in ("APPDATA", "COMSPEC", "LOCALAPPDATA", "PATHEXT", "PATH", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE", "WINDIR") if os.environ.get(key)}
+    environment.update({"SERVICE_LASSO_API_URL": "://invalid", "SERVICE_LASSO_STARTUP_PROBE_NONCE": nonce})
+    try:
+        completed = runner([executable], cwd=os.path.dirname(executable), env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=5, check=False)
+        terminal_text = completed.stderr.decode("utf-8", "replace") if isinstance(completed.stderr, bytes) else ""
+        frame = STARTUP_MARKER_PATTERN.fullmatch(terminal_text)
+        boundary = startup_boundary_from_terminal_text(terminal_text, nonce, candidate_identity)
+        if completed.returncode != 2 or frame is None or boundary != "api_url_invalid":
+            return None
+    except Exception:
+        return None
+    return {"exit": "exit_code_2", "startupBoundary": "api_url_invalid", "candidateIdentity": candidate_identity}
+
 def acknowledge_shutdown(process, acknowledgement_file, token):
     try:
         process.close(force=True)
@@ -202,14 +223,18 @@ def wait_for_file(file_name, timeout, process=None, request_file=None, acknowled
         sleeper(0.05)
     return False
 
-def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, pty_process=PtyProcess, wait=wait_for, wait_file=wait_for_file, backend=CONPTY_BACKEND, startup_probe_nonce=None, source_commit=None, expected_binary_sha256=None, identity_acquirer=acquire_candidate_identity):
+def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, pty_process=PtyProcess, wait=wait_for, wait_file=wait_for_file, backend=CONPTY_BACKEND, startup_probe_nonce=None, source_commit=None, expected_binary_sha256=None, identity_acquirer=acquire_candidate_identity, held_candidate=None, direct_constructor=None):
     process, stage, candidate_identity = None, "launch", None
+    owns_candidate = held_candidate is None
     try:
         if pty_process is None: return fail(stage)
         startup_probe_nonce = startup_probe_nonce or secrets.token_hex(32)
         if len(startup_probe_nonce) != 64 or any(character not in "0123456789abcdef" for character in startup_probe_nonce):
             return fail(stage)
-        executable, held_candidate = identity_acquirer(executable, source_commit, expected_binary_sha256)
+        if held_candidate is None:
+            executable, held_candidate = identity_acquirer(executable, source_commit, expected_binary_sha256)
+        else:
+            executable = held_candidate.path
         candidate_identity = held_candidate.receipt
         environment = {key: os.environ[key] for key in ("APPDATA", "COMSPEC", "LOCALAPPDATA", "PATHEXT", "PATH", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE", "WINDIR") if os.environ.get(key)}
         environment.update({"TERM": "xterm-256color", "SERVICE_LASSO_API_URL": api_url, "SERVICE_LASSO_STARTUP_PROBE_NONCE": startup_probe_nonce})
@@ -227,7 +252,9 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
                     if readable: process.read()
                 except EOFError: break
             if process.isalive(): return fail(stage, outcome_receipt=receipt(stage, "error", "stage_failed", candidate_identity=candidate_identity))
-            emit({"ok": True, "mode": mode, "exit": "q", "receipt": receipt(stage, "normal", "completed", candidate_identity=candidate_identity)}); return 0
+            result = {"ok": True, "mode": mode, "exit": "q", "receipt": receipt(stage, "normal", "completed", candidate_identity=candidate_identity)}
+            if direct_constructor is not None: result["directConstructor"] = direct_constructor
+            emit(result); return 0
         if not ready_file or not reconnect_file:
             return fail("setup", outcome_receipt=receipt("startup", "error", "stage_failed", candidate_identity=candidate_identity))
         with open(ready_file, "x", encoding="utf-8") as marker: marker.write("unavailable-rendered\n")
@@ -262,7 +289,9 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
             except EOFError: break
         if process.isalive():
             return fail(stage, outcome_receipt=receipt(stage, "timeout", "timed_out", candidate_identity=candidate_identity))
-        emit({"ok": True, "mode": mode, "reconnect": "r", "navigation": ["d", "?"], "narrowResize": narrow_resize, "exit": "q", "receipt": receipt(stage, "normal", "completed", candidate_identity=candidate_identity)}); return 0
+        result = {"ok": True, "mode": mode, "reconnect": "r", "navigation": ["d", "?"], "narrowResize": narrow_resize, "exit": "q", "receipt": receipt(stage, "normal", "completed", candidate_identity=candidate_identity)}
+        if direct_constructor is not None: result["directConstructor"] = direct_constructor
+        emit(result); return 0
     except ShutdownRequested:
         receipt_stage = stage if stage in RECEIPT_STAGES else "exit"
         return fail(receipt_stage, "shutdown-requested", receipt(receipt_stage, "error", "shutdown_requested", candidate_identity=candidate_identity))
@@ -276,14 +305,28 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
         if process is not None:
             try: process.close(force=True)
             except Exception: pass
-        if 'held_candidate' in locals():
+        if owns_candidate and held_candidate is not None:
+            held_candidate.close()
+
+def discriminate_constructor_then_probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, pty_process=PtyProcess, wait=wait_for, wait_file=wait_for_file, backend=CONPTY_BACKEND, source_commit=None, expected_binary_sha256=None, identity_acquirer=acquire_candidate_identity, direct_assertion=direct_constructor_assertion):
+    held_candidate = None
+    try:
+        executable, held_candidate = identity_acquirer(executable, source_commit, expected_binary_sha256)
+        direct_constructor = direct_assertion(executable, held_candidate.receipt)
+        if direct_constructor is None:
+            return fail("direct-constructor", outcome_receipt=receipt("direct-constructor", "error", "stage_failed", candidate_identity=held_candidate.receipt))
+        return probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, pty_process=pty_process, wait=wait, wait_file=wait_file, backend=backend, source_commit=source_commit, expected_binary_sha256=expected_binary_sha256, identity_acquirer=identity_acquirer, held_candidate=held_candidate, direct_constructor=direct_constructor)
+    except Exception:
+        return fail("direct-constructor", outcome_receipt=receipt("direct-constructor", "error", "stage_failed", candidate_identity=held_candidate.receipt if held_candidate is not None else None))
+    finally:
+        if held_candidate is not None:
             held_candidate.close()
 
 def main():
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--executable"); parser.add_argument("--mode", choices=("unavailable", "reconnect")); parser.add_argument("--api-url"); parser.add_argument("--source-commit"); parser.add_argument("--expected-executable-sha256"); parser.add_argument("--ready-file"); parser.add_argument("--reconnect-file"); parser.add_argument("--shutdown-request-file"); parser.add_argument("--shutdown-acknowledgement-file"); parser.add_argument("--shutdown-token")
     args = parser.parse_args()
-    return probe(args.executable, args.mode, args.api_url, args.ready_file, args.reconnect_file, args.shutdown_request_file, args.shutdown_acknowledgement_file, args.shutdown_token, source_commit=args.source_commit, expected_binary_sha256=args.expected_executable_sha256) if args.executable and args.mode and args.api_url and args.source_commit and args.expected_executable_sha256 else fail("setup")
+    return discriminate_constructor_then_probe(args.executable, args.mode, args.api_url, args.ready_file, args.reconnect_file, args.shutdown_request_file, args.shutdown_acknowledgement_file, args.shutdown_token, source_commit=args.source_commit, expected_binary_sha256=args.expected_executable_sha256) if args.executable and args.mode and args.api_url and args.source_commit and args.expected_executable_sha256 else fail("setup")
 
 if __name__ == "__main__":
     sys.exit(main())

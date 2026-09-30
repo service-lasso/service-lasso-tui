@@ -154,3 +154,15 @@ receipt enum and response schema is closed; a receipt sink failure preserves
 the original probe failure. Until a handle-relative owned deletion operation is
 implemented, Windows native attempt roots are retained as evidence rather than
 closed and recursively removed by pathname.
+When a hosted Windows unavailable-state ConPTY probe reports `api_client_error`
+for a deliberately invalid API URL, the harness must first run the newly built
+held executable directly with a fresh nonce and that invalid URL. It accepts
+only exit code 2 and exactly one complete `api_url_invalid` marker bound to the
+same held source commit and executable SHA-256. It consumes the marker in
+process and neither logs nor stores terminal text, nonce, URL, token, or raw
+error data. Only after that direct constructor assertion passes may the same
+still-held executable enter ConPTY. The closed result records the direct
+constructor outcome and candidate identity so it proves both paths used the
+same binary. A direct assertion failure is a bounded build-domain suspect; it
+does not rerun, replace the failed candidate, or relabel a generic failure as
+the typed API boundary.

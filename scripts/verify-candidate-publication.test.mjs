@@ -38,10 +38,19 @@ test("rejects disabled immutable releases and unbounded environment waits", () =
   assert.throws(() => assertPreflight({ ...preflight, branchProtection: { ...preflight.branchProtection, allow_force_pushes: undefined } }), /force pushes/u);
   assert.throws(() => assertPreflight({ ...preflight, branchProtection: { ...preflight.branchProtection, allow_force_pushes: { enabled: true } } }), /force pushes/u);
   assert.throws(() => assertPreflight({ ...preflight, branchProtection: { ...preflight.branchProtection, allow_force_pushes: {} } }), /force pushes/u);
+  assert.throws(() => assertPreflight({ ...preflight, branchProtection: { ...preflight.branchProtection, required_pull_request_reviews: undefined } }), /review count/u);
+  assert.throws(() => assertPreflight({ ...preflight, branchProtection: { ...preflight.branchProtection, required_pull_request_reviews: {} } }), /review count/u);
+  assert.throws(() => assertPreflight({ ...preflight, branchProtection: { ...preflight.branchProtection, required_pull_request_reviews: { required_approving_review_count: "0" } } }), /review count/u);
+  assert.throws(() => assertPreflight({ ...preflight, branchProtection: { ...preflight.branchProtection, required_pull_request_reviews: { required_approving_review_count: 0.5 } } }), /review count/u);
+  assert.throws(() => assertPreflight({ ...preflight, branchProtection: { ...preflight.branchProtection, required_pull_request_reviews: { required_approving_review_count: -1 } } }), /review count/u);
 });
 test("requires a full-SHA-bound four-platform candidate manifest", () => {
   assert.doesNotThrow(() => assertManifest(manifest, identity));
   assert.throws(() => assertManifest({ ...manifest, assets: manifest.assets.slice(1) }, identity), /all platform/u);
+  assert.throws(() => assertManifest({ ...manifest, assets: manifest.assets.map((asset, index) => index === 0 ? { ...asset, name: "service-lasso-tui-anything.zip" } : asset) }, identity), /platform inventory/u);
+  assert.throws(() => assertManifest({ ...manifest, assets: manifest.assets.map((asset, index) => index === 0 ? { ...asset, platform: "arbitrary-platform" } : asset) }, identity), /platform inventory/u);
+  assert.throws(() => assertManifest({ ...manifest, assets: manifest.assets.map((asset, index) => index === 1 ? { ...asset, platform: "win32-amd64" } : asset) }, identity), /platform inventory/u);
+  assert.throws(() => assertManifest({ ...manifest, assets: manifest.assets.map((asset, index) => index === 0 ? { ...asset, executable: "service-lasso-tui" } : asset) }, identity), /platform inventory/u);
   assert.throws(() => candidateIdentity({ ...identity, sourceRef: "refs/heads/main" }), /develop/u);
 });
 test("validates complete immutable metadata inventory before reading public bytes", () => {
@@ -49,6 +58,8 @@ test("validates complete immutable metadata inventory before reading public byte
   assert.equal(assertExistingCandidateRecovery(release, manifest, localAssets).tag, identity.tag);
   assert.throws(() => assertReleaseReceipt({ ...release, immutable: false }, manifest, localAssets), /immutable/u);
   assert.throws(() => assertReleaseReceipt({ ...release, assets: release.assets.slice(1) }, manifest, localAssets), /inventory/u);
+  assert.throws(() => assertReleaseReceipt(release, { ...manifest, assets: manifest.assets.map((asset, index) => index === 0 ? { ...asset, sha256: "f".repeat(64) } : asset) }, localAssets), /does not match the manifest/u);
+  assert.throws(() => assertReleaseReceipt(release, { ...manifest, checksumManifest: { ...manifest.checksumManifest, sha256: "e".repeat(64) } }, localAssets), /checksum manifest does not match/u);
 });
 test("recovers a complete existing candidate only after all six public bodies match", async () => {
   const calls = []; const receipt = await verify({ calls });

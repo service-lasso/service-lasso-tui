@@ -10,11 +10,19 @@ const MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 const PUBLIC_DOWNLOAD_HOSTS = new Set(["github.com", "github-releases.githubusercontent.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"]);
 const REQUIRED_CHECKS = Object.freeze(["Linux test and build", "Windows test and build", "macOS test and build", "Release asset cross-compilation"]);
 const REQUIRED_PLATFORMS = Object.freeze(["darwin-amd64", "darwin-arm64", "linux-amd64", "win32-amd64"]);
+const PLATFORM_ARCHIVES = Object.freeze({
+  "darwin-amd64": { extension: "tar.gz", executable: "service-lasso-tui" },
+  "darwin-arm64": { extension: "tar.gz", executable: "service-lasso-tui" },
+  "linux-amd64": { extension: "tar.gz", executable: "service-lasso-tui" },
+  "win32-amd64": { extension: "zip", executable: "service-lasso-tui.exe" },
+});
 
 function fail(message) { throw new Error(message); }
 function object(value, name) { if (!value || typeof value !== "object" || Array.isArray(value)) fail(`${name} must be an object`); return value; }
 function exactKeys(value, keys, name) { const actual = Object.keys(object(value, name)).sort(); const expected = [...keys].sort(); if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) fail(`${name} has an unexpected shape`); }
 function positiveBoundedSize(value, name) { if (!Number.isSafeInteger(value) || value <= 0 || value > MAX_ASSET_BYTES) fail(`${name} size is invalid`); return value; }
+function fixedArchiveAssets(version) { return REQUIRED_PLATFORMS.map(platform => ({ platform, name: `service-lasso-tui-${version}-${platform}.${PLATFORM_ARCHIVES[platform].extension}`, executable: PLATFORM_ARCHIVES[platform].executable })); }
+function fixedInventoryNames(version) { return [...fixedArchiveAssets(version).map(asset => asset.name), "SHA256SUMS.txt", "candidate-manifest.json"].sort(); }
 
 export function candidateIdentity({ sourceRef, sourceCommit, version, tag }) {
   if (sourceRef !== "refs/heads/develop" || !SHA1.test(sourceCommit)) fail("candidate source must be the full develop commit");
@@ -33,7 +41,8 @@ export function assertPreflight({ immutableReleases, environment, branchProtecti
   if (branchProtection?.required_status_checks?.strict !== true) fail("develop branch protection must require up-to-date checks");
   const contexts = new Set(branchProtection.required_status_checks.contexts ?? []);
   if (!REQUIRED_CHECKS.every(check => contexts.has(check))) fail("develop branch protection is missing a current TUI CI check");
-  if (!branchProtection?.required_pull_request_reviews) fail("develop branch protection must require pull-request review");
+  const reviewCount = branchProtection?.required_pull_request_reviews?.required_approving_review_count;
+  if (!Number.isSafeInteger(reviewCount) || reviewCount < 0) fail("develop branch protection must report a valid required approving review count");
   if (branchProtection?.allow_force_pushes?.enabled !== false) fail("develop branch protection must explicitly disable force pushes");
   return { environment: environment.name, waitMinutes: wait.wait_timer, requiredChecks: REQUIRED_CHECKS };
 }
@@ -45,10 +54,12 @@ export function assertManifest(manifest, identity) {
   if (manifest.corePackagingIssue !== "service-lasso/service-lasso#1461") fail("candidate manifest Core handoff is invalid");
   if (manifest.release?.tag !== identity.tag || manifest.release?.prerelease !== true || manifest.release?.draft !== false || manifest.release?.immutable !== true) fail("candidate manifest release contract is invalid");
   if (manifest.checksumManifest?.name !== "SHA256SUMS.txt" || !SHA256.test(manifest.checksumManifest?.sha256)) fail("candidate checksum manifest is invalid");
-  if (!Array.isArray(manifest.assets) || manifest.assets.length !== REQUIRED_PLATFORMS.length) fail("candidate manifest must describe all platform assets");
-  const platforms = manifest.assets.map(asset => asset?.platform).sort();
-  if (platforms.some((platform, index) => platform !== REQUIRED_PLATFORMS[index])) fail("candidate manifest platform inventory is invalid");
-  for (const asset of manifest.assets) if (typeof asset.name !== "string" || !SHA256.test(asset.sha256) || !["service-lasso-tui", "service-lasso-tui.exe"].includes(asset.executable)) fail("candidate manifest asset is invalid");
+  const expectedAssets = fixedArchiveAssets(identity.version);
+  if (!Array.isArray(manifest.assets) || manifest.assets.length !== expectedAssets.length) fail("candidate manifest must describe all platform assets");
+  for (const expected of expectedAssets) {
+    const asset = manifest.assets.find(candidate => candidate?.platform === expected.platform);
+    if (!asset || asset.name !== expected.name || asset.executable !== expected.executable || !SHA256.test(asset.sha256)) fail("candidate manifest platform inventory is invalid");
+  }
   return manifest;
 }
 
@@ -62,13 +73,18 @@ function assertLocalAssets(localAssets, requiredNames) {
 }
 
 export function assertReleaseReceipt(release, manifest, localAssets) {
+  const requiredNames = fixedInventoryNames(manifest?.version);
+  assertLocalAssets(localAssets, requiredNames);
+  for (const expected of fixedArchiveAssets(manifest?.version)) {
+    const asset = manifest?.assets?.find(candidate => candidate?.platform === expected.platform);
+    if (!asset || asset.name !== expected.name || asset.executable !== expected.executable || localAssets[expected.name].sha256 !== asset.sha256) fail(`local candidate asset inventory does not match the manifest for ${expected.name}`);
+  }
+  if (manifest?.checksumManifest?.name !== "SHA256SUMS.txt" || localAssets["SHA256SUMS.txt"].sha256 !== manifest.checksumManifest.sha256) fail("local candidate checksum manifest does not match the manifest");
   object(release, "release");
   if (release.tag_name !== manifest.release.tag || release.target_commitish !== manifest.source.commit || release.draft !== false || release.prerelease !== true || release.immutable !== true) fail("release does not prove the immutable exact candidate identity");
   if (!Array.isArray(release.assets)) fail("release assets are missing");
-  const requiredNames = [...manifest.assets.map(asset => asset.name), manifest.checksumManifest.name, "candidate-manifest.json"].sort();
   const names = release.assets.map(asset => asset?.name).sort();
   if (names.length !== requiredNames.length || names.some((name, index) => name !== requiredNames[index])) fail("release asset inventory is incomplete or unexpected");
-  assertLocalAssets(localAssets, requiredNames);
   const assetIDs = new Set();
   for (const name of requiredNames) {
     const remote = release.assets.find(asset => asset.name === name); const local = localAssets[name];

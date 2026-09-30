@@ -26,3 +26,14 @@ product's credential-required policy.
 This evidence records diagnosis and local repair intent only. It does not
 rerun the old failed job, qualify a release asset, establish real-runtime
 acceptance, publish a candidate, or establish deployment or GA.
+
+Local post-build observation used a clean single-branch clone at
+`c6f649d6c32404ef3dd72af858438dd490f88ad0` with empty `GOFLAGS`,
+`GOWORK=off`, readonly module resolution, and a clean VCS-stamped Windows
+binary. With the constrained environment but no token, the direct executable
+exited `2` with `api_client_error`. With the harness's inert child token, the
+same held binary passed direct invalid-URL discrimination as `exit_code_2` /
+`api_url_invalid`. Its subsequent unavailable ConPTY probe returned the closed
+`startup` timeout receipt. That failure is preserved without terminal text or
+token material and without a claim about the ConPTY implementation, compiler,
+or source substitution. It is not release or runtime acceptance.

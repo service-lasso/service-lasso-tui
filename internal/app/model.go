@@ -23,6 +23,12 @@ type runtimeClient interface {
 	Lifecycle(context.Context, string, string) (api.LifecycleResult, error)
 }
 
+type connectionManager interface {
+	Names() []string
+	Current() string
+	Switch(string) (*api.Client, error)
+}
+
 type screen int
 
 const (
@@ -31,10 +37,15 @@ const (
 	detailScreen
 	inboxScreen
 	helpScreen
+	profilesScreen
 )
 
 type model struct {
 	client             runtimeClient
+	connections        connectionManager
+	connectionName     string
+	connectionEpoch    uint64
+	selectedProfile    string
 	ctx                context.Context
 	screen             screen
 	services           []api.Service
@@ -62,12 +73,14 @@ type model struct {
 }
 
 type loadedMsg struct {
+	epoch    uint64
 	health   api.Health
 	services []api.Service
 	err      error
 }
 
 type lifecycleMsg struct {
+	epoch  uint64
 	result api.LifecycleResult
 	action string
 	err    error
@@ -77,20 +90,26 @@ func New(client runtimeClient, ctx context.Context) tea.Model {
 	return model{client: client, ctx: ctx, loading: true, screen: dashboardScreen}
 }
 
+func NewWithConnections(client runtimeClient, connections connectionManager, ctx context.Context) tea.Model {
+	return model{client: client, connections: connections, connectionName: connections.Current(), selectedProfile: connections.Current(), ctx: ctx, loading: true, screen: dashboardScreen}
+}
+
 func (m model) Init() tea.Cmd { return tea.Batch(m.refresh(), m.refreshDashboard()) }
 
 func (m model) refresh() tea.Cmd {
+	epoch, client := m.connectionEpoch, m.client
 	return func() tea.Msg {
-		health, err := m.client.Health(m.ctx)
+		health, err := client.Health(m.ctx)
 		if err != nil {
-			return loadedMsg{err: err}
+			return loadedMsg{epoch: epoch, err: err}
 		}
-		services, err := m.client.Services(m.ctx)
-		return loadedMsg{health: health, services: services, err: err}
+		services, err := client.Services(m.ctx)
+		return loadedMsg{epoch: epoch, health: health, services: services, err: err}
 	}
 }
 
 type dashboardMsg struct {
+	epoch        uint64
 	capabilities api.Capabilities
 	setup        api.SetupStatus
 	identity     api.RuntimeIdentity
@@ -98,11 +117,13 @@ type dashboardMsg struct {
 	failures     []string
 }
 type historyMsg struct {
+	epoch   uint64
 	history api.HealthHistory
 	err     error
 }
 
 func (m model) refreshDashboard() tea.Cmd {
+	epoch, client := m.connectionEpoch, m.client
 	return func() tea.Msg {
 		// Optional reads share one five-second window. A denied optional read
 		// remains empty; connectivity is determined only by /api/health.
@@ -126,29 +147,29 @@ func (m model) refreshDashboard() tea.Cmd {
 		go func() {
 			defer wait.Done()
 			var err error
-			capabilities, err = m.client.Capabilities(ctx)
+			capabilities, err = client.Capabilities(ctx)
 			addFailure("capabilities", err)
 		}()
 		go func() {
 			defer wait.Done()
 			var err error
-			setup, err = m.client.SetupStatus(ctx)
+			setup, err = client.SetupStatus(ctx)
 			addFailure("setup status", err)
 		}()
 		go func() {
 			defer wait.Done()
 			var err error
-			identity, err = m.client.RuntimeIdentity(ctx)
+			identity, err = client.RuntimeIdentity(ctx)
 			addFailure("runtime identity", err)
 		}()
 		go func() {
 			defer wait.Done()
 			var err error
-			inbox, err = m.client.Inbox(ctx, "")
+			inbox, err = client.Inbox(ctx, "")
 			addFailure("operator inbox", err)
 		}()
 		wait.Wait()
-		return dashboardMsg{capabilities: capabilities, setup: setup, identity: identity, inbox: inbox, failures: failures}
+		return dashboardMsg{epoch: epoch, capabilities: capabilities, setup: setup, identity: identity, inbox: inbox, failures: failures}
 	}
 }
 
@@ -157,10 +178,10 @@ func (m model) loadHistory() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	id := service.ID
+	id, epoch, client := service.ID, m.connectionEpoch, m.client
 	return func() tea.Msg {
-		history, err := m.client.HealthHistory(m.ctx, id)
-		return historyMsg{history: history, err: err}
+		history, err := client.HealthHistory(m.ctx, id)
+		return historyMsg{epoch: epoch, history: history, err: err}
 	}
 }
 
@@ -169,10 +190,10 @@ func (m model) runLifecycle() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	action := m.pendingAction
+	action, epoch, client := m.pendingAction, m.connectionEpoch, m.client
 	return func() tea.Msg {
-		result, err := m.client.Lifecycle(m.ctx, service.ID, action)
-		return lifecycleMsg{result: result, action: action, err: err}
+		result, err := client.Lifecycle(m.ctx, service.ID, action)
+		return lifecycleMsg{epoch: epoch, result: result, action: action, err: err}
 	}
 }
 
@@ -182,6 +203,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = message.Width, message.Height
 		m.narrow = message.Width > 0 && message.Width < 72
 	case loadedMsg:
+		if message.epoch != m.connectionEpoch {
+			return m, nil
+		}
 		m.loading = false
 		m.err = message.err
 		if message.err == nil {
@@ -196,8 +220,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stale = true
 		}
 	case dashboardMsg:
+		if message.epoch != m.connectionEpoch {
+			return m, nil
+		}
 		m.capabilities, m.setup, m.identity, m.inbox, m.optionalFailures = message.capabilities, message.setup, message.identity, message.inbox, message.failures
 	case historyMsg:
+		if message.epoch != m.connectionEpoch {
+			return m, nil
+		}
 		if message.err == nil {
 			m.history = message.history
 			m.historyUnavailable = false
@@ -205,6 +235,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.historyUnavailable = true
 		}
 	case lifecycleMsg:
+		if message.epoch != m.connectionEpoch {
+			return m, nil
+		}
 		m.loading = false
 		m.pendingAction = ""
 		m.pendingServiceID = ""
@@ -254,6 +287,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.loading, m.err = true, nil
 			return m, tea.Batch(m.refresh(), m.refreshDashboard())
+		case "p":
+			if m.connections != nil && m.pendingAction == "" {
+				m.selectedProfile = m.connectionName
+				m.screen = profilesScreen
+			}
 		case "d":
 			m.cancelPendingOnNavigation()
 			m.screen = dashboardScreen
@@ -301,6 +339,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			m.moveSelected(-1)
 		case "enter":
+			if m.screen == profilesScreen {
+				client, err := m.connections.Switch(m.selectedProfile)
+				if err != nil {
+					m.err = err
+					return m, nil
+				}
+				m.activateConnection(client)
+				return m, tea.Batch(m.refresh(), m.refreshDashboard())
+			}
 			if (m.screen == servicesScreen || m.screen == dashboardScreen) && m.hasSelectedService() {
 				m.screen = detailScreen
 				return m, m.loadHistory()
@@ -373,6 +420,24 @@ func (m *model) cancelPendingOnNavigation() {
 func (m model) hasSelectedService() bool { _, ok := m.selectedService(); return ok }
 
 func (m *model) moveSelected(direction int) {
+	if m.screen == profilesScreen {
+		names := m.connections.Names()
+		if len(names) == 0 {
+			return
+		}
+		current := 0
+		for i, name := range names {
+			if name == m.selectedProfile {
+				current = i
+				break
+			}
+		}
+		next := current + direction
+		if next >= 0 && next < len(names) {
+			m.selectedProfile = names[next]
+		}
+		return
+	}
 	if m.screen != servicesScreen && m.screen != dashboardScreen {
 		return
 	}
@@ -392,6 +457,19 @@ func (m *model) moveSelected(direction int) {
 	if next >= 0 && next < len(services) {
 		m.selectedServiceID = services[next].ID
 	}
+}
+
+func (m *model) activateConnection(client runtimeClient) {
+	m.client = client
+	m.connectionName = m.connections.Current()
+	m.connectionEpoch++
+	m.services = nil
+	m.selectedServiceID = ""
+	m.health, m.capabilities, m.setup, m.identity, m.inbox, m.history = api.Health{}, api.Capabilities{}, api.SetupStatus{}, api.RuntimeIdentity{}, api.Inbox{}, api.HealthHistory{}
+	m.optionalFailures, m.pendingAction, m.pendingServiceID, m.lastResult = nil, "", "", ""
+	m.historyUnavailable, m.stale, m.submittingAction, m.loading = false, false, false, true
+	m.err = nil
+	m.screen = dashboardScreen
 }
 
 func safeTerminalText(value string, limit int) string {
@@ -443,7 +521,23 @@ func (m model) View() string {
 	}
 	b.WriteString("\n")
 	if m.screen == helpScreen {
-		b.WriteString("d dashboard • v services • i inbox • / search • n narrow • r reconnect • esc back • q quit\n")
+		b.WriteString("d dashboard • v services • i inbox • p connections • / search • n narrow • r reconnect • esc back • q quit\n")
+		return b.String()
+	}
+	if m.screen == profilesScreen {
+		b.WriteString("Connections\n")
+		for _, name := range m.connections.Names() {
+			cursor := " "
+			if name == m.selectedProfile {
+				cursor = ">"
+			}
+			active := ""
+			if name == m.connectionName {
+				active = " (active)"
+			}
+			fmt.Fprintf(&b, "%s %s%s\n", cursor, safeTerminalText(name, 80), active)
+		}
+		b.WriteString("j/k navigate • enter switch • esc back\n")
 		return b.String()
 	}
 	if m.screen == inboxScreen {
@@ -481,7 +575,7 @@ func (m model) View() string {
 	if m.searching {
 		b.WriteString("\nSearch: " + safeTerminalText(m.search, 80) + "\n")
 	}
-	b.WriteString("\n↑/k ↓/j navigate • enter details • d dashboard • v services • i inbox • / search • ? help • r reconnect • q quit\n")
+	b.WriteString("\n↑/k ↓/j navigate • enter details • d dashboard • v services • i inbox • p connections • / search • ? help • r reconnect • q quit\n")
 	return b.String()
 }
 

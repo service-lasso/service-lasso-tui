@@ -22,6 +22,22 @@ type fakeClient struct {
 	lifecycleErr    error
 }
 
+type fakeConnectionManager struct {
+	current string
+	clients map[string]*api.Client
+}
+
+func (m *fakeConnectionManager) Names() []string { return []string{"local", "remote"} }
+func (m *fakeConnectionManager) Current() string { return m.current }
+func (m *fakeConnectionManager) Switch(name string) (*api.Client, error) {
+	client, ok := m.clients[name]
+	if !ok {
+		return nil, errors.New("unknown profile")
+	}
+	m.current = name
+	return client, nil
+}
+
 // rawStatusLineTransport models an HTTP response after net/http has parsed a
 // server-controlled status line. It lets this rendered-output regression cover
 // the untrusted Response.Status value without placing control bytes on the
@@ -205,6 +221,32 @@ func TestDashboardKeepsLastServiceSnapshotAsStale(t *testing.T) {
 	view := updated.(model).View()
 	if !strings.Contains(view, "stale") || !strings.Contains(view, "Echo") {
 		t.Fatalf("stale snapshot missing: %s", view)
+	}
+}
+
+func TestConnectionSwitchClearsContextAndRejectsOldResults(t *testing.T) {
+	local, err := api.NewClient("http://127.0.0.1:17883", nil, "local-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote, err := api.NewClient("https://remote.example.test", nil, "remote-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	connections := &fakeConnectionManager{current: "local", clients: map[string]*api.Client{"local": local, "remote": remote}}
+	initial := NewWithConnections(local, connections, context.Background()).(model)
+	initial.services = []api.Service{{ID: "local", Name: "Local service"}}
+	initial.lastResult = "Core completed start."
+	updated, _ := initial.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	switched := updated.(model)
+	if switched.connectionName != "remote" || switched.connectionEpoch != 1 || len(switched.services) != 0 || switched.lastResult != "" {
+		t.Fatalf("switch retained local context: %#v", switched)
+	}
+	stale, _ := switched.Update(loadedMsg{epoch: 0, services: []api.Service{{ID: "local", Name: "Old result"}}})
+	if strings.Contains(stale.(model).View(), "Old result") {
+		t.Fatalf("old connection result was rendered: %s", stale.(model).View())
 	}
 }
 

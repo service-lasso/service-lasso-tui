@@ -153,7 +153,7 @@ jobs:
             --arg win32 "service-lasso-tui-${CANDIDATE_VERSION}-win32-amd64.zip" --arg linux "service-lasso-tui-${CANDIDATE_VERSION}-linux-amd64.tar.gz" --arg darwinAmd64 "service-lasso-tui-${CANDIDATE_VERSION}-darwin-amd64.tar.gz" --arg darwinArm64 "service-lasso-tui-${CANDIDATE_VERSION}-darwin-arm64.tar.gz" \
             --arg win32Sha256 "$(sha256sum "service-lasso-tui-${CANDIDATE_VERSION}-win32-amd64.zip" | cut -d ' ' -f1)" --arg linuxSha256 "$(sha256sum "service-lasso-tui-${CANDIDATE_VERSION}-linux-amd64.tar.gz" | cut -d ' ' -f1)" --arg darwinAmd64Sha256 "$(sha256sum "service-lasso-tui-${CANDIDATE_VERSION}-darwin-amd64.tar.gz" | cut -d ' ' -f1)" --arg darwinArm64Sha256 "$(sha256sum "service-lasso-tui-${CANDIDATE_VERSION}-darwin-arm64.tar.gz" | cut -d ' ' -f1)" \
             '{schemaVersion: 2, kind: "develop-prerelease-candidate", source: {repository: $repository, ref: $sourceRef, commit: $sourceCommit}, release: {tag: $tag, prerelease: true, draft: false, immutable: true}, version: $version, checksumManifest: {name: "SHA256SUMS.txt", sha256: $checksumManifestSha256}, corePackagingIssue: "service-lasso/service-lasso#1461", assets: [{platform: "win32-amd64", name: $win32, sha256: $win32Sha256, executable: "service-lasso-tui.exe"}, {platform: "linux-amd64", name: $linux, sha256: $linuxSha256, executable: "service-lasso-tui"}, {platform: "darwin-amd64", name: $darwinAmd64, sha256: $darwinAmd64Sha256, executable: "service-lasso-tui"}, {platform: "darwin-arm64", name: $darwinArm64, sha256: $darwinArm64Sha256, executable: "service-lasso-tui"}]}' > candidate-manifest.json
-          jq -Rn '[inputs | split("  ") | {key: .[1], value: .[0]}] | from_entries' < <(sha256sum service-lasso-tui-* SHA256SUMS.txt candidate-manifest.json) > candidate-local-assets.json
+          node --input-type=module -e 'import { createHash } from "node:crypto"; import { readFileSync, statSync } from "node:fs"; const inventory = {}; for (const name of process.argv.slice(1)) { const bytes = readFileSync(name); inventory[name] = { sha256: createHash("sha256").update(bytes).digest("hex"), size: statSync(name).size }; } process.stdout.write(JSON.stringify(inventory));' service-lasso-tui-* SHA256SUMS.txt candidate-manifest.json > candidate-local-assets.json
       - uses: actions/upload-artifact@v4
         with:
           name: service-lasso-tui-candidate-${{ needs.validate-source.outputs.version }}-${{ needs.validate-source.outputs.sha }}
@@ -197,7 +197,7 @@ jobs:
           status=$?
           set -e
           if [ "$status" -eq 0 ]; then
-            node scripts/verify-candidate-publication.mjs --mode receipt --source-ref "$GITHUB_REF" --source-commit "$CANDIDATE_SHA" --version "$CANDIDATE_VERSION" --tag "$CANDIDATE_TAG" --manifest release-assets/candidate-manifest.json --release existing-release.json --local-assets release-assets/candidate-local-assets.json
+            node scripts/verify-candidate-publication.mjs --mode receipt --source-ref "$GITHUB_REF" --source-commit "$CANDIDATE_SHA" --version "$CANDIDATE_VERSION" --tag "$CANDIDATE_TAG" --manifest release-assets/candidate-manifest.json --release existing-release.json --local-assets release-assets/candidate-local-assets.json --download-dir "$RUNNER_TEMP/public-candidate-receipt"
             echo 'recovered=true' >> "$GITHUB_OUTPUT"
           elif grep -Fq 'HTTP 404' existing-release.err; then
             echo 'recovered=false' >> "$GITHUB_OUTPUT"
@@ -221,7 +221,7 @@ jobs:
         run: |
           set -euo pipefail
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$CANDIDATE_TAG" > final-release.json
-          node scripts/verify-candidate-publication.mjs --mode receipt --source-ref "$GITHUB_REF" --source-commit "$CANDIDATE_SHA" --version "$CANDIDATE_VERSION" --tag "$CANDIDATE_TAG" --manifest release-assets/candidate-manifest.json --release final-release.json --local-assets release-assets/candidate-local-assets.json
+          node scripts/verify-candidate-publication.mjs --mode receipt --source-ref "$GITHUB_REF" --source-commit "$CANDIDATE_SHA" --version "$CANDIDATE_VERSION" --tag "$CANDIDATE_TAG" --manifest release-assets/candidate-manifest.json --release final-release.json --local-assets release-assets/candidate-local-assets.json --download-dir "$RUNNER_TEMP/public-candidate-receipt"
       - uses: actions/upload-artifact@v4
         with:
           name: service-lasso-tui-publication-receipt-${{ needs.validate-source.outputs.version }}-${{ needs.validate-source.outputs.sha }}

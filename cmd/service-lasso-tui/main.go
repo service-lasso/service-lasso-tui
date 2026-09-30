@@ -12,21 +12,19 @@ import (
 )
 
 func main() {
-	defaultURL := os.Getenv("SERVICE_LASSO_API_URL")
-	if defaultURL == "" {
-		defaultURL = "http://127.0.0.1:17883"
-	}
-
-	apiURL := flag.String("api", defaultURL, "Service Lasso runtime API base URL")
+	apiURL := flag.String("api", "", "Service Lasso runtime API base URL")
+	configPath := flag.String("connections", "", "connection profile configuration file")
+	profile := flag.String("profile", "", "configured connection profile")
+	tokenEnv := flag.String("token-env", "", "credential environment variable name")
 	flag.Parse()
 
-	client, err := api.NewClient(*apiURL, nil, os.Getenv("SERVICE_LASSO_API_TOKEN"))
+	manager, client, err := api.ResolveConnections(api.ConnectionOptions{ConfigPath: *configPath, Profile: *profile, APIURL: *apiURL, TokenEnv: *tokenEnv})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
 
-	model := app.New(client, context.Background())
+	model := app.NewWithConnections(client, manager, context.Background())
 	program := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := program.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

@@ -22,6 +22,22 @@ type fakeClient struct {
 	lifecycleErr    error
 }
 
+type fakeConnectionManager struct {
+	current string
+	clients map[string]*api.Client
+}
+
+func (m *fakeConnectionManager) Names() []string { return []string{"local", "remote"} }
+func (m *fakeConnectionManager) Current() string { return m.current }
+func (m *fakeConnectionManager) Switch(name string) (*api.Client, error) {
+	client, ok := m.clients[name]
+	if !ok {
+		return nil, errors.New("unknown profile")
+	}
+	m.current = name
+	return client, nil
+}
+
 // rawStatusLineTransport models an HTTP response after net/http has parsed a
 // server-controlled status line. It lets this rendered-output regression cover
 // the untrusted Response.Status value without placing control bytes on the
@@ -97,9 +113,9 @@ func TestLifecycleRequiresKeyboardConfirmation(t *testing.T) {
 	if !strings.Contains(pending.View(), "Confirm start") {
 		t.Fatalf("start action did not request confirmation: %s", pending.View())
 	}
-	_, command := pending.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	submitted, command := pending.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	message := command()
-	completed, _ := pending.Update(message)
+	completed, _ := submitted.(model).Update(message)
 	if !strings.Contains(completed.(model).View(), "Last runtime result: Core completed start.") {
 		t.Fatalf("runtime result not rendered: %s", completed.(model).View())
 	}
@@ -109,11 +125,13 @@ type countingClient struct {
 	fakeClient
 	calls     int
 	serviceID string
+	action    string
 }
 
-func (f *countingClient) Lifecycle(_ context.Context, serviceID, _ string) (api.LifecycleResult, error) {
+func (f *countingClient) Lifecycle(_ context.Context, serviceID, action string) (api.LifecycleResult, error) {
 	f.calls++
 	f.serviceID = serviceID
+	f.action = action
 	return f.lifecycleResult, f.lifecycleErr
 }
 
@@ -127,11 +145,12 @@ func TestLifecycleDoubleConfirmDispatchesOnce(t *testing.T) {
 	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
 	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
-	submitted, command := updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	submittedModel, command := updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	submitted := submittedModel.(model)
 	if command == nil {
 		t.Fatal("first confirmation did not dispatch")
 	}
-	_, second := submitted.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	_, second := submitted.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	if second != nil {
 		t.Fatal("second confirmation dispatched another command")
 	}
@@ -141,10 +160,157 @@ func TestLifecycleDoubleConfirmDispatchesOnce(t *testing.T) {
 	}
 }
 
+func TestSubmittedLifecycleDoesNotQueueAnotherConfirmation(t *testing.T) {
+	mutators := []struct {
+		name   string
+		key    rune
+		action string
+	}{
+		{name: "install", key: 'i', action: "install"},
+		{name: "config", key: 'c', action: "config"},
+		{name: "start", key: 's', action: "start"},
+		{name: "stop", key: 'x', action: "stop"},
+		{name: "restart", key: 'R', action: "restart"},
+		{name: "reload", key: 'l', action: "reload"},
+	}
+
+	for _, mutator := range mutators {
+		t.Run(mutator.name, func(t *testing.T) {
+			client := &countingClient{fakeClient: fakeClient{
+				services:        []api.Service{{ID: "echo", Name: "Echo"}},
+				lifecycleResult: api.LifecycleResult{OK: true},
+			}}
+			initial := New(client, context.Background()).(model)
+			updated, _ := initial.Update(loadedMsg{services: client.services})
+			updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+			updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+			updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+
+			submittedModel, originalCommand := updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+			submitted := submittedModel.(model)
+			if originalCommand == nil || submitted.outstandingAction == nil {
+				t.Fatal("original confirmation did not submit")
+			}
+			original := *submitted.outstandingAction
+
+			blockedModel, blockedCommand := submitted.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{mutator.key}})
+			submitted = blockedModel.(model)
+			if blockedCommand != nil || submitted.pendingAction != "" || submitted.pendingServiceID != "" {
+				t.Fatalf("%s queued a confirmation while original request was submitted: command=%v pending=%q service=%q", mutator.name, blockedCommand != nil, submitted.pendingAction, submitted.pendingServiceID)
+			}
+			if actual := submitted.outstandingAction; actual == nil || actual.client != original.client || actual.connectionName != original.connectionName || actual.connectionEpoch != original.connectionEpoch || actual.serviceID != original.serviceID || actual.action != original.action || actual.id != original.id {
+				t.Fatalf("%s changed original request context: got=%#v want=%#v", mutator.name, actual, original)
+			}
+
+			completedModel, _ := submitted.Update(originalCommand())
+			completed := completedModel.(model)
+			view := completed.View()
+			if client.calls != 1 || client.serviceID != "echo" || client.action != "start" || strings.Count(view, "Last runtime result: Core completed start.") != 1 {
+				t.Fatalf("original request did not complete exactly once: calls=%d service=%q action=%q view=%s", client.calls, client.serviceID, client.action, view)
+			}
+			if completed.outstandingAction != nil || completed.pendingAction != "" || completed.pendingServiceID != "" {
+				t.Fatalf("%s was delayed after original completion: %#v", mutator.name, completed)
+			}
+
+			unchangedModel, unconfirmed := completed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+			completed = unchangedModel.(model)
+			if unconfirmed != nil || client.calls != 1 {
+				t.Fatalf("y replayed or dispatched a delayed request: command=%v calls=%d", unconfirmed != nil, client.calls)
+			}
+
+			confirmedModel, _ := completed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{mutator.key}})
+			confirmed := confirmedModel.(model)
+			if confirmed.pendingAction != mutator.action || confirmed.pendingServiceID != "echo" {
+				t.Fatalf("explicit %s request did not enter confirmation: %#v", mutator.name, confirmed)
+			}
+			_, confirmedCommand := confirmed.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+			if confirmedCommand == nil {
+				t.Fatalf("y did not submit explicit %s confirmation", mutator.name)
+			}
+			_ = confirmedCommand()
+			if client.calls != 2 || client.action != mutator.action {
+				t.Fatalf("explicit confirmation dispatch mismatch: calls=%d action=%q want=%q", client.calls, client.action, mutator.action)
+			}
+		})
+	}
+}
+
+func TestSubmittedLifecycleKeepsNavigationResponsiveAndRendersOriginalResult(t *testing.T) {
+	client := &countingClient{fakeClient: fakeClient{
+		services:        []api.Service{{ID: "echo", Name: "Echo"}},
+		lifecycleResult: api.LifecycleResult{OK: true},
+	}}
+	local, err := api.NewClient("http://127.0.0.1:17883", nil, "local-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote, err := api.NewClient("https://remote.example.test", nil, "remote-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	connections := &fakeConnectionManager{current: "local", clients: map[string]*api.Client{"local": local, "remote": remote}}
+	initial := NewWithConnections(client, connections, context.Background()).(model)
+	updated, _ := initial.Update(loadedMsg{services: client.services})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	submittedModel, command := updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	submitted := submittedModel.(model)
+	if command == nil || !submitted.hasOutstandingAction() {
+		t.Fatal("confirmation did not submit lifecycle request")
+	}
+	if submission := submitted.outstandingAction; submission.client != client || submission.connectionName != "local" || submission.connectionEpoch != 0 || submission.serviceID != "echo" || submission.action != "start" {
+		t.Fatalf("submission did not retain its original context: %#v", submission)
+	}
+	// Profile activation remains blocked, but read/navigation input must keep the
+	// UI useful while Core processes the already-submitted mutation.
+	for _, key := range []rune{'d', '?'} {
+		next, _ := submitted.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
+		submitted = next.(model)
+	}
+	if submitted.screen != helpScreen {
+		t.Fatalf("help was blocked by submission: %#v", submitted)
+	}
+	next, _ := submitted.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	submitted = next.(model)
+	next, _ = submitted.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	submitted = next.(model)
+	next, _ = submitted.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	submitted = next.(model)
+	next, _ = submitted.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	submitted = next.(model)
+	next, _ = submitted.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	submitted = next.(model)
+	refreshed, refresh := submitted.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if refresh == nil {
+		t.Fatal("refresh was blocked by submission")
+	}
+	submitted = refreshed.(model)
+	next, blockedProfile := submitted.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	if blockedProfile != nil {
+		t.Fatal("profile selection started a command while a lifecycle request was pending")
+	}
+	submitted = next.(model)
+	if submitted.screen != servicesScreen || submitted.connectionName != "local" || connections.current != "local" {
+		t.Fatalf("outstanding submission allowed profile switch or blocked navigation: %#v", submitted)
+	}
+
+	completed, _ := submitted.Update(command())
+	view := completed.(model).View()
+	if client.calls != 1 || client.serviceID != "echo" || strings.Count(view, "Last runtime result: Core completed start.") != 1 {
+		t.Fatalf("original lifecycle result was not rendered exactly once after navigation: calls=%d service=%q view=%s", client.calls, client.serviceID, view)
+	}
+	_, second := completed.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if second != nil || client.calls != 1 {
+		t.Fatalf("completed submission replayed: command=%v calls=%d", second != nil, client.calls)
+	}
+}
+
 func TestLifecycleFailureDoesNotExposeSensitiveMarker(t *testing.T) {
 	const marker = "SYNTHETIC_SENSITIVE_MARKER_DO_NOT_DISPLAY"
 	initial := New(fakeClient{}, context.Background()).(model)
-	updated, _ := initial.Update(lifecycleMsg{err: errors.New("runtime returned 403 Forbidden")})
+	initial.outstandingAction = &lifecycleSubmission{id: 1, action: "start"}
+	updated, _ := initial.Update(lifecycleMsg{submissionID: 1, err: errors.New("runtime returned 403 Forbidden")})
 	view := updated.(model).View()
 	if strings.Contains(view, marker) || !strings.Contains(view, "403 Forbidden") {
 		t.Fatalf("unexpected lifecycle error rendering: %s", view)
@@ -157,9 +323,11 @@ func TestLifecycleSuccessMessageDoesNotExposeSensitiveMarker(t *testing.T) {
 	updated, _ := initial.Update(loadedMsg{services: []api.Service{{ID: "echo", Name: "Echo"}}})
 	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
-	updated, _ = updated.(model).Update(lifecycleMsg{
-		action: "start",
-		result: api.LifecycleResult{OK: true, Message: marker},
+	updatedModel := updated.(model)
+	updatedModel.outstandingAction = &lifecycleSubmission{id: 1, action: "start"}
+	updated, _ = updatedModel.Update(lifecycleMsg{
+		submissionID: 1,
+		result:       api.LifecycleResult{OK: true, Message: marker},
 	})
 	view := updated.(model).View()
 	if strings.Contains(view, marker) || !strings.Contains(view, "Core completed start.") {
@@ -205,6 +373,32 @@ func TestDashboardKeepsLastServiceSnapshotAsStale(t *testing.T) {
 	view := updated.(model).View()
 	if !strings.Contains(view, "stale") || !strings.Contains(view, "Echo") {
 		t.Fatalf("stale snapshot missing: %s", view)
+	}
+}
+
+func TestConnectionSwitchClearsContextAndRejectsOldResults(t *testing.T) {
+	local, err := api.NewClient("http://127.0.0.1:17883", nil, "local-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote, err := api.NewClient("https://remote.example.test", nil, "remote-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	connections := &fakeConnectionManager{current: "local", clients: map[string]*api.Client{"local": local, "remote": remote}}
+	initial := NewWithConnections(local, connections, context.Background()).(model)
+	initial.services = []api.Service{{ID: "local", Name: "Local service"}}
+	initial.lastResult = "Core completed start."
+	updated, _ := initial.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	switched := updated.(model)
+	if switched.connectionName != "remote" || switched.connectionEpoch != 1 || len(switched.services) != 0 || switched.lastResult != "" {
+		t.Fatalf("switch retained local context: %#v", switched)
+	}
+	stale, _ := switched.Update(loadedMsg{epoch: 0, services: []api.Service{{ID: "local", Name: "Old result"}}})
+	if strings.Contains(stale.(model).View(), "Old result") {
+		t.Fatalf("old connection result was rendered: %s", stale.(model).View())
 	}
 }
 

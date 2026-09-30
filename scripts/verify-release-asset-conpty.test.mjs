@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import test from "node:test";
 import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertCandidateManifest, cleanupOutcome, cleanupResources, parseArgs, prepareCoreRuntime, prepareSourceBuiltCore, stopProbe } from "./verify-release-asset-conpty.mjs";
+import { assertCandidateManifest, cleanupOutcome, cleanupResources, npmCiCommand, parseArgs, prepareCoreRuntime, prepareSourceBuiltCore, stopProbe } from "./verify-release-asset-conpty.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -65,7 +66,7 @@ test("source Core preparation clones, pins, installs, and builds an isolated run
     return { stdout: "" };
   };
   try {
-    const prepared = await prepareSourceBuiltCore({ coreRoot: "supplied-core", tempRoot, command });
+    const prepared = await prepareSourceBuiltCore({ coreRoot: "supplied-core", tempRoot, command, platform: "linux" });
     assert.deepEqual(prepared, { coreRoot: isolatedRoot, evidence: "source-built" });
     assert.deepEqual(commands.map(({ program, args }) => [program, args]), [
       ["git", ["-C", "supplied-core", "rev-parse", "HEAD"]],
@@ -75,6 +76,43 @@ test("source Core preparation clones, pins, installs, and builds an isolated run
       ["npm", ["ci"]],
       ["npm", ["run", "build"]],
     ]);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("dependency-install command uses a constant Windows cmd.exe npm.cmd preflight", () => {
+  assert.deepEqual(npmCiCommand("win32"), { program: "cmd.exe", args: ["/d", "/s", "/c", "npm.cmd ci"] });
+  assert.deepEqual(npmCiCommand("linux"), { program: "npm", args: ["ci"] });
+});
+
+test("Windows can actually spawn npm.cmd through the fixed cmd.exe boundary", { skip: process.platform !== "win32" }, async () => {
+  const { stdout } = await new Promise((resolve, reject) => {
+    execFile("cmd.exe", ["/d", "/s", "/c", "npm.cmd --version"], { windowsHide: true }, (error, stdout, stderr) => {
+      if (error) reject(error); else resolve({ stdout, stderr });
+    });
+  });
+  assert.match(stdout.trim(), /^\d+\.\d+\.\d+$/u);
+});
+
+test("Windows npm ENOENT remains a closed dependency-install preflight failure", async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-core-preflight-npm-enoent-${process.pid}-${Date.now()}`);
+  await mkdir(tempRoot, { recursive: true });
+  const isolatedRoot = path.join(tempRoot, "core-source");
+  const command = async (program, args) => {
+    if (program === "git" && args.includes("rev-parse")) return { stdout: "10e4d72b75c66977ad1dd629991a27443ffc0fd3\n" };
+    if (program === "cmd.exe" && args.join(" ") === "/d /s /c npm.cmd ci") {
+      const error = new Error("spawn cmd.exe ENOENT");
+      error.code = "ENOENT";
+      throw error;
+    }
+    return { stdout: "" };
+  };
+  try {
+    await assert.rejects(
+      () => prepareSourceBuiltCore({ coreRoot: "supplied-core", tempRoot, command, platform: "win32" }),
+      error => error?.reason === "dependency_install_failed" && error.message === "dependency_install_failed",
+    );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

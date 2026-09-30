@@ -109,12 +109,33 @@ class ReceiptTests(unittest.TestCase):
             observed.update({"args": args, "environment": kwargs["env"]})
             return Completed()
 
-        result = probe_module.direct_constructor_assertion("candidate.exe", {"sourceCommit": self.source_commit, "binarySHA256": self.binary_sha256}, runner=runner, nonce=nonce)
+        with patch.dict(os.environ, {"SERVICE_LASSO_API_TOKEN": "host-credential", "UNRELATED_HOST_VALUE": "host-only"}):
+            result = probe_module.direct_constructor_assertion("candidate.exe", {"sourceCommit": self.source_commit, "binarySHA256": self.binary_sha256}, runner=runner, nonce=nonce)
         self.assertEqual(result, {"exit": "exit_code_2", "startupBoundary": "api_url_invalid", "candidateIdentity": {"sourceCommit": self.source_commit, "binarySHA256": self.binary_sha256}})
         self.assertEqual(observed["args"], ["candidate.exe"])
         self.assertEqual(observed["environment"]["SERVICE_LASSO_API_URL"], "://invalid")
-        self.assertNotIn("SERVICE_LASSO_API_TOKEN", observed["environment"])
+        self.assertEqual(observed["environment"]["SERVICE_LASSO_API_TOKEN"], probe_module.INERT_PROBE_TOKEN)
+        self.assertNotEqual(observed["environment"]["SERVICE_LASSO_API_TOKEN"], "host-credential")
+        self.assertNotIn("UNRELATED_HOST_VALUE", observed["environment"])
         self.assertNotIn(marker, json.dumps(result))
+
+    def test_unavailable_conpty_child_uses_the_same_inert_token_without_host_inheritance(self):
+        nonce = "0123456789abcdef" * 4
+        with patch.dict(os.environ, {"SERVICE_LASSO_API_TOKEN": "host-credential", "UNRELATED_HOST_VALUE": "host-only"}):
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                result = self.run_probe(
+                    "candidate.exe", "unavailable", "http://127.0.0.1:1", None, None, None, None, None,
+                    pty_process=FakePty,
+                    wait=lambda *_args: "Service Lasso TUI q quit Runtime API unavailable",
+                    backend=None,
+                    startup_probe_nonce=nonce,
+                )
+        self.assertEqual(result, 0)
+        environment = FakePty.spawned[1]["env"]
+        self.assertEqual(environment["SERVICE_LASSO_API_TOKEN"], probe_module.INERT_PROBE_TOKEN)
+        self.assertNotEqual(environment["SERVICE_LASSO_API_TOKEN"], "host-credential")
+        self.assertNotIn("UNRELATED_HOST_VALUE", environment)
+        self.assertNotIn(probe_module.INERT_PROBE_TOKEN, output.getvalue())
 
     def test_direct_constructor_rejects_wrong_exit_or_extra_terminal_text(self):
         nonce = "0123456789abcdef" * 4

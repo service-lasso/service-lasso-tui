@@ -22,6 +22,9 @@ except ImportError:
     PtyProcess = None
 
 CONPTY_BACKEND = Backend.ConPTY if Backend is not None else None
+CHILD_ENVIRONMENT_ALLOWLIST = ("APPDATA", "COMSPEC", "LOCALAPPDATA", "PATHEXT", "PATH", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE", "WINDIR")
+# This is deliberately an inert fixture value, never an operator credential.
+INERT_PROBE_TOKEN = "service-lasso-tui-probe-inert"
 
 
 def emit(result): print(json.dumps(result, separators=(",", ":")))
@@ -162,14 +165,23 @@ def startup_boundary_from_terminal_text(text, nonce, candidate_identity):
         return "unclassified"
     return frame.group("boundary")
 
+def constrained_child_environment(api_url, nonce, term=None):
+    # Do not inherit the parent environment: a host credential must never enter
+    # either probe child. Connection resolution requires a non-empty token before
+    # URL validation, so both children receive the same fixed inert fixture.
+    environment = {key: os.environ[key] for key in CHILD_ENVIRONMENT_ALLOWLIST if os.environ.get(key)}
+    environment.update({"SERVICE_LASSO_API_URL": api_url, "SERVICE_LASSO_API_TOKEN": INERT_PROBE_TOKEN, "SERVICE_LASSO_STARTUP_PROBE_NONCE": nonce})
+    if term is not None:
+        environment["TERM"] = term
+    return environment
+
 def direct_constructor_assertion(executable, candidate_identity, runner=subprocess.run, nonce=None):
     # Run the candidate outside ConPTY first. The owned executable handle is
     # retained by the caller; stderr is processed only in memory and discarded.
     nonce = nonce or secrets.token_hex(32)
     if len(nonce) != 64 or any(character not in "0123456789abcdef" for character in nonce):
         return None
-    environment = {key: os.environ[key] for key in ("APPDATA", "COMSPEC", "LOCALAPPDATA", "PATHEXT", "PATH", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE", "WINDIR") if os.environ.get(key)}
-    environment.update({"SERVICE_LASSO_API_URL": "://invalid", "SERVICE_LASSO_STARTUP_PROBE_NONCE": nonce})
+    environment = constrained_child_environment("://invalid", nonce)
     try:
         completed = runner([executable], cwd=os.path.dirname(executable), env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=5, check=False)
         terminal_text = completed.stderr.decode("utf-8", "replace") if isinstance(completed.stderr, bytes) else ""
@@ -240,8 +252,7 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
         else:
             executable = held_candidate.path
         candidate_identity = held_candidate.receipt
-        environment = {key: os.environ[key] for key in ("APPDATA", "COMSPEC", "LOCALAPPDATA", "PATHEXT", "PATH", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE", "WINDIR") if os.environ.get(key)}
-        environment.update({"TERM": "xterm-256color", "SERVICE_LASSO_API_URL": api_url, "SERVICE_LASSO_STARTUP_PROBE_NONCE": startup_probe_nonce})
+        environment = constrained_child_environment(api_url, startup_probe_nonce, term="xterm-256color")
         process = pty_process.spawn([executable], cwd=os.path.dirname(executable), env=environment, dimensions=(40, 120), backend=backend)
         expected = "Runtime API unavailable"
         stage = "startup"

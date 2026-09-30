@@ -154,6 +154,12 @@ receipt enum and response schema is closed; a receipt sink failure preserves
 the original probe failure. Until a handle-relative owned deletion operation is
 implemented, Windows native attempt roots are retained as evidence rather than
 closed and recursively removed by pathname.
+The harness constructs a constrained child environment from an allowlist and
+sets a fixed inert `SERVICE_LASSO_API_TOKEN` only for its direct invalid-URL
+and unavailable ConPTY children. It must not inherit a default token, read a
+real credential, place a token in an argument or receipt, or log it. This
+precondition exists because connection resolution requires a non-empty
+credential before URL construction; it does not relax that product policy.
 When a hosted Windows unavailable-state ConPTY probe reports `api_client_error`
 for a deliberately invalid API URL, the harness must first run the newly built
 held executable directly with a fresh nonce and that invalid URL. It accepts

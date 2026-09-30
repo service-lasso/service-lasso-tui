@@ -108,6 +108,28 @@ func TestClientDoesNotExposeRuntimeErrorBody(t *testing.T) {
 	}
 }
 
+func TestSafeHTTPErrorUsesCanonicalStatusTextOrNumericFallback(t *testing.T) {
+	const marker = "SYNTHETIC_REASON_PHRASE_SECRET"
+	for _, test := range []struct {
+		name       string
+		statusCode int
+		want       string
+	}{
+		{name: "known status", statusCode: http.StatusForbidden, want: "403 Forbidden"},
+		{name: "unknown status", statusCode: 599, want: "599"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := safeHTTPError(http.MethodGet, "/api/services", test.statusCode)
+			if !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("safe error = %q, want %q", err, test.want)
+			}
+			if strings.Contains(err.Error(), marker) {
+				t.Fatalf("safe error leaked reason phrase marker: %q", err)
+			}
+		})
+	}
+}
+
 func TestClientPostsConfirmedLifecycleAction(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/services/echo/start" {

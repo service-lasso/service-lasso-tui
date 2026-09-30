@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -20,6 +20,34 @@ type fakeClient struct {
 	inboxErr        error
 	lifecycleResult api.LifecycleResult
 	lifecycleErr    error
+}
+
+// rawStatusLineTransport models an HTTP response after net/http has parsed a
+// server-controlled status line. It lets this rendered-output regression cover
+// the untrusted Response.Status value without placing control bytes on the
+// local test process's terminal or network logs.
+type rawStatusLineTransport struct {
+	status string
+	body   string
+}
+
+func (t rawStatusLineTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if request.URL.Path == "/api/health" {
+		return &http.Response{
+			Status:     "200 OK",
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"status":"ok","api":{"status":"up"}}`)),
+			Header:     make(http.Header),
+			Request:    request,
+		}, nil
+	}
+	return &http.Response{
+		Status:     t.status,
+		StatusCode: 599,
+		Body:       io.NopCloser(strings.NewReader(t.body)),
+		Header:     make(http.Header),
+		Request:    request,
+	}, nil
 }
 
 func (f fakeClient) Health(context.Context) (api.Health, error) { return f.health, f.healthErr }
@@ -149,21 +177,12 @@ func TestErrorStateShowsRetryPath(t *testing.T) {
 }
 
 func TestRenderedRuntimeErrorOmitsNon2xxResponseBody(t *testing.T) {
-	const marker = "SYNTHETIC_SECRET_NON_2XX_BODY_DO_NOT_RENDER"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/health":
-			_, _ = w.Write([]byte(`{"status":"ok","api":{"status":"up"}}`))
-		case "/api/services":
-			w.WriteHeader(http.StatusForbidden)
-			_, _ = w.Write([]byte(`{"message":"` + marker + `"}`))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	client, err := api.NewClient(server.URL, server.Client(), "")
+	const bodyMarker = "SYNTHETIC_SECRET_NON_2XX_BODY_DO_NOT_RENDER"
+	const reasonMarker = "SYNTHETIC_SECRET_REASON_DO_NOT_RENDER"
+	client, err := api.NewClient("http://127.0.0.1:17883", &http.Client{Transport: rawStatusLineTransport{
+		status: "599 " + reasonMarker + "\x1b[2J",
+		body:   `{"message":"` + bodyMarker + `"}`,
+	}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,10 +190,10 @@ func TestRenderedRuntimeErrorOmitsNon2xxResponseBody(t *testing.T) {
 	message := initial.refresh()()
 	updated, _ := initial.Update(message)
 	view := updated.(model).View()
-	if strings.Contains(view, marker) {
-		t.Fatalf("rendered terminal output leaked a non-2xx response body: %q", view)
+	if strings.Contains(view, bodyMarker) || strings.Contains(view, reasonMarker) || strings.Contains(view, "\x1b") {
+		t.Fatalf("rendered terminal output leaked a non-2xx body or reason phrase: %q", view)
 	}
-	if !strings.Contains(view, "GET /api/services") || !strings.Contains(view, "403 Forbidden") || !strings.Contains(view, "Press r to retry") {
+	if !strings.Contains(view, "GET /api/services") || !strings.Contains(view, "599") || !strings.Contains(view, "Press r to retry") {
 		t.Fatalf("rendered terminal output omitted useful safe failure context: %q", view)
 	}
 }

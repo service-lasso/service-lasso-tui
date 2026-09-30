@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertCandidateManifest, parseArgs, prepareCoreRuntime, prepareSourceBuiltCore, stopProbe } from "./verify-release-asset-conpty.mjs";
+import { assertCandidateManifest, cleanupOutcome, cleanupResources, parseArgs, prepareCoreRuntime, prepareSourceBuiltCore, stopProbe } from "./verify-release-asset-conpty.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -98,16 +98,52 @@ test("Core preflight returns closed reason categories without exposing command o
   }
 });
 
-test("fault cleanup terminates only the owned Windows helper tree and absorbs its probe failure", async () => {
-  const invocations = [];
-  await assert.doesNotReject(() => stopProbe({
-    child: { pid: 4242, exitCode: null, kill: () => assert.fail("Windows cleanup must use the owned tree") },
-    completed: Promise.reject(new Error("helper failed while cleaning up")),
-  }, {
-    platform: "win32",
-    taskkill: async (...args) => { invocations.push(args); },
-  }));
-  assert.deepEqual(invocations, [["taskkill", ["/pid", "4242", "/t", "/f"], { timeout: 5_000 }]]);
+test("fault cleanup requires the helper's explicit close acknowledgement and never addresses a PID", async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-cooperative-cleanup-${process.pid}-${Date.now()}`);
+  const request = path.join(tempRoot, "request");
+  const acknowledgement = path.join(tempRoot, "acknowledgement");
+  await mkdir(tempRoot, { recursive: true });
+  const child = { pid: 4242, exitCode: null, kill: () => assert.fail("cleanup must not address a helper PID") };
+  try {
+    assert.equal(await stopProbe({
+      child,
+      shutdownRequestPath: request,
+      shutdownAcknowledgementPath: acknowledgement,
+      exited: Promise.resolve(),
+      completedSuccessfully: false,
+    }, {
+      waitForAck: async file => {
+        assert.equal(file, acknowledgement);
+        assert.equal(await readFile(request, "utf8"), "close\n");
+        await writeFile(acknowledgement, "closed\n", { flag: "wx" });
+        child.exitCode = 1;
+        return true;
+      },
+    }), true);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("helper exit or PID reuse without acknowledgement fails cleanup closed", async () => {
+  assert.equal(await stopProbe({
+    child: { pid: 4242, exitCode: 1 },
+    completedSuccessfully: false,
+  }), false);
+});
+
+test("cleanup unconfirmed retains the extracted root and preserves the primary failure", async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-cleanup-retained-${process.pid}-${Date.now()}`);
+  await mkdir(tempRoot, { recursive: true });
+  try {
+    assert.equal(await cleanupResources({ probe: { child: { exitCode: null } }, tempRoot }, { stop: async () => false }), false);
+    await access(tempRoot);
+    const primaryFailure = new Error("core-start");
+    assert.equal(cleanupOutcome(primaryFailure, false), primaryFailure);
+    assert.match(cleanupOutcome(undefined, false)?.message ?? "", /^cleanup_unconfirmed$/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("Windows CI executes the pinned Python ConPTY helper against a safe unavailable endpoint", async () => {

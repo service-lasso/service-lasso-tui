@@ -148,7 +148,7 @@ function parseProbe(stdout, mode) {
   throw new Error("release-asset ConPTY probe did not complete its bounded assertions");
 }
 
-function startReconnectProbe(executable, apiURL, readyPath, reconnectPath) {
+function startReconnectProbe(executable, apiURL, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath) {
   const child = spawn("python", [
     helper,
     "--executable", executable,
@@ -156,25 +156,27 @@ function startReconnectProbe(executable, apiURL, readyPath, reconnectPath) {
     "--api-url", apiURL,
     "--ready-file", readyPath,
     "--reconnect-file", reconnectPath,
+    "--shutdown-request-file", shutdownRequestPath,
+    "--shutdown-acknowledgement-file", shutdownAcknowledgementPath,
   ], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
-  let stderr = "";
   child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
   child.stdout.on("data", chunk => { stdout += chunk; });
-  child.stderr.on("data", chunk => { stderr += chunk; });
+  const exited = new Promise(resolve => child.once("close", resolve));
   const completed = new Promise((resolve, reject) => {
     child.once("error", reject);
     child.once("close", code => {
       try {
-        if (code !== 0) throw new Error(`release-asset ConPTY reconnect probe failed (${stderr.trim() || "no stderr"})`);
+        if (code !== 0) throw new Error("release-asset ConPTY reconnect probe failed");
         resolve(parseProbe(stdout, "reconnect"));
       } catch (error) {
         reject(error);
       }
     });
   });
-  return { child, completed };
+  const probe = { child, completed, exited, shutdownRequestPath, shutdownAcknowledgementPath, completedSuccessfully: false };
+  completed.then(() => { probe.completedSuccessfully = true; }, () => undefined);
+  return probe;
 }
 
 async function waitForFile(file, timeoutMs = 20_000) {
@@ -191,32 +193,71 @@ async function waitForFile(file, timeoutMs = 20_000) {
   throw new Error("release-asset ConPTY probe did not reach unavailable state");
 }
 
-export async function stopProbe(probe, { platform = process.platform, taskkill = run } = {}) {
-  if (!probe?.child || probe.child.exitCode !== null) return;
-  // The Python helper owns the extracted TUI process.  Terminating only the
-  // helper can leave that ConPTY child running, while taskkill /T is bounded
-  // to the helper's own process tree rather than a name or system-wide match.
-  if (platform === "win32" && Number.isSafeInteger(probe.child.pid) && probe.child.pid > 0) {
-    await taskkill("taskkill", ["/pid", String(probe.child.pid), "/t", "/f"], { timeout: 5_000 }).catch(() => undefined);
-  } else {
-    probe.child.kill();
+async function waitForAcknowledgement(file, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      if ((await readFile(file, "utf8")) === "closed\n") return true;
+      return false;
+    } catch (error) {
+      if (error?.code !== "ENOENT") return false;
+    }
+    await new Promise(resolve => setTimeout(resolve, 50));
   }
-  await Promise.race([
-    probe.completed.catch(() => undefined),
-    new Promise(resolve => setTimeout(resolve, 5_000)),
+  return false;
+}
+
+async function waitForExit(exited, timeoutMs = 5_000) {
+  if (!exited) return false;
+  return Promise.race([
+    Promise.resolve(exited).then(() => true, () => false),
+    new Promise(resolve => setTimeout(() => resolve(false), timeoutMs)),
   ]);
 }
 
-async function closeAll(resources) {
-  let cleanupError;
-  for (const close of resources) {
+export async function stopProbe(probe, { write = writeFile, waitForAck = waitForAcknowledgement, waitForHelperExit = waitForExit } = {}) {
+  if (!probe?.child) return true;
+  // Never address a process by PID here. The helper owns the PtyProcess and
+  // must explicitly confirm that its own close completed before its temporary
+  // extraction can be removed.
+  if (probe.child.exitCode !== null) return probe.completedSuccessfully === true;
+  if (!probe.shutdownRequestPath || !probe.shutdownAcknowledgementPath) return false;
+  try {
+    await write(probe.shutdownRequestPath, "close\n", { flag: "wx" });
+  } catch {
+    return false;
+  }
+  if (!await waitForAck(probe.shutdownAcknowledgementPath)) return false;
+  return waitForHelperExit(probe.exited);
+}
+
+export async function cleanupResources({ probe, apiServer, unavailable, tempRoot }, { stop = stopProbe, remove = rm } = {}) {
+  let confirmed = true;
+  try {
+    confirmed = (await stop(probe)) === true;
+  } catch {
+    confirmed = false;
+  }
+  for (const close of [() => apiServer?.stop(), () => unavailable?.close()]) {
     try {
-      await close?.();
-    } catch (error) {
-      cleanupError ??= error;
+      await close();
+    } catch {
+      confirmed = false;
     }
   }
-  if (cleanupError) throw cleanupError;
+  if (confirmed) {
+    try {
+      await remove(tempRoot, { recursive: true, force: true });
+    } catch {
+      confirmed = false;
+    }
+  }
+  return confirmed;
+}
+
+export function cleanupOutcome(primaryError, cleanupConfirmed) {
+  if (primaryError) return primaryError;
+  return cleanupConfirmed ? undefined : new Error("cleanup_unconfirmed");
 }
 
 async function main() {
@@ -253,7 +294,9 @@ async function main() {
     unavailable = await reserveUnavailableLoopbackURL();
     const readyPath = path.join(tempRoot, "probe-unavailable-ready");
     const reconnectPath = path.join(tempRoot, "probe-reconnect");
-    probe = startReconnectProbe(executable, unavailable.url, readyPath, reconnectPath);
+    const shutdownRequestPath = path.join(tempRoot, "probe-shutdown-request");
+    const shutdownAcknowledgementPath = path.join(tempRoot, "probe-shutdown-acknowledgement");
+    probe = startReconnectProbe(executable, unavailable.url, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath);
     await waitForFile(readyPath);
     const loopbackPort = unavailable.port;
     await unavailable.close(); unavailable = undefined;
@@ -273,15 +316,12 @@ async function main() {
     if (stage === "core-runtime-preflight") failureReason = error instanceof CorePreflightFailure ? error.reason : "preflight_unclassified";
     throw error;
   } finally {
-    try {
-      await closeAll([
-        () => stopProbe(probe),
-        () => apiServer?.stop(),
-        () => unavailable?.close(),
-        () => rm(tempRoot, { recursive: true, force: true }),
-      ]);
-    } catch (cleanupError) {
-      if (!primaryError) throw cleanupError;
+    const cleanupConfirmed = await cleanupResources({ probe, apiServer, unavailable, tempRoot });
+    const cleanupError = cleanupOutcome(primaryError, cleanupConfirmed);
+    if (cleanupError && cleanupError !== primaryError) {
+      stage = "cleanup-unconfirmed";
+      failureReason = "cleanup_unconfirmed";
+      throw cleanupError;
     }
   }
 }

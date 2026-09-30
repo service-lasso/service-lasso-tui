@@ -378,6 +378,8 @@ test("probe parser closes unavailable and failure schemas as well as reconnect s
   assert.throws(() => parseProbe(JSON.stringify({ ...unavailable, directConstructor: { ...directConstructor, candidateIdentity: { ...candidateIdentity, binarySHA256: "f".repeat(64) } } }), "unavailable"), /bounded assertions/u);
   assert.throws(() => parseProbe(JSON.stringify({ ok: true, mode: "unavailable", exit: "q", terminal: "SENTINEL_SECRET" }), "unavailable"), /bounded assertions/u);
   assert.throws(() => parseProbe(JSON.stringify({ ok: false, stage: "startup", receipt: { stage: "startup", outcome: "timeout", closedReason: "timed_out" }, terminal: "SENTINEL_SECRET" }), "reconnect"), /bounded assertions/u);
+  const directFailure = { ok: false, stage: "startup", directConstructor, receipt: { stage: "startup", outcome: "error", closedReason: "terminal_exit_code_2", startupBoundary: "api_client_error", candidateIdentity } };
+  assert.throws(() => parseProbe(JSON.stringify(directFailure), "reconnect"), /bounded assertions/u);
   assert.throws(() => parseProbe(JSON.stringify({ ok: false, stage: "startup", receipt: { stage: "exit", outcome: "timeout", closedReason: "timed_out" } }), "reconnect"), /bounded assertions/u);
   assert.throws(() => parseProbe(JSON.stringify({ ok: false, stage: "startup", receipt: { stage: "startup", outcome: "error", closedReason: "terminal_exit_code_1", startupBoundary: "program_run_error", terminal: "SENTINEL_SECRET" } }), "reconnect"), /bounded assertions/u);
 });

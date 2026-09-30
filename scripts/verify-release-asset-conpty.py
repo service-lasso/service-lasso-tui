@@ -36,11 +36,13 @@ def receipt(stage, outcome, closed_reason, startup_boundary=None, candidate_iden
             raise ValueError("invalid candidate identity")
         result["candidateIdentity"] = candidate_identity
     return result
-def fail(stage, reason=None, outcome_receipt=None):
+def fail(stage, reason=None, outcome_receipt=None, direct_constructor=None):
     # The harness deliberately exposes no terminal text, path, or exception.
     # Every failure has the same closed metadata-only schema.
     safe_stage = stage if stage in RECEIPT_STAGES else "launch"
     result = {"ok": False, "stage": safe_stage, "receipt": outcome_receipt or receipt(safe_stage, "error", "stage_failed")}
+    if direct_constructor is not None:
+        result["directConstructor"] = direct_constructor
     emit(result)
     return 1
 
@@ -226,11 +228,13 @@ def wait_for_file(file_name, timeout, process=None, request_file=None, acknowled
 def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, pty_process=PtyProcess, wait=wait_for, wait_file=wait_for_file, backend=CONPTY_BACKEND, startup_probe_nonce=None, source_commit=None, expected_binary_sha256=None, identity_acquirer=acquire_candidate_identity, held_candidate=None, direct_constructor=None):
     process, stage, candidate_identity = None, "launch", None
     owns_candidate = held_candidate is None
+    def fail_probe(failed_stage, reason=None, outcome_receipt=None):
+        return fail(failed_stage, reason, outcome_receipt, direct_constructor)
     try:
-        if pty_process is None: return fail(stage)
+        if pty_process is None: return fail_probe(stage)
         startup_probe_nonce = startup_probe_nonce or secrets.token_hex(32)
         if len(startup_probe_nonce) != 64 or any(character not in "0123456789abcdef" for character in startup_probe_nonce):
-            return fail(stage)
+            return fail_probe(stage)
         if held_candidate is None:
             executable, held_candidate = identity_acquirer(executable, source_commit, expected_binary_sha256)
         else:
@@ -242,7 +246,7 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
         expected = "Runtime API unavailable"
         stage = "startup"
         if not wait(process, ("Service Lasso TUI", "q quit", expected), 20, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, startup_probe_nonce, candidate_identity):
-            return fail(stage, outcome_receipt=receipt(stage, "timeout", "timed_out", candidate_identity=candidate_identity))
+            return fail_probe(stage, outcome_receipt=receipt(stage, "timeout", "timed_out", candidate_identity=candidate_identity))
         if mode == "unavailable":
             stage = "exit"; process.write("q")
             deadline = time.monotonic() + 5
@@ -251,16 +255,16 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
                     readable, _, _ = select.select([process], [], [], 0.1)
                     if readable: process.read()
                 except EOFError: break
-            if process.isalive(): return fail(stage, outcome_receipt=receipt(stage, "error", "stage_failed", candidate_identity=candidate_identity))
+            if process.isalive(): return fail_probe(stage, outcome_receipt=receipt(stage, "error", "stage_failed", candidate_identity=candidate_identity))
             result = {"ok": True, "mode": mode, "exit": "q", "receipt": receipt(stage, "normal", "completed", candidate_identity=candidate_identity)}
             if direct_constructor is not None: result["directConstructor"] = direct_constructor
             emit(result); return 0
         if not ready_file or not reconnect_file:
-            return fail("setup", outcome_receipt=receipt("startup", "error", "stage_failed", candidate_identity=candidate_identity))
+            return fail_probe("setup", outcome_receipt=receipt("startup", "error", "stage_failed", candidate_identity=candidate_identity))
         with open(ready_file, "x", encoding="utf-8") as marker: marker.write("unavailable-rendered\n")
         stage = "wait-reconnect"
         if not wait_file(reconnect_file, 20, process, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token):
-            return fail(stage, outcome_receipt=receipt(stage, "timeout", "timed_out", candidate_identity=candidate_identity))
+            return fail_probe(stage, outcome_receipt=receipt(stage, "timeout", "timed_out", candidate_identity=candidate_identity))
         # Keep this exact extracted process alive across the unavailable-to-ready
         # transition, then exercise the documented reconnect key in that process.
         stage = "reconnect"
@@ -268,17 +272,17 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
             check_shutdown(process, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token)
             process.write("r")
         except Exception:
-            return fail(stage, "pty-write-failed", receipt(stage, "error", "stage_failed", candidate_identity=candidate_identity))
+            return fail_probe(stage, "pty-write-failed", receipt(stage, "error", "stage_failed", candidate_identity=candidate_identity))
         if not wait(process, ("Runtime identity:", "Services needing attention"), 20, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, startup_probe_nonce, candidate_identity):
-            return fail(stage, "connected-screen-not-observed", receipt(stage, "timeout", "timed_out", candidate_identity=candidate_identity))
+            return fail_probe(stage, "connected-screen-not-observed", receipt(stage, "timeout", "timed_out", candidate_identity=candidate_identity))
         stage = "navigation"; process.write("d?")
         if not wait(process, ("n narrow", "r reconnect"), 5, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, startup_probe_nonce, candidate_identity):
-            return fail(stage, outcome_receipt=receipt(stage, "timeout", "timed_out", candidate_identity=candidate_identity))
+            return fail_probe(stage, outcome_receipt=receipt(stage, "timeout", "timed_out", candidate_identity=candidate_identity))
         # Capture a screen redraw after the actual ConPTY resize. The expected
         # contextual-help screen proves the candidate kept its current view.
         stage = "resize-observation"; process.setwinsize(24, 50)
         if not wait(process, ("Service Lasso TUI", "n narrow", "r reconnect"), 5, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, startup_probe_nonce, candidate_identity):
-            return fail(stage, outcome_receipt=receipt(stage, "timeout", "timed_out", candidate_identity=candidate_identity))
+            return fail_probe(stage, outcome_receipt=receipt(stage, "timeout", "timed_out", candidate_identity=candidate_identity))
         narrow_resize = "help-screen-rendered-after-50-columns"
         stage = "exit"; process.write("q")
         deadline = time.monotonic() + 5
@@ -288,19 +292,19 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
                 if readable: process.read()
             except EOFError: break
         if process.isalive():
-            return fail(stage, outcome_receipt=receipt(stage, "timeout", "timed_out", candidate_identity=candidate_identity))
+            return fail_probe(stage, outcome_receipt=receipt(stage, "timeout", "timed_out", candidate_identity=candidate_identity))
         result = {"ok": True, "mode": mode, "reconnect": "r", "navigation": ["d", "?"], "narrowResize": narrow_resize, "exit": "q", "receipt": receipt(stage, "normal", "completed", candidate_identity=candidate_identity)}
         if direct_constructor is not None: result["directConstructor"] = direct_constructor
         emit(result); return 0
     except ShutdownRequested:
         receipt_stage = stage if stage in RECEIPT_STAGES else "exit"
-        return fail(receipt_stage, "shutdown-requested", receipt(receipt_stage, "error", "shutdown_requested", candidate_identity=candidate_identity))
+        return fail_probe(receipt_stage, "shutdown-requested", receipt(receipt_stage, "error", "shutdown_requested", candidate_identity=candidate_identity))
     except TerminalClosed as closed:
         receipt_stage = stage if stage in RECEIPT_STAGES else "launch"
-        return fail(receipt_stage, outcome_receipt=receipt(receipt_stage, "error", closed.reason, closed.startup_boundary if receipt_stage == "startup" else None, candidate_identity))
+        return fail_probe(receipt_stage, outcome_receipt=receipt(receipt_stage, "error", closed.reason, closed.startup_boundary if receipt_stage == "startup" else None, candidate_identity))
     except Exception:
         receipt_stage = stage if stage in RECEIPT_STAGES else "launch"
-        return fail(stage, "pty-operation-failed" if stage == "reconnect" else None, receipt(receipt_stage, "error", "stage_failed", candidate_identity=candidate_identity))
+        return fail_probe(stage, "pty-operation-failed" if stage == "reconnect" else None, receipt(receipt_stage, "error", "stage_failed", candidate_identity=candidate_identity))
     finally:
         if process is not None:
             try: process.close(force=True)

@@ -147,6 +147,17 @@ class ReceiptTests(unittest.TestCase):
         payload = json.loads(output.getvalue())
         self.assertEqual(payload["directConstructor"]["candidateIdentity"], payload["receipt"]["candidateIdentity"])
 
+    def test_conpty_failure_retains_only_the_direct_constructor_identity(self):
+        direct = {"exit": "exit_code_2", "startupBoundary": "api_url_invalid", "candidateIdentity": {"sourceCommit": self.source_commit, "binarySHA256": self.binary_sha256}}
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = self.run_probe("candidate.exe", "unavailable", "http://127.0.0.1:1", None, None, None, None, None, pty_process=EarlyClosingPty, wait=lambda *_args: (_ for _ in ()).throw(probe_module.TerminalClosed("terminal_exit_code_2", "api_client_error")), backend=None, direct_constructor=direct)
+        self.assertEqual(result, 1)
+        payload = json.loads(output.getvalue())
+        self.assertEqual(payload["directConstructor"], direct)
+        self.assertEqual(payload["receipt"]["candidateIdentity"], direct["candidateIdentity"])
+        self.assertNotIn("SYNTHETIC_SECRET", output.getvalue())
+
     def run_probe(self, *args, **kwargs):
         kwargs.setdefault("source_commit", self.source_commit)
         kwargs.setdefault("expected_binary_sha256", self.binary_sha256)

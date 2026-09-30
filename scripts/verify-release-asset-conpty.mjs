@@ -206,10 +206,13 @@ export function parseProbe(stdout, mode) {
       result.narrowResize === "help-screen-rendered-after-50-columns" && result.exit === "q" &&
       validateReceipt(successReceipt).stage === "exit" && successReceipt.outcome === "normal" && successReceipt.closedReason === "completed"
     ) return result;
+    const failureKeys = Object.keys(result ?? {}).sort();
+    const hasDirectConstructor = Object.hasOwn(result ?? {}, "directConstructor");
     if (
       result?.ok === false && typeof result.stage === "string" &&
-      Object.keys(result).length === 3 && ["ok", "receipt", "stage"].every(key => Object.hasOwn(result, key)) &&
-      validateReceipt(result.receipt).stage === result.stage
+      (hasDirectConstructor ? failureKeys.join(",") === "directConstructor,ok,receipt,stage" : failureKeys.join(",") === "ok,receipt,stage") &&
+      validateReceipt(result.receipt).stage === result.stage &&
+      (!hasDirectConstructor || validCandidateIdentity(result.receipt.candidateIdentity) && validDirectConstructor(result.directConstructor, result.receipt.candidateIdentity))
     ) {
       stage = `${mode}-${result.stage}`;
     }

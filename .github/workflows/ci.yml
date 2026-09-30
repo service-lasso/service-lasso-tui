@@ -90,7 +90,7 @@ jobs:
       - name: Test direct-probe evidence guards
         run: |
           python scripts/verify-release-asset-conpty-python.test.py
-          node --test scripts/verify-real-core-conpty.test.mjs scripts/verify-release-asset-conpty.test.mjs
+          node --test scripts/verify-real-core-conpty.test.mjs scripts/verify-release-asset-conpty.test.mjs scripts/verify-candidate-publication.test.mjs scripts/verify-candidate-publication-fresh-job.test.mjs
   release-asset-compile:
     name: Release asset cross-compilation
     runs-on: ubuntu-latest

@@ -19,3 +19,7 @@
   prerelease-candidate workflow. Its source/platform smoke and structural
   checks are not real terminal/Core acceptance, which remains the open item
   above.
+- [ ] Issue #18 requires owner-applied immutable release, protected
+  `development-candidate` environment, and protected `develop` settings before
+  any candidate write. Source controls are reviewable; provider readback is a
+  separate blocking prerequisite.

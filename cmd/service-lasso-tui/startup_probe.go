@@ -32,7 +32,23 @@ const (
 func startupBoundaryForAPIError(err error) startupBoundary {
 	var configurationError *api.ConfigurationError
 	if !errors.As(err, &configurationError) {
-		return startupBoundaryAPIClientError
+		// A Windows terminal boundary can preserve a fixed error string while
+		// losing its dynamic type. These are the exact local configuration
+		// messages; their text is never placed in the diagnostic marker.
+		switch err.Error() {
+		case "invalid Service Lasso API URL":
+			return startupBoundaryAPIURLInvalid
+		case "Service Lasso API URL must use HTTP or HTTPS":
+			return startupBoundaryAPIURLScheme
+		case "Service Lasso API URL must not contain userinfo":
+			return startupBoundaryAPIURLUserinfo
+		case "Service Lasso API URL must not contain a query or fragment":
+			return startupBoundaryAPIURLQueryOrFragment
+		case "operator token requires HTTPS for a non-loopback Service Lasso API URL":
+			return startupBoundaryAPITokenTransport
+		default:
+			return startupBoundaryAPIClientError
+		}
 	}
 	switch configurationError.Kind {
 	case api.ConfigurationErrorInvalidURL:

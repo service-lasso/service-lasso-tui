@@ -117,7 +117,10 @@ attempt nonce. The marker is processed in memory and its nonce, terminal text,
 paths, errors, and environment values are never emitted or stored. The
 `api_*` values are emitted only after the application receives a typed
 configuration error from its API client; `api_client_error` is the fallback for
-an unclassified API-client return. The `program_run_*` values are emitted only
+an unclassified API-client return. Where a platform boundary erases the typed
+error identity, the application may map only one of its own exact fixed
+configuration messages to the same closed category; it never include that
+message in the marker or receipt. The `program_run_*` values are emitted only
 after the application receives a non-nil result from Bubble Tea `Program.Run`;
 typed Bubble Tea sentinel errors select the killed, panic, or interrupted
 values, and any other returned error selects `program_run_error`. On Windows,

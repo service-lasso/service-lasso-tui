@@ -61,6 +61,9 @@ func TestStartupProbeClassifiesOnlyTypedAPIConfigurationErrors(t *testing.T) {
 	if got := startupBoundaryForAPIError(errors.New("SYNTHETIC_SECRET")); got != startupBoundaryAPIClientError {
 		t.Fatalf("generic API boundary = %q", got)
 	}
+	if got := startupBoundaryForAPIError(errors.New("invalid Service Lasso API URL")); got != startupBoundaryAPIURLInvalid {
+		t.Fatalf("fixed-message API boundary = %q", got)
+	}
 }
 
 func TestStartupProbeDoesNotEmitRawErrorWhenExplicitlyEnabled(t *testing.T) {

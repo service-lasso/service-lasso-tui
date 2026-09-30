@@ -19,10 +19,14 @@ CONPTY_BACKEND = Backend.ConPTY if Backend is not None else None
 
 
 def emit(result): print(json.dumps(result, separators=(",", ":")))
-def fail(stage, reason=None):
+def receipt(stage, outcome, closed_reason):
+    return {"stage": stage, "outcome": outcome, "closedReason": closed_reason}
+def fail(stage, reason=None, outcome_receipt=None):
     result = {"ok": False, "stage": stage}
     if reason:
         result["reason"] = reason
+    if outcome_receipt:
+        result["receipt"] = outcome_receipt
     emit(result)
     return 1
 
@@ -32,31 +36,6 @@ RECEIPT_NAME = "helper-outcome.json"
 RECEIPT_STAGES = {"launch", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit"}
 RECEIPT_OUTCOMES = {"normal", "error", "timeout"}
 RECEIPT_REASONS = {"completed", "stage_failed", "timed_out", "shutdown_requested"}
-
-def write_receipt(attempt_root, receipt_file, stage, outcome, closed_reason):
-    if not receipt_file or os.path.basename(receipt_file) != RECEIPT_NAME: return False
-    if not attempt_root: return False
-    root = os.path.abspath(attempt_root)
-    try:
-        root_info = os.lstat(root)
-    except OSError:
-        return False
-    reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
-    if not stat.S_ISDIR(root_info.st_mode) or os.path.islink(root) or getattr(root_info, "st_file_attributes", 0) & reparse: return False
-    if os.path.abspath(receipt_file) != os.path.join(root, RECEIPT_NAME): return False
-    if stage not in RECEIPT_STAGES or outcome not in RECEIPT_OUTCOMES or closed_reason not in RECEIPT_REASONS: return False
-    try:
-        # Exclusive final-name creation is the publication operation.  It
-        # refuses an existing file, link, or Windows reparse point, and there
-        # is no temporary pathname to link or later unlink after an attacker
-        # has substituted it.
-        with open(receipt_file, "x", encoding="utf-8") as receipt:
-            receipt.write(json.dumps({"stage": stage, "outcome": outcome, "closedReason": closed_reason}, separators=(",", ":")))
-            receipt.flush()
-            os.fsync(receipt.fileno())
-        return True
-    except Exception:
-        return False
 
 def acknowledge_shutdown(process, acknowledgement_file, token):
     try:
@@ -95,7 +74,7 @@ def wait_for_file(file_name, timeout, process=None, request_file=None, acknowled
         sleeper(0.05)
     return False
 
-def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, attempt_root=None, outcome_receipt_file=None, pty_process=PtyProcess, wait=wait_for, wait_file=wait_for_file, backend=CONPTY_BACKEND):
+def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, pty_process=PtyProcess, wait=wait_for, wait_file=wait_for_file, backend=CONPTY_BACKEND):
     process, stage = None, "launch"
     try:
         if pty_process is None: return fail(stage)
@@ -105,7 +84,7 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
         expected = "Runtime API unavailable"
         stage = "startup"
         if not wait(process, ("Service Lasso TUI", "q quit", expected), 20, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token):
-            write_receipt(attempt_root, outcome_receipt_file, stage, "timeout", "timed_out"); return fail(stage)
+            return fail(stage, outcome_receipt=receipt(stage, "timeout", "timed_out"))
         if mode == "unavailable":
             stage = "exit"; process.write("q")
             deadline = time.monotonic() + 5
@@ -117,11 +96,11 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
             if process.isalive(): return fail(stage)
             emit({"ok": True, "mode": mode, "exit": "q"}); return 0
         if not ready_file or not reconnect_file:
-            write_receipt(attempt_root, outcome_receipt_file, "startup", "error", "stage_failed"); return fail("setup")
+            return fail("setup", outcome_receipt=receipt("startup", "error", "stage_failed"))
         with open(ready_file, "x", encoding="utf-8") as marker: marker.write("unavailable-rendered\n")
         stage = "wait-reconnect"
         if not wait_file(reconnect_file, 20, process, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token):
-            write_receipt(attempt_root, outcome_receipt_file, stage, "timeout", "timed_out"); return fail(stage)
+            return fail(stage, outcome_receipt=receipt(stage, "timeout", "timed_out"))
         # Keep this exact extracted process alive across the unavailable-to-ready
         # transition, then exercise the documented reconnect key in that process.
         stage = "reconnect"
@@ -129,17 +108,17 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
             check_shutdown(process, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token)
             process.write("r")
         except Exception:
-            write_receipt(attempt_root, outcome_receipt_file, stage, "error", "stage_failed"); return fail(stage, "pty-write-failed")
+            return fail(stage, "pty-write-failed", receipt(stage, "error", "stage_failed"))
         if not wait(process, ("Runtime identity:", "Services needing attention"), 20, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token):
-            write_receipt(attempt_root, outcome_receipt_file, stage, "timeout", "timed_out"); return fail(stage, "connected-screen-not-observed")
+            return fail(stage, "connected-screen-not-observed", receipt(stage, "timeout", "timed_out"))
         stage = "navigation"; process.write("d?")
         if not wait(process, ("n narrow", "r reconnect"), 5, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token):
-            write_receipt(attempt_root, outcome_receipt_file, stage, "timeout", "timed_out"); return fail(stage)
+            return fail(stage, outcome_receipt=receipt(stage, "timeout", "timed_out"))
         # Capture a screen redraw after the actual ConPTY resize. The expected
         # contextual-help screen proves the candidate kept its current view.
         stage = "resize-observation"; process.setwinsize(24, 50)
         if not wait(process, ("Service Lasso TUI", "n narrow", "r reconnect"), 5, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token):
-            write_receipt(attempt_root, outcome_receipt_file, stage, "timeout", "timed_out"); return fail(stage)
+            return fail(stage, outcome_receipt=receipt(stage, "timeout", "timed_out"))
         narrow_resize = "help-screen-rendered-after-50-columns"
         stage = "exit"; process.write("q")
         deadline = time.monotonic() + 5
@@ -149,13 +128,14 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
                 if readable: process.read()
             except EOFError: break
         if process.isalive():
-            write_receipt(attempt_root, outcome_receipt_file, stage, "timeout", "timed_out"); return fail(stage)
-        write_receipt(attempt_root, outcome_receipt_file, stage, "normal", "completed")
-        emit({"ok": True, "mode": mode, "reconnect": "r", "navigation": ["d", "?"], "narrowResize": narrow_resize, "exit": "q"}); return 0
+            return fail(stage, outcome_receipt=receipt(stage, "timeout", "timed_out"))
+        emit({"ok": True, "mode": mode, "reconnect": "r", "navigation": ["d", "?"], "narrowResize": narrow_resize, "exit": "q", "receipt": receipt(stage, "normal", "completed")}); return 0
     except ShutdownRequested:
-        write_receipt(attempt_root, outcome_receipt_file, stage if stage in RECEIPT_STAGES else "exit", "error", "shutdown_requested"); return fail("cleanup", "shutdown-requested")
+        receipt_stage = stage if stage in RECEIPT_STAGES else "exit"
+        return fail("cleanup", "shutdown-requested", receipt(receipt_stage, "error", "shutdown_requested"))
     except Exception:
-        write_receipt(attempt_root, outcome_receipt_file, stage if stage in RECEIPT_STAGES else "launch", "error", "stage_failed"); return fail(stage, "pty-operation-failed" if stage == "reconnect" else None)
+        receipt_stage = stage if stage in RECEIPT_STAGES else "launch"
+        return fail(stage, "pty-operation-failed" if stage == "reconnect" else None, receipt(receipt_stage, "error", "stage_failed"))
     finally:
         if process is not None:
             try: process.close(force=True)
@@ -163,9 +143,9 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
 
 def main():
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--executable"); parser.add_argument("--mode", choices=("unavailable", "reconnect")); parser.add_argument("--api-url"); parser.add_argument("--ready-file"); parser.add_argument("--reconnect-file"); parser.add_argument("--shutdown-request-file"); parser.add_argument("--shutdown-acknowledgement-file"); parser.add_argument("--shutdown-token"); parser.add_argument("--attempt-root"); parser.add_argument("--outcome-receipt-file")
+    parser.add_argument("--executable"); parser.add_argument("--mode", choices=("unavailable", "reconnect")); parser.add_argument("--api-url"); parser.add_argument("--ready-file"); parser.add_argument("--reconnect-file"); parser.add_argument("--shutdown-request-file"); parser.add_argument("--shutdown-acknowledgement-file"); parser.add_argument("--shutdown-token")
     args = parser.parse_args()
-    return probe(args.executable, args.mode, args.api_url, args.ready_file, args.reconnect_file, args.shutdown_request_file, args.shutdown_acknowledgement_file, args.shutdown_token, args.attempt_root, args.outcome_receipt_file) if args.executable and args.mode and args.api_url else fail("setup")
+    return probe(args.executable, args.mode, args.api_url, args.ready_file, args.reconnect_file, args.shutdown_request_file, args.shutdown_acknowledgement_file, args.shutdown_token) if args.executable and args.mode and args.api_url else fail("setup")
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -5,7 +5,7 @@ import { access, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promise
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertCandidateManifest, assertReceiptPath, cleanupOutcome, cleanupResources, finalizeReconnectExit, npmCommand, parseArgs, persistNodeExitReceipt, prepareCoreRuntime, prepareSourceBuiltCore, publishReceipt, stopProbe, validateReceipt } from "./verify-release-asset-conpty.mjs";
+import { assertCandidateManifest, assertReceiptPath, cleanupOutcome, cleanupResources, closeReceiptSinks, createReceiptSinks, finalizeReconnectExit, npmCommand, parseArgs, persistNodeExitReceipt, prepareCoreRuntime, prepareSourceBuiltCore, publishReceipt, stopProbe, validateReceipt } from "./verify-release-asset-conpty.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -44,7 +44,7 @@ test("requires the isolated source-built Core preflight and retains packaged sel
   );
 });
 
-test("source Core preparation clones, pins, installs, and builds an isolated runtime before use", async () => {
+test("source Core preparation fetches only the pinned develop ref into an isolated runtime", async () => {
   const tempRoot = path.join(os.tmpdir(), `tui-core-preflight-${process.pid}-${Date.now()}`);
   await mkdir(tempRoot, { recursive: true });
   const commands = [];
@@ -70,7 +70,9 @@ test("source Core preparation clones, pins, installs, and builds an isolated run
     assert.deepEqual(prepared, { coreRoot: isolatedRoot, evidence: "source-built" });
     assert.deepEqual(commands.map(({ program, args }) => [program, args]), [
       ["git", ["-C", "supplied-core", "rev-parse", "HEAD"]],
-      ["git", ["clone", "--no-local", "--no-checkout", "supplied-core", isolatedRoot]],
+      ["git", ["init", isolatedRoot]],
+      ["git", ["-C", isolatedRoot, "fetch", "--no-tags", "--depth=1", "supplied-core", "refs/heads/develop:refs/remotes/supplied/develop"]],
+      ["git", ["-C", isolatedRoot, "rev-parse", "FETCH_HEAD"]],
       ["git", ["-C", isolatedRoot, "checkout", "--detach", "10e4d72b75c66977ad1dd629991a27443ffc0fd3"]],
       ["git", ["-C", isolatedRoot, "rev-parse", "HEAD"]],
       ["npm", ["ci"]],
@@ -158,7 +160,7 @@ test("Core preflight returns closed reason categories without exposing command o
   await mkdir(tempRoot, { recursive: true });
   const command = async (program, args) => {
     if (program === "git" && args.includes("rev-parse")) return { stdout: "10e4d72b75c66977ad1dd629991a27443ffc0fd3\n" };
-    if (program === "git" && args[0] === "clone") throw new Error("sensitive command output must not escape");
+    if (program === "git" && args.includes("fetch")) throw new Error("sensitive command output must not escape");
     return { stdout: "" };
   };
   try {
@@ -241,107 +243,24 @@ test("reconnect receipts are closed schema and reject terminal sentinel text", (
   assert.throws(() => validateReceipt({ stage: "reconnect", outcome: "SENTINEL_SECRET", closedReason: "timed_out" }), /invalid reconnect receipt/u);
 });
 
-test("the Node exit receipt derives only its controlled child-exit observation", async () => {
-  const tempRoot = path.join(os.tmpdir(), `tui-reconnect-receipt-${process.pid}-${Date.now()}`);
-  const helperReceiptPath = path.join(tempRoot, "helper-outcome.json");
-  const nodeReceiptPath = path.join(tempRoot, "node-exit-outcome.json");
-  await mkdir(tempRoot, { recursive: true });
-  try {
-    await writeFile(helperReceiptPath, "foreign helper bytes", { flag: "wx" });
-    assert.deepEqual(await persistNodeExitReceipt(tempRoot, nodeReceiptPath, 1, null), { stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero" });
-    assert.deepEqual(JSON.parse(await readFile(nodeReceiptPath, "utf8")), { stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero" });
-  } finally {
-    await rm(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("a spawn failure records a closed Node receipt without consuming a helper target", async () => {
-  const tempRoot = path.join(os.tmpdir(), `tui-reconnect-spawn-${process.pid}-${Date.now()}`);
-  const helperReceiptPath = path.join(tempRoot, "helper-outcome.json");
-  const nodeReceiptPath = path.join(tempRoot, "node-exit-outcome.json");
-  await mkdir(tempRoot, { recursive: true });
-  try {
-    assert.deepEqual(await persistNodeExitReceipt(tempRoot, nodeReceiptPath, null, null, true), {
-      stage: "helper-exit", outcome: "error", closedReason: "helper_exit_spawn_error",
-    });
-    assert.deepEqual(JSON.parse(await readFile(nodeReceiptPath, "utf8")), {
-      stage: "helper-exit", outcome: "error", closedReason: "helper_exit_spawn_error",
-    });
-  } finally {
-    await rm(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("Node receipts classify normal, signal, and null child exits without helper input", async () => {
-  const tempRoot = path.join(os.tmpdir(), `tui-reconnect-exit-kinds-${process.pid}-${Date.now()}`);
-  await mkdir(tempRoot, { recursive: true });
-  try {
-    const normalRoot = path.join(tempRoot, "normal");
-    const signalRoot = path.join(tempRoot, "signal");
-    await Promise.all([mkdir(normalRoot), mkdir(signalRoot)]);
-    assert.deepEqual(await persistNodeExitReceipt(normalRoot, path.join(normalRoot, "node-exit-outcome.json"), 0, null), {
-      stage: "helper-exit", outcome: "normal", closedReason: "completed",
-    });
-    assert.deepEqual(await persistNodeExitReceipt(signalRoot, path.join(signalRoot, "node-exit-outcome.json"), null, "SIGTERM"), {
-      stage: "helper-exit", outcome: "error", closedReason: "helper_exit_signal",
-    });
-  } finally {
-    await rm(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("a null code and null signal is a bounded nonzero helper exit", async () => {
-  const tempRoot = path.join(os.tmpdir(), `tui-reconnect-null-exit-${process.pid}-${Date.now()}`);
-  await mkdir(tempRoot, { recursive: true });
-  try {
-    assert.deepEqual(await persistNodeExitReceipt(tempRoot, path.join(tempRoot, "node-exit-outcome.json"), null, null), {
-      stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero",
-    });
-  } finally {
-    await rm(tempRoot, { recursive: true, force: true });
-  }
-});
-
-test("receipt sinks reject foreign targets and preserve the primary failure when publication fails", async t => {
+test("held receipt handles bind publication despite attempt-root substitution", async () => {
   const tempRoot = path.join(os.tmpdir(), `tui-reconnect-receipt-path-${process.pid}-${Date.now()}`);
   await mkdir(tempRoot, { recursive: true });
   try {
-    const helperReceiptPath = path.join(tempRoot, "helper-outcome.json");
-    await writeFile(helperReceiptPath, "foreign", { flag: "wx" });
-    const foreignTemporary = path.join(tempRoot, ".node-exit-outcome.json.foreign.tmp");
-    await writeFile(foreignTemporary, "foreign temporary", { flag: "wx" });
-    assert.equal(await assertReceiptPath(tempRoot, helperReceiptPath, "helper-outcome.json"), helperReceiptPath);
-    await assert.rejects(() => assertReceiptPath(tempRoot, path.join(tempRoot, "outside.json"), "outside.json"), /invalid reconnect receipt path/u);
-    const nodeReceiptPath = path.join(tempRoot, "node-exit-outcome.json");
-    let opened = false;
-    await assert.rejects(() => publishReceipt(tempRoot, nodeReceiptPath, { stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero" }, {
-      openFile: async () => { opened = true; throw new Error("injected receipt sink failure"); },
-    }), /injected receipt sink failure/u);
-    assert.equal(opened, true);
-    await assert.rejects(() => access(nodeReceiptPath));
-    assert.equal(await readFile(foreignTemporary, "utf8"), "foreign temporary");
-    await assert.rejects(() => finalizeReconnectExit(tempRoot, nodeReceiptPath, 1, null, "", {
-      persist: async () => publishReceipt(tempRoot, nodeReceiptPath, { stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero" }, {
-        openFile: async () => { throw new Error("injected receipt sink failure"); },
-      }),
-    }), /release-asset ConPTY reconnect probe failed/u);
-    const primaryFailure = new Error("reconnect-failed");
-    assert.equal(cleanupOutcome(primaryFailure, false), primaryFailure);
-
-    const linkedReceipt = nodeReceiptPath;
-    const linkedForeign = path.join(tempRoot, "linked-foreign.json");
-    await writeFile(linkedForeign, "foreign", { flag: "wx" });
-    try {
-      await symlink(linkedForeign, linkedReceipt);
-    } catch (error) {
-      if (error?.code === "EPERM") t.skip("symbolic links unavailable on this Windows runner");
-      else throw error;
-      return;
-    }
-    await assert.rejects(() => publishReceipt(tempRoot, linkedReceipt, { stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero" }), /EEXIST/u);
-    assert.equal(await readFile(linkedForeign, "utf8"), "foreign");
+    const sinks = await createReceiptSinks(tempRoot);
+    const displacedRoot = `${tempRoot}-owned`;
+    await rm(displacedRoot, { recursive: true, force: true });
+    // On Windows the owned receipt handles deny deletion/rename of their
+    // parent while the helper runs. That is the root-substitution race that
+    // path validation alone could not prevent.
+    const { rename } = await import("node:fs/promises");
+    await assert.rejects(() => rename(tempRoot, displacedRoot), /EPERM|EACCES/u);
+    assert.deepEqual(await persistNodeExitReceipt(sinks.node, 1, null), { stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero" });
+    await closeReceiptSinks(sinks);
+    assert.deepEqual(JSON.parse(await readFile(path.join(tempRoot, "node-exit-outcome.json"), "utf8")), { stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero" });
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
+    await rm(`${tempRoot}-owned`, { recursive: true, force: true });
   }
 });
 

@@ -30,6 +30,18 @@ jobs:
           go-version-file: go.mod
       - run: go test ./...
       - run: go build ./cmd/service-lasso-tui
+      - name: Install pinned Windows ConPTY helper
+        if: runner.os == 'Windows'
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: Run real Windows ConPTY unavailable-state probe
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: --no-deps -r scripts/requirements-conpty.txt
+          go build -o service-lasso-tui.exe ./cmd/service-lasso-tui
+          python scripts/verify-release-asset-conpty.py --executable service-lasso-tui.exe --mode unavailable --api-url http://127.0.0.1:1
       - name: Test direct-probe evidence guards
         run: node --test scripts/verify-real-core-conpty.test.mjs scripts/verify-release-asset-conpty.test.mjs
   release-asset-compile:

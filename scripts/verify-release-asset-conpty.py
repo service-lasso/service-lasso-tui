@@ -10,7 +10,12 @@ from winpty.ptyprocess import PtyProcess
 
 
 def emit(result): print(json.dumps(result, separators=(",", ":")))
-def fail(stage): emit({"ok": False, "stage": stage}); return 1
+def fail(stage, reason=None):
+    result = {"ok": False, "stage": stage}
+    if reason:
+        result["reason"] = reason
+    emit(result)
+    return 1
 
 def wait_for(process, expected, timeout):
     deadline, text = time.monotonic() + timeout, ""
@@ -38,14 +43,26 @@ def probe(executable, mode, api_url, ready_file, reconnect_file):
         expected = "Runtime API unavailable"
         stage = "startup"
         if not wait_for(process, ("Service Lasso TUI", "q quit", expected), 20): return fail(stage)
+        if mode == "unavailable":
+            stage = "exit"; process.write("q")
+            deadline = time.monotonic() + 5
+            while process.isalive() and time.monotonic() < deadline:
+                try:
+                    readable, _, _ = select.select([process], [], [], 0.1)
+                    if readable: process.read()
+                except EOFError: break
+            if process.isalive(): return fail(stage)
+            emit({"ok": True, "mode": mode, "exit": "q"}); return 0
         if not ready_file or not reconnect_file: return fail("setup")
         with open(ready_file, "x", encoding="utf-8") as marker: marker.write("unavailable-rendered\n")
         stage = "wait-reconnect"
         if not wait_for_file(reconnect_file, 20): return fail(stage)
         # Keep this exact extracted process alive across the unavailable-to-ready
         # transition, then exercise the documented reconnect key in that process.
-        stage = "reconnect"; process.write("r")
-        if not wait_for(process, ("Runtime identity:", "Services needing attention"), 20): return fail(stage)
+        stage = "reconnect"
+        try: process.write("r")
+        except Exception: return fail(stage, "pty-write-failed")
+        if not wait_for(process, ("Runtime identity:", "Services needing attention"), 20): return fail(stage, "connected-screen-not-observed")
         stage = "navigation"; process.write("d?")
         if not wait_for(process, ("n narrow", "r reconnect"), 5): return fail(stage)
         # Capture a screen redraw after the actual ConPTY resize. The expected
@@ -62,13 +79,13 @@ def probe(executable, mode, api_url, ready_file, reconnect_file):
             except EOFError: break
         if process.isalive(): return fail(stage)
         emit({"ok": True, "mode": mode, "reconnect": "r", "navigation": ["d", "?"], "narrowResize": narrow_resize, "exit": "q"}); return 0
-    except Exception: return fail(stage)
+    except Exception: return fail(stage, "pty-operation-failed" if stage == "reconnect" else None)
     finally:
         if process is not None:
             try: process.close(force=True)
             except Exception: pass
 
 parser = argparse.ArgumentParser(add_help=False)
-parser.add_argument("--executable"); parser.add_argument("--mode", choices=("reconnect",)); parser.add_argument("--api-url"); parser.add_argument("--ready-file"); parser.add_argument("--reconnect-file")
+parser.add_argument("--executable"); parser.add_argument("--mode", choices=("unavailable", "reconnect")); parser.add_argument("--api-url"); parser.add_argument("--ready-file"); parser.add_argument("--reconnect-file")
 args = parser.parse_args()
 sys.exit(probe(args.executable, args.mode, args.api_url, args.ready_file, args.reconnect_file) if args.executable and args.mode and args.api_url else fail("setup"))

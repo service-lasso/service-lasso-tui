@@ -42,7 +42,11 @@ npm ci --prefix <path-to-pinned-core>
 node scripts/verify-real-core-conpty.mjs --core-root <path-to-pinned-core>
 ```
 
-The result is a closed-schema, local direct-read record. It is not evidence of
+The probe refuses to label evidence `win32-amd64` unless the Windows host, Node
+process, and Python/ConPTY helper each report AMD64. The Windows CI job runs the
+same bounded probe against the pinned Core SHA with a disposable checkout,
+temporary loopback roots, and no elevated privileges or retained runtime state.
+The result is a closed-schema, direct-read record. It is not evidence of
 release asset qualification, lifecycle behavior, cross-platform support,
 deployment, or GA.
 

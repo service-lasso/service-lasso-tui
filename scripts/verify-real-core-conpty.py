@@ -1,6 +1,8 @@
 import argparse
+import ctypes
 import json
 import os
+import platform
 import select
 import sys
 import time
@@ -40,6 +42,16 @@ def emit(result):
 def fail(stage):
     emit({"ok": False, "stage": stage})
     return 1
+
+
+def architecture():
+    return {"machine": platform.machine(), "pointerBits": ctypes.sizeof(ctypes.c_void_p) * 8}
+
+
+def is_amd64_helper():
+    details = architecture()
+    machine = details["machine"].replace("_", "").replace("-", "").lower()
+    return machine in ("amd64", "x8664") and details["pointerBits"] == 64
 
 
 def probe(executable, mode, api_url):
@@ -82,10 +94,16 @@ def probe(executable, mode, api_url):
 
 def main():
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--executable", required=True)
-    parser.add_argument("--mode", choices=("unavailable", "connected"), required=True)
+    parser.add_argument("--executable")
+    parser.add_argument("--mode", choices=("unavailable", "connected"))
     parser.add_argument("--api-url")
+    parser.add_argument("--architecture", action="store_true")
     args = parser.parse_args()
+    if args.architecture:
+        emit({"ok": is_amd64_helper(), "architecture": architecture()})
+        return 0 if is_amd64_helper() else 1
+    if not args.executable or not args.mode:
+        return fail("setup")
     if args.mode == "connected" and not args.api_url:
         return fail("setup")
     return probe(args.executable, args.mode, args.api_url)

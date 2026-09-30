@@ -43,6 +43,11 @@ API state. It retains only closed-schema, metadata-only results and removes all
 temporary state. It does not autostart a managed Core service, persist operator
 credentials, perform a lifecycle mutation, or establish cross-platform, release,
 deployment, or GA acceptance.
+It labels the result `win32-amd64` only after the Windows host, Node process,
+and Python/ConPTY helper report AMD64. The bounded Windows CI job may run this
+same exact-SHA probe because it uses a disposable Core checkout, loopback
+runtime, and temporary roots; it requires no elevated privilege or retained
+state.
 
 ## TUI-OPERATIONS
 

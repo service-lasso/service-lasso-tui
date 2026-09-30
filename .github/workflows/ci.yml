@@ -30,6 +30,32 @@ jobs:
           go-version-file: go.mod
       - run: go test ./...
       - run: go build ./cmd/service-lasso-tui
+      - name: Test direct-probe evidence guards
+        run: node --test scripts/verify-real-core-conpty.test.mjs
+  windows-direct-core-conpty:
+    name: Windows direct Core ConPTY read
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Check out pinned Core source
+        uses: actions/checkout@v5
+        with:
+          repository: service-lasso/service-lasso
+          ref: d9e2ae799244317940c862fe1261dfd22b7bdda1
+          path: core
+      - name: Install bounded ConPTY helper
+        run: python -m pip install --require-hashes --only-binary=:all: --no-deps -r scripts/requirements-conpty.txt
+      - name: Install pinned Core dependencies
+        run: npm ci --prefix core
+      - name: Run direct read-only Core ConPTY probe
+        run: node scripts/verify-real-core-conpty.mjs --core-root core
   release-asset-compile:
     name: Release asset cross-compilation
     runs-on: ubuntu-latest

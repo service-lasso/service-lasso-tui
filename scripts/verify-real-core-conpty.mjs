@@ -61,12 +61,46 @@ function parseProbe(stdout, mode) {
   throw new Error("ConPTY probe did not complete its bounded assertions.");
 }
 
+function normalizedArchitecture(value) {
+  return String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+export function isAmd64Architecture(value) {
+  return ["amd64", "x64", "x8664"].includes(normalizedArchitecture(value));
+}
+
+export function assertAmd64Evidence({ hostArchitecture, nodeArchitecture, helperArchitecture }) {
+  if (!isAmd64Architecture(hostArchitecture)) throw new Error("The Windows host architecture is not AMD64.");
+  if (nodeArchitecture !== "x64") throw new Error("The Node process architecture is not x64.");
+  if (!isAmd64Architecture(helperArchitecture?.machine) || helperArchitecture?.pointerBits !== 64) throw new Error("The ConPTY helper architecture is not AMD64.");
+}
+
+async function getWindowsHostArchitecture() {
+  const { stdout } = await run("powershell", ["-NoProfile", "-NonInteractive", "-Command", "[System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()"]);
+  return stdout.trim();
+}
+
+async function getHelperArchitecture(helper) {
+  const { stdout } = await run("python", [helper, "--architecture"]);
+  try {
+    const result = JSON.parse(stdout.trim());
+    if (result?.ok === true && result.architecture) return result.architecture;
+  } catch {
+    // Helper output is intentionally not included in the evidence record.
+  }
+  throw new Error("ConPTY helper did not report its architecture.");
+}
+
 async function main() {
   if (process.platform !== "win32") {
     console.log(JSON.stringify({ ok: true, classification: "not_applicable", platform: process.platform }));
     return;
   }
   const { coreRoot } = parseArgs(process.argv.slice(2));
+  const helper = path.join(repoRoot, "scripts", "verify-real-core-conpty.py");
+  const hostArchitecture = await getWindowsHostArchitecture();
+  const helperArchitecture = await getHelperArchitecture(helper);
+  assertAmd64Evidence({ hostArchitecture, nodeArchitecture: process.arch, helperArchitecture });
   await stat(path.join(coreRoot, "package.json"));
   const { stdout: coreHead } = await run("git", ["-C", coreRoot, "rev-parse", "HEAD"]);
   if (coreHead.trim() !== pinnedCoreDevelop) {
@@ -83,7 +117,6 @@ async function main() {
   try {
     const executable = path.join(tempRoot, "service-lasso-tui.exe");
     await run("go", ["build", "-o", executable, "./cmd/service-lasso-tui"], { cwd: repoRoot });
-    const helper = path.join(repoRoot, "scripts", "verify-real-core-conpty.py");
     unavailableReservation = await reserveUnavailableLoopbackURL();
     const unavailable = parseProbe((await run("python", [helper, "--executable", executable, "--mode", "unavailable", "--api-url", unavailableReservation.url])).stdout, "unavailable");
     await unavailableReservation.close();
@@ -98,7 +131,7 @@ async function main() {
       workspaceRoot,
     });
     const connected = parseProbe((await run("python", [helper, "--executable", executable, "--mode", "connected", "--api-url", apiServer.url])).stdout, "connected");
-    console.log(JSON.stringify({ ok: true, evidence: "direct-real-core-conpty", coreDevelop: pinnedCoreDevelop, platform: "win32-amd64", unavailable: unavailable.mode, connectedDashboard: "rendered", navigation: connected.navigation, exit: connected.exit }));
+    console.log(JSON.stringify({ ok: true, evidence: "direct-real-core-conpty", coreDevelop: pinnedCoreDevelop, platform: "win32-amd64", architecture: { host: normalizedArchitecture(hostArchitecture), node: process.arch, helper: helperArchitecture }, unavailable: unavailable.mode, connectedDashboard: "rendered", navigation: connected.navigation, exit: connected.exit }));
   } finally {
     try {
       await apiServer?.stop();
@@ -112,7 +145,9 @@ async function main() {
   }
 }
 
-main().catch(() => {
-  console.log(JSON.stringify({ ok: false, stage: "bounded-acceptance" }));
-  process.exitCode = 1;
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch(() => {
+    console.log(JSON.stringify({ ok: false, stage: "bounded-acceptance" }));
+    process.exitCode = 1;
+  });
+}

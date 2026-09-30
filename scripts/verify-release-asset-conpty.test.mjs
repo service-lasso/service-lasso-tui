@@ -70,6 +70,8 @@ test("source Core preparation admits only the exact pinned commit and never trus
     assert.deepEqual(prepared, { coreRoot: isolatedRoot, evidence: "source-built" });
     assert.deepEqual(commands.map(({ program, args }) => [program, args]), [
       ["git", ["-C", "supplied-core", "rev-parse", "HEAD"]],
+      ["git", ["-C", "supplied-core", "status", "--porcelain=v1", "--untracked-files=all"]],
+      ["git", ["-C", "supplied-core", "branch", "--show-current"]],
       ["git", ["init", isolatedRoot]],
       ["git", ["-C", isolatedRoot, "fetch", "--no-tags", "--depth=1", "supplied-core", "10e4d72b75c66977ad1dd629991a27443ffc0fd3"]],
       ["git", ["-C", isolatedRoot, "rev-parse", "FETCH_HEAD"]],
@@ -105,12 +107,47 @@ test("source Core preparation never inspects a supplied origin/develop tracking 
   }
 });
 
+test("source Core preparation requires the supplied pinned object to be clean and detached", async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-core-preflight-identity-${process.pid}-${Date.now()}`);
+  await mkdir(tempRoot, { recursive: true });
+  const command = async (_program, args) => {
+    if (args.includes("rev-parse")) return { stdout: "10e4d72b75c66977ad1dd629991a27443ffc0fd3\n" };
+    if (args.includes("status")) return { stdout: "?? unintended\n" };
+    return { stdout: "" };
+  };
+  try {
+    await assert.rejects(() => prepareSourceBuiltCore({ coreRoot: "supplied-core", tempRoot, command }), error => error?.reason === "source_identity_dirty");
+    await assert.rejects(() => prepareSourceBuiltCore({ coreRoot: "supplied-core", tempRoot, command: async (_program, args) => {
+      if (args.includes("rev-parse")) return { stdout: "10e4d72b75c66977ad1dd629991a27443ffc0fd3\n" };
+      if (args.includes("branch")) return { stdout: "some-branch\n" };
+      return { stdout: "" };
+    } }), error => error?.reason === "source_identity_attached");
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("Windows receipt construction rejects a reparse-point base before creating an attempt root", { skip: process.platform !== "win32" }, async () => {
   const tempRoot = path.join(os.tmpdir(), `tui-receipt-reparse-${process.pid}-${Date.now()}`);
   const target = path.join(tempRoot, "target"); const alias = path.join(tempRoot, "alias");
   await mkdir(target, { recursive: true }); await symlink(target, alias, "junction");
   try {
     await assert.rejects(() => createReceiptSinks(alias), /native receipt writer/u);
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Windows native receipt ownership denies a concurrent writer and reads the exact published bytes", { skip: process.platform !== "win32" }, async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-receipt-ownership-${process.pid}-${Date.now()}`);
+  await mkdir(tempRoot, { recursive: true });
+  try {
+    const { stdout } = await new Promise((resolve, reject) => {
+      execFile("python", [path.join(repoRoot, "scripts", "verify-release-asset-receipts.py"), "--base-root", tempRoot, "--ownership-self-test"], { windowsHide: true }, (error, stdout, stderr) => {
+        if (error) reject(error); else resolve({ stdout, stderr });
+      });
+    });
+    assert.deepEqual(JSON.parse(stdout), { ok: true, event: "ownership-self-test" });
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
@@ -268,6 +305,12 @@ test("cleanup unconfirmed retains the extracted root and preserves the primary f
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
+});
+
+test("native-owned receipt roots are retained instead of path-recursive deletion", async () => {
+  let removed = false;
+  assert.equal(await cleanupResources({ tempRoot: "native-root", retainTempRoot: true }, { remove: async () => { removed = true; } }), true);
+  assert.equal(removed, false);
 });
 
 test("reconnect receipts are closed schema and reject terminal sentinel text", () => {

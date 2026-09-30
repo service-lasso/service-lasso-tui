@@ -23,6 +23,15 @@ class FakePty:
         self.closed = force
 
 
+class EarlyClosingPty(FakePty):
+    @staticmethod
+    def spawn(*_args, **_kwargs):
+        return EarlyClosingPty()
+
+    def read(self):
+        raise EOFError()
+
+
 class ReceiptTests(unittest.TestCase):
     def test_reconnect_timeout_reports_a_closed_receipt_over_the_controlled_stdout_channel(self):
         output = io.StringIO()
@@ -44,6 +53,18 @@ class ReceiptTests(unittest.TestCase):
 
     def test_helper_has_no_receipt_path_writer(self):
         self.assertFalse(hasattr(probe_module, "write_receipt"))
+
+    def test_early_terminal_eof_has_a_distinct_closed_receipt(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = probe_module.probe(
+                "candidate.exe", "unavailable", "http://127.0.0.1:1", None, None, None, None, None,
+                pty_process=EarlyClosingPty,
+                wait=lambda *_args: (_ for _ in ()).throw(probe_module.TerminalClosed()),
+                backend=None,
+            )
+        self.assertEqual(result, 1)
+        self.assertEqual(json.loads(output.getvalue()), {"ok": False, "stage": "startup", "receipt": {"stage": "startup", "outcome": "error", "closedReason": "terminal_closed"}})
 
 
 if __name__ == "__main__":

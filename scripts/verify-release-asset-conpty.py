@@ -30,11 +30,12 @@ def fail(stage, reason=None, outcome_receipt=None):
     return 1
 
 class ShutdownRequested(Exception): pass
+class TerminalClosed(Exception): pass
 
 RECEIPT_NAME = "helper-outcome.json"
 RECEIPT_STAGES = {"launch", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit"}
 RECEIPT_OUTCOMES = {"normal", "error", "timeout"}
-RECEIPT_REASONS = {"completed", "stage_failed", "timed_out", "shutdown_requested"}
+RECEIPT_REASONS = {"completed", "stage_failed", "timed_out", "terminal_closed", "shutdown_requested"}
 
 def acknowledge_shutdown(process, acknowledgement_file, token):
     try:
@@ -62,7 +63,7 @@ def wait_for(process, expected, timeout, request_file=None, acknowledgement_file
         readable, _, _ = select_fn([process], [], [], min(0.1, max(0, deadline - clock())))
         if readable:
             try: text += process.read()
-            except EOFError: break
+            except EOFError: raise TerminalClosed()
     return text if all(value in text for value in expected) else None
 
 def wait_for_file(file_name, timeout, process=None, request_file=None, acknowledgement_file=None, token=None, clock=time.monotonic, sleeper=time.sleep):
@@ -132,6 +133,9 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
     except ShutdownRequested:
         receipt_stage = stage if stage in RECEIPT_STAGES else "exit"
         return fail(receipt_stage, "shutdown-requested", receipt(receipt_stage, "error", "shutdown_requested"))
+    except TerminalClosed:
+        receipt_stage = stage if stage in RECEIPT_STAGES else "launch"
+        return fail(receipt_stage, outcome_receipt=receipt(receipt_stage, "error", "terminal_closed"))
     except Exception:
         receipt_stage = stage if stage in RECEIPT_STAGES else "launch"
         return fail(stage, "pty-operation-failed" if stage == "reconnect" else None, receipt(receipt_stage, "error", "stage_failed"))

@@ -29,7 +29,7 @@ const helperReceiptName = "helper-outcome.json";
 const nodeReceiptName = "node-exit-outcome.json";
 const receiptStages = new Set(["launch", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit", "helper-exit"]);
 const receiptOutcomes = new Set(["normal", "error", "timeout"]);
-const receiptReasons = new Set(["completed", "stage_failed", "timed_out", "shutdown_requested", "helper_exit_nonzero", "helper_exit_signal", "helper_exit_spawn_error"]);
+const receiptReasons = new Set(["completed", "stage_failed", "timed_out", "terminal_closed", "shutdown_requested", "helper_exit_nonzero", "helper_exit_signal", "helper_exit_spawn_error"]);
 let stage = "setup";
 let failureReason;
 
@@ -118,6 +118,13 @@ async function assertRuntimeDist(coreRoot, reason) {
 export async function prepareSourceBuiltCore({ coreRoot, tempRoot, command = run, platform = process.platform }) {
   const { stdout: suppliedHead } = await preflightStep("source_identity_unavailable", () => command("git", ["-C", coreRoot, "rev-parse", "HEAD"]));
   if (suppliedHead.trim() !== coreDevelop) throw new CorePreflightFailure("source_identity_mismatch");
+  // The supplied checkout is an object source only. A named branch or dirty
+  // state could change the object set during the isolated fetch, so require a
+  // clean detached checkout without consulting any tracking or production ref.
+  const { stdout: suppliedStatus } = await preflightStep("source_identity_unavailable", () => command("git", ["-C", coreRoot, "status", "--porcelain=v1", "--untracked-files=all"]));
+  if (suppliedStatus.trim()) throw new CorePreflightFailure("source_identity_dirty");
+  const { stdout: suppliedBranch } = await preflightStep("source_identity_unavailable", () => command("git", ["-C", coreRoot, "branch", "--show-current"]));
+  if (suppliedBranch.trim()) throw new CorePreflightFailure("source_identity_attached");
 
   const isolatedRoot = path.join(tempRoot, "core-source");
   // Build in an isolated repository, without cloning a default branch or
@@ -435,7 +442,7 @@ export async function stopProbe(probe, { write = writeFile, waitForAck = waitFor
   return waitForHelperExit(probe.exited);
 }
 
-export async function cleanupResources({ probe, apiServer, unavailable, tempRoot }, { stop = stopProbe, remove = rm } = {}) {
+export async function cleanupResources({ probe, apiServer, unavailable, tempRoot, retainTempRoot = false }, { stop = stopProbe, remove = rm } = {}) {
   let confirmed = true;
   try {
     confirmed = (await stop(probe)) === true;
@@ -449,7 +456,10 @@ export async function cleanupResources({ probe, apiServer, unavailable, tempRoot
       confirmed = false;
     }
   }
-  if (confirmed) {
+  // On Windows the native receipt writer anchors the attempt root. Closing it
+  // solely to recurse by pathname would re-open the substitution window. Keep
+  // that attempt-owned evidence for explicit inspection instead.
+  if (confirmed && !retainTempRoot) {
     try {
       await remove(tempRoot, { recursive: true, force: true });
     } catch {
@@ -522,7 +532,7 @@ async function main() {
     throw error;
   } finally {
     await closeReceiptSinks(receiptSinks);
-    const cleanupConfirmed = tempRoot ? await cleanupResources({ probe, apiServer, unavailable, tempRoot }) : false;
+    const cleanupConfirmed = tempRoot ? await cleanupResources({ probe, apiServer, unavailable, tempRoot, retainTempRoot: process.platform === "win32" }) : false;
     const cleanupError = cleanupOutcome(primaryError, cleanupConfirmed);
     if (cleanupError && cleanupError !== primaryError) {
       stage = "cleanup-unconfirmed";

@@ -92,15 +92,19 @@ until an installed-package contract verifies and binds package identity and
 digest before runtime startup. Source construction never establishes
 packaged-Core qualification.
 Before candidate acquisition, a failed Core preflight emits only a closed reason
-category (`source_identity_*`, `source_clone_failed`, `isolated_checkout_failed`,
+category (`source_identity_*`, including dirty or attached supplied-source
+identity, `source_clone_failed`, `isolated_checkout_failed`,
 `isolated_identity_*`, `dependency_install_failed`, `source_build_failed`,
 `runtime_dist_unavailable`, or `packaged_runtime_invalid`). It never includes
 command output, paths, environment values, or credentials in that record.
 When the reconnect helper has started, it atomically records only `stage`,
 `outcome`, and `closedReason` in its attempt-owned temporary root. On Windows,
 a native receipt-writer creates that root and both receipt files relative to
-held directory handles, rejects reparse points during construction, and keeps
-the owner non-delete-shareable until cleanup. Node asks that writer to replace
+held directory handles, rejects reparse points during construction, applies an
+owner-only DACL, and keeps the owner non-delete- and non-write-shareable while
+the receipt is live. Node asks that writer to replace
 the helper record with its bounded helper-exit state before cleanup. Every
 receipt enum and response schema is closed; a receipt sink failure preserves
-the original probe failure and the existing retained-root cleanup protections.
+the original probe failure. Until a handle-relative owned deletion operation is
+implemented, Windows native attempt roots are retained as evidence rather than
+closed and recursively removed by pathname.

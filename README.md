@@ -20,6 +20,13 @@ Core performs authorization, confirmation enforcement, auditing, and execution.
 Use a process environment or an operator-managed secret launcher; do not put a
 token in a command-line argument.
 
+For more than one runtime, pass a metadata-only profile file with
+`--connections <file> --profile <name>`. Each profile has a `url` and
+`tokenEnv` field. The TUI reads the named environment variable when it connects;
+it never saves the credential in the profile file. Press `p` to switch between
+configured profiles. Switching clears the current dashboard context and ignores
+late results from the previous connection.
+
 The executable is an attached terminal operator tool. It is not a Core managed
 service and must not be autostarted by Core.
 

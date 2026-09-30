@@ -88,12 +88,15 @@ func TestClientReadsBoundedDashboardSurfaces(t *testing.T) {
 func TestClientDoesNotExposeRuntimeErrorBody(t *testing.T) {
 	const marker = "SYNTHETIC_SENSITIVE_MARKER_DO_NOT_DISPLAY"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("x-service-lasso-admin-token"); got != "test-token" {
+			t.Fatalf("Core token header = %q", got)
+		}
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte(`{"error":"permission_denied","message":"` + marker + `"}`))
 	}))
 	defer server.Close()
 
-	client, err := NewClient(server.URL, server.Client(), "")
+	client, err := NewClient(server.URL, server.Client(), "test-token")
 	if err != nil {
 		t.Fatal(err)
 	}

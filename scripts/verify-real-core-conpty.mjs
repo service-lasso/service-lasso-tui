@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pinnedCoreDevelop = "d9e2ae799244317940c862fe1261dfd22b7bdda1";
+const sourceAdmission = path.join(repoRoot, "scripts", "assert-go-source-provenance.mjs");
 let acceptanceStage = "setup";
 
 function parseArgs(argv) {
@@ -20,7 +21,36 @@ function parseArgs(argv) {
 }
 
 async function run(command, args, options = {}) {
-  return execFileAsync(command, args, { cwd: options.cwd, windowsHide: true, timeout: options.timeout ?? 120000 });
+  return execFileAsync(command, args, { cwd: options.cwd, env: options.env, windowsHide: true, timeout: options.timeout ?? 120000 });
+}
+
+export function admittedGoEnvironment(environment = process.env) {
+  // An overlay, alternate module workspace, or ambient build flag can produce
+  // a binary whose VCS stamp still describes the checkout. Refuse that input
+  // before passing a deliberately minimal Go build environment to any child.
+  if ((environment.GOFLAGS ?? "") !== "") throw new Error("ambient GOFLAGS are not admitted");
+  if (environment.GOWORK !== "off") throw new Error("GOWORK must be explicitly off");
+  return { ...environment, GOFLAGS: "", GOWORK: "off" };
+}
+
+export function assertCleanBuildMetadata(metadata, sourceCommit) {
+  if (!/^[a-f0-9]{40}$/u.test(sourceCommit) ||
+    !metadata.includes(`vcs.revision=${sourceCommit}`) ||
+    !metadata.includes("vcs.modified=false")) {
+    throw new Error("built TUI binary does not carry the clean checked-out VCS identity");
+  }
+}
+
+export async function buildAdmittedTUI({ root = repoRoot, executable, command = run, environment = process.env } = {}) {
+  if (typeof executable !== "string" || executable.length === 0) throw new Error("output executable is required");
+  const env = admittedGoEnvironment(environment);
+  await command("node", [sourceAdmission], { cwd: root, env });
+  const { stdout: revision } = await command("git", ["rev-parse", "HEAD"], { cwd: root, env });
+  const sourceCommit = revision.trim();
+  await command("go", ["build", "-mod=readonly", "-buildvcs=true", "-o", executable, "./cmd/service-lasso-tui"], { cwd: root, env });
+  const { stdout: metadata } = await command("go", ["version", "-m", executable], { cwd: root, env });
+  assertCleanBuildMetadata(metadata, sourceCommit);
+  return { sourceCommit };
 }
 
 async function reserveUnavailableLoopbackURL() {
@@ -122,7 +152,7 @@ async function main() {
   try {
     acceptanceStage = "build";
     const executable = path.join(tempRoot, "service-lasso-tui.exe");
-    await run("go", ["build", "-o", executable, "./cmd/service-lasso-tui"], { cwd: repoRoot });
+    await buildAdmittedTUI({ executable });
     acceptanceStage = "unavailable";
     unavailableReservation = await reserveUnavailableLoopbackURL();
     const unavailable = parseProbe((await run("python", [helper, "--executable", executable, "--mode", "unavailable", "--api-url", unavailableReservation.url])).stdout, "unavailable");

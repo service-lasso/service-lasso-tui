@@ -83,3 +83,98 @@ as surrogate evidence until native hardware acceptance is available.
 Core #1461 may consume a candidate only after independent release review pins
 the candidate version, full source SHA, manifest, assets, and digests; a
 mutable release selector or incomplete asset set is rejected.
+Every source test and build path first requires a clean checkout, explicitly
+clears `GOFLAGS`, sets `GOWORK=off`, verifies the effective module and Go
+environment, and uses `-mod=readonly`. It builds with `-buildvcs=true`; the
+release workflow verifies each staged binary's `vcs.revision` and
+`vcs.modified=false` before archiving, then extracts every candidate archive
+and repeats those checks against the candidate SHA before upload. The direct
+real-Core ConPTY script applies the same admission and post-build checks before
+it starts the executable. This rejects ambient overlays and workspaces: a clean
+VCS stamp and self-hash alone do not prove that imported Go source was not
+replaced during compilation.
+
+`TUI-DISTRIBUTION-002`: Windows candidate-asset ConPTY acceptance must prepare
+an isolated Core source checkout at the pinned commit with `npm ci` and
+`npm run build` before starting the source runtime, and it must fail closed if
+the required runtime dist is absent. Packaged-Core acceptance is unavailable
+until an installed-package contract verifies and binds package identity and
+digest before runtime startup. Source construction never establishes
+packaged-Core qualification.
+Before candidate acquisition, a failed Core preflight emits only a closed reason
+category (`source_identity_*`, including dirty or attached supplied-source
+identity, `source_clone_failed`, `isolated_checkout_failed`,
+`isolated_identity_*`, `dependency_install_failed`, `source_build_failed`,
+`runtime_dist_unavailable`, or `packaged_runtime_invalid`). It never includes
+command output, paths, environment values, or credentials in that record.
+When the reconnect helper has started, it atomically records only `stage`,
+`outcome`, and `closedReason` in its attempt-owned temporary root. A startup
+terminal-close receipt may additionally contain `startupBoundary`, from the
+closed set `unclassified`, `api_url_invalid`, `api_url_scheme`,
+`api_url_userinfo`, `api_url_query_or_fragment`, `api_token_transport`,
+`api_client_error`, `program_run_error`,
+`program_run_killed`, `program_run_panic`, and `program_run_interrupted`; no
+other receipt may contain that field. EOF is not an exit result: while its owned
+PTY remains live the helper retains its existing bounded wait, and after exit it
+records only one of `terminal_exited_zero`, `terminal_exit_code_1`,
+`terminal_exit_code_2`, `terminal_exited_nonzero`, `terminal_signaled`, or
+`terminal_unknown`. The two numeric categories mean only that the owned PTY
+reported that exit code; neither implies that the TUI reached `main` or
+`Program.Run`. The helper accepts a non-`unclassified` startup boundary only
+from exactly one complete framed marker emitted by the checked TUI. Its nonce
+must match the fresh attempt nonce, and its source commit and binary SHA-256
+must match the source and held executable identities observed by the helper
+before spawn. Malformed, partial, duplicate, foreign, or otherwise extra frames
+produce `unclassified`. The helper opens the executable through an owned
+Windows handle that permits read sharing only, hashes those held bytes, and
+keeps the handle open through child spawn and probe completion so replacement
+or deletion cannot change the spawned candidate. The marker is processed in
+memory and its nonce, terminal text, paths, errors, and environment values are
+never emitted or stored. Closed receipts may record only the source commit and
+binary SHA-256 as `candidateIdentity`; they never record a path, nonce,
+terminal text, URL, token, or error data. The TUI obtains the source commit
+from its own clean Go build information (`vcs.revision` and
+`vcs.modified=false`) and the binary SHA-256 by reading its own executable; it
+does not accept a caller-supplied source or binary identity for this marker.
+The `api_*` values are emitted only after the application receives a typed
+configuration error from its API client; `api_client_error` is the fallback for
+an unclassified API-client return. The `program_run_*` values are emitted only
+after the application receives a non-nil result from Bubble Tea `Program.Run`;
+typed Bubble Tea sentinel errors select the killed, panic, or interrupted
+values, and any other returned error selects `program_run_error`. On Windows,
+a native receipt-writer reaches the requested temporary base from a held volume
+root one directory component at a time, keeps that base and every ancestor
+handle live, and creates that root and both receipt files relative to held
+directory handles. It rejects reparse points during construction, applies an
+owner-only DACL, and keeps the owner non-delete- and non-write-shareable while
+the receipt is live. Native fixtures must prove replacement of the attempt
+root, parent, and grandparent is refused during acquisition. Node asks that writer to replace
+the helper record with its bounded helper-exit state before cleanup. Every
+receipt enum and response schema is closed; a receipt sink failure preserves
+the original probe failure. Until a handle-relative owned deletion operation is
+implemented, Windows native attempt roots are retained as evidence rather than
+closed and recursively removed by pathname.
+The harness constructs a constrained child environment from an allowlist and
+sets a fixed inert `SERVICE_LASSO_API_TOKEN` only for its direct invalid-URL
+and unavailable ConPTY children. It must not inherit a default token, read a
+real credential, place a token in an argument or receipt, or log it. This
+precondition exists because connection resolution requires a non-empty
+credential before URL construction; it does not relax that product policy.
+All pull-request source builds and Windows constructor artifacts bind to the
+pull request's exact head SHA, not the provider-created merge ref. Push builds
+bind to `github.sha`. The workflow verifies its checked-out commit equals that
+selected immutable source identity before building, uses it for VCS admission
+and provenance, and uses it in the retained failed-artifact name. Integration
+with `develop` remains a distinct branch-protection decision.
+When a hosted Windows unavailable-state ConPTY probe reports `api_client_error`
+for a deliberately invalid API URL, the harness must first run the newly built
+held executable directly with a fresh nonce and that invalid URL. It accepts
+only exit code 2 and exactly one complete `api_url_invalid` marker bound to the
+same held source commit and executable SHA-256. It consumes the marker in
+process and neither logs nor stores terminal text, nonce, URL, token, or raw
+error data. Only after that direct constructor assertion passes may the same
+still-held executable enter ConPTY. The closed result records the direct
+constructor outcome and candidate identity so it proves both paths used the
+same binary. A direct assertion failure is a bounded build-domain suspect; it
+does not rerun, replace the failed candidate, or relabel a generic failure as
+the typed API boundary.

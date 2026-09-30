@@ -1,0 +1,250 @@
+"""Windows-only rooted receipt writer for the release-asset ConPTY harness.
+
+The process owns the temporary attempt directory and receipt file handles for
+the whole probe.  NT paths below the held parent are opened relative to that
+parent with OBJ_DONT_REPARSE and FILE_OPEN_REPARSE_POINT, so a pathname swap
+cannot redirect receipt creation or publication.
+"""
+import argparse
+import ctypes
+from ctypes import wintypes
+import json
+import os
+import re
+import secrets
+import sys
+
+if os.name != "nt":
+    raise SystemExit("Windows receipt writer only")
+
+ntdll = ctypes.WinDLL("ntdll")
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+
+OBJ_CASE_INSENSITIVE = 0x40
+OBJ_DONT_REPARSE = 0x1000
+FILE_LIST_DIRECTORY = 0x0001
+FILE_WRITE_DATA = 0x0002
+FILE_READ_DATA = 0x0001
+SYNCHRONIZE = 0x00100000
+FILE_SHARE_READ = 0x00000001
+FILE_SHARE_WRITE = 0x00000002
+FILE_CREATE = 2
+FILE_OPEN = 1
+FILE_DIRECTORY_FILE = 0x00000001
+FILE_SYNCHRONOUS_IO_NONALERT = 0x00000020
+FILE_OPEN_REPARSE_POINT = 0x00200000
+FILE_ATTRIBUTE_NORMAL = 0x80
+STATUS_OBJECT_NAME_COLLISION = 0xC0000035
+INVALID_HANDLE_VALUE = wintypes.HANDLE(-1).value
+
+class UNICODE_STRING(ctypes.Structure):
+    _fields_ = [("Length", wintypes.USHORT), ("MaximumLength", wintypes.USHORT), ("Buffer", wintypes.LPWSTR)]
+class OBJECT_ATTRIBUTES(ctypes.Structure):
+    _fields_ = [("Length", wintypes.ULONG), ("RootDirectory", wintypes.HANDLE), ("ObjectName", ctypes.POINTER(UNICODE_STRING)), ("Attributes", wintypes.ULONG), ("SecurityDescriptor", wintypes.LPVOID), ("SecurityQualityOfService", wintypes.LPVOID)]
+class IO_STATUS_BLOCK(ctypes.Structure):
+    _fields_ = [("Status", wintypes.LONG), ("Information", ctypes.c_size_t)]
+
+ntdll.NtCreateFile.argtypes = [ctypes.POINTER(wintypes.HANDLE), wintypes.ULONG, ctypes.POINTER(OBJECT_ATTRIBUTES), ctypes.POINTER(IO_STATUS_BLOCK), wintypes.LPVOID, wintypes.ULONG, wintypes.ULONG, wintypes.ULONG, wintypes.ULONG, wintypes.LPVOID, wintypes.ULONG]
+ntdll.NtCreateFile.restype = wintypes.LONG
+kernel32.WriteFile.argtypes = [wintypes.HANDLE, wintypes.LPCVOID, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID]
+kernel32.ReadFile.argtypes = [wintypes.HANDLE, wintypes.LPVOID, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID]
+kernel32.SetFilePointerEx.argtypes = [wintypes.HANDLE, ctypes.c_longlong, ctypes.POINTER(ctypes.c_longlong), wintypes.DWORD]
+advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(wintypes.LPVOID), ctypes.POINTER(wintypes.DWORD)]
+advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype = wintypes.BOOL
+kernel32.LocalFree.argtypes = [wintypes.HLOCAL]
+
+OWNER_ONLY_DACL = "D:P(A;OICI;FA;;;OW)"
+
+def owner_only_descriptor():
+    descriptor, length = wintypes.LPVOID(), wintypes.DWORD()
+    if not advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW(OWNER_ONLY_DACL, 1, ctypes.byref(descriptor), ctypes.byref(length)):
+        raise OSError(ctypes.get_last_error(), "ConvertStringSecurityDescriptorToSecurityDescriptorW")
+    return descriptor
+
+def nt_open(name, root, access, disposition, options, security_descriptor=None, share=FILE_SHARE_READ):
+    value = ctypes.create_unicode_buffer(name)
+    string = UNICODE_STRING(len(name) * 2, (len(name) + 1) * 2, ctypes.cast(value, wintypes.LPWSTR))
+    attrs = OBJECT_ATTRIBUTES(ctypes.sizeof(OBJECT_ATTRIBUTES), root, ctypes.pointer(string), OBJ_CASE_INSENSITIVE | OBJ_DONT_REPARSE, security_descriptor, None)
+    handle, iosb = wintypes.HANDLE(), IO_STATUS_BLOCK()
+    status = ntdll.NtCreateFile(ctypes.byref(handle), access, ctypes.byref(attrs), ctypes.byref(iosb), None, FILE_ATTRIBUTE_NORMAL, share, disposition, options | FILE_OPEN_REPARSE_POINT, None, 0)
+    if status < 0: raise OSError(ctypes.c_ulong(status).value, "NtCreateFile rejected receipt path")
+    return handle
+
+def close(handle):
+    if handle and handle.value not in (None, INVALID_HANDLE_VALUE): kernel32.CloseHandle(handle)
+
+def anchored_directory(base_root):
+    # Do not admit the caller's complete DOS path in one operation: a normal
+    # directory can be replaced without being a reparse point before that
+    # open. Start from the stable volume root, then open every component below
+    # an already-held parent. Keeping every handle without delete sharing
+    # preserves the identity of the full parent chain for this attempt.
+    absolute = os.path.abspath(base_root)
+    drive, tail = os.path.splitdrive(absolute)
+    components = [part for part in tail.replace("/", "\\").split("\\") if part]
+    if not drive or any(part in {".", ".."} for part in components):
+        raise RuntimeError("receipt base path is not an absolute Windows directory")
+    ancestors = [nt_open("\\??\\" + drive + "\\", None, FILE_LIST_DIRECTORY | SYNCHRONIZE, FILE_OPEN, FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT)]
+    try:
+        for component in components:
+            ancestors.append(nt_open(component, ancestors[-1], FILE_LIST_DIRECTORY | SYNCHRONIZE, FILE_OPEN, FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT))
+        return ancestors[-1], ancestors
+    except Exception:
+        for handle in reversed(ancestors): close(handle)
+        raise
+
+def secure_root(base_root):
+    # The base identity is established through anchored_directory before a
+    # receipt root is created. Every created child then uses its live handle,
+    # never a reconstructed path.
+    base, ancestors = anchored_directory(base_root)
+    try:
+        descriptor = owner_only_descriptor()
+        try:
+            for _ in range(32):
+                leaf = "service-lasso-tui-release-asset-" + secrets.token_hex(16)
+                try: return leaf, nt_open(leaf, base, FILE_LIST_DIRECTORY | SYNCHRONIZE, FILE_CREATE, FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT, descriptor), ancestors
+                except OSError as error:
+                    if ctypes.c_ulong(error.errno).value != STATUS_OBJECT_NAME_COLLISION: raise
+        finally:
+            kernel32.LocalFree(descriptor)
+        raise RuntimeError("receipt root collision limit")
+    except Exception:
+        for handle in reversed(ancestors): close(handle)
+        raise
+
+def valid(receipt):
+    if not isinstance(receipt, dict) or receipt.get("stage") not in {"launch", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit", "helper-exit"} or receipt.get("outcome") not in {"normal", "error", "timeout"} or receipt.get("closedReason") not in {"completed", "stage_failed", "timed_out", "shutdown_requested", "terminal_exited_zero", "terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown", "helper_exit_nonzero", "helper_exit_signal", "helper_exit_spawn_error"}:
+        return False
+    identity = receipt.get("candidateIdentity")
+    if identity is not None and (not isinstance(identity, dict) or set(identity) != {"sourceCommit", "binarySHA256"} or not isinstance(identity["sourceCommit"], str) or not isinstance(identity["binarySHA256"], str) or re.fullmatch(r"[a-f0-9]{40}", identity["sourceCommit"]) is None or re.fullmatch(r"[a-f0-9]{64}", identity["binarySHA256"]) is None):
+        return False
+    keys = set(receipt)
+    base = {"stage", "outcome", "closedReason"}
+    if identity is not None:
+        base.add("candidateIdentity")
+    if keys == base:
+        return True
+    return keys == base | {"startupBoundary"} and receipt["stage"] == "startup" and receipt["outcome"] == "error" and receipt["closedReason"] in {"terminal_exited_zero", "terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown"} and receipt["startupBoundary"] in {"unclassified", "api_url_invalid", "api_url_scheme", "api_url_userinfo", "api_url_query_or_fragment", "api_token_transport", "api_client_error", "program_run_error", "program_run_killed", "program_run_panic", "program_run_interrupted"}
+
+def write(handle, receipt):
+    data = json.dumps(receipt, separators=(",", ":")).encode("utf-8")
+    pos = ctypes.c_longlong()
+    if not kernel32.SetFilePointerEx(handle, 0, ctypes.byref(pos), 0): raise OSError(ctypes.get_last_error(), "SetFilePointerEx")
+    if not kernel32.SetEndOfFile(handle): raise OSError(ctypes.get_last_error(), "SetEndOfFile")
+    written = wintypes.DWORD()
+    if not kernel32.WriteFile(handle, data, len(data), ctypes.byref(written), None) or written.value != len(data): raise OSError(ctypes.get_last_error(), "WriteFile")
+    if not kernel32.FlushFileBuffers(handle): raise OSError(ctypes.get_last_error(), "FlushFileBuffers")
+
+def read(handle):
+    data, count = ctypes.create_string_buffer(512), wintypes.DWORD()
+    if not kernel32.ReadFile(handle, data, len(data), ctypes.byref(count), None): raise OSError(ctypes.get_last_error(), "ReadFile")
+    return data.raw[:count.value]
+
+def create_directory(name, parent):
+    descriptor = owner_only_descriptor()
+    try:
+        return nt_open(name, parent, FILE_LIST_DIRECTORY | SYNCHRONIZE, FILE_CREATE, FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT, descriptor)
+    finally:
+        kernel32.LocalFree(descriptor)
+
+def replacement_self_test(base_root):
+    # Build a real root/ancestor fixture through the same native acquisition
+    # path used by production.  Replacing any live component must be denied;
+    # a successful rename would prove that a pre-admission substitution window
+    # remains. This fixture uses only empty, unique directories and removes
+    # them one at a time after every native handle is released.
+    fixture_leaf, fixture_root, fixture_ancestors = secure_root(base_root)
+    grandparent = parent = acquired_root = None
+    acquired_leaf = None
+    acquired_ancestors = []
+    fixture_path = os.path.join(os.path.abspath(base_root), fixture_leaf)
+    grandparent_path = os.path.join(fixture_path, "grandparent")
+    parent_path = os.path.join(grandparent_path, "parent")
+    try:
+        grandparent = create_directory("grandparent", fixture_root)
+        parent = create_directory("parent", grandparent)
+        acquired_leaf, acquired_root, acquired_ancestors = secure_root(parent_path)
+        for live_path in (fixture_path, grandparent_path, parent_path):
+            try:
+                os.replace(live_path, live_path + "-replacement")
+            except OSError:
+                continue
+            raise RuntimeError("live receipt ancestor replacement unexpectedly admitted")
+        emit({"ok": True, "event": "replacement-self-test"})
+    finally:
+        close(acquired_root)
+        for handle in reversed(acquired_ancestors): close(handle)
+        close(parent); close(grandparent); close(fixture_root)
+        for handle in reversed(fixture_ancestors): close(handle)
+        # This is not production cleanup: it removes just the empty, unique
+        # fixture directories after all identity handles are gone.
+        try:
+            for directory in (os.path.join(parent_path, acquired_leaf), parent_path, grandparent_path, fixture_path): os.rmdir(directory)
+        except OSError:
+            pass
+
+def ownership_self_test(base_root):
+    leaf, root, ancestors = secure_root(base_root)
+    helper = None
+    try:
+        descriptor = owner_only_descriptor()
+        try:
+            helper = nt_open("helper-outcome.json", root, FILE_WRITE_DATA | SYNCHRONIZE, FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, descriptor)
+        finally:
+            kernel32.LocalFree(descriptor)
+        expected = {"stage": "exit", "outcome": "normal", "closedReason": "completed"}
+        write(helper, expected)
+        try:
+            intruder = nt_open("helper-outcome.json", root, FILE_WRITE_DATA | SYNCHRONIZE, FILE_OPEN, FILE_SYNCHRONOUS_IO_NONALERT)
+        except OSError:
+            intruder = None
+        if intruder is not None:
+            close(intruder); raise RuntimeError("concurrent writer unexpectedly admitted")
+        reader = nt_open("helper-outcome.json", root, FILE_READ_DATA | SYNCHRONIZE, FILE_OPEN, FILE_SYNCHRONOUS_IO_NONALERT, share=FILE_SHARE_READ | FILE_SHARE_WRITE)
+        try:
+            if read(reader) != json.dumps(expected, separators=(",", ":")).encode("utf-8"): raise RuntimeError("receipt readback mismatch")
+        finally: close(reader)
+        emit({"ok": True, "event": "ownership-self-test"})
+    finally:
+        close(helper); close(root)
+        for handle in reversed(ancestors): close(handle)
+
+def emit(value):
+    print(json.dumps(value, separators=(",", ":")), flush=True)
+
+def main():
+    parser = argparse.ArgumentParser(add_help=False); parser.add_argument("--base-root", required=True); parser.add_argument("--ownership-self-test", action="store_true"); parser.add_argument("--replacement-self-test", action="store_true"); args = parser.parse_args()
+    if args.ownership_self_test:
+        ownership_self_test(args.base_root); return
+    if args.replacement_self_test:
+        replacement_self_test(args.base_root); return
+    leaf, root, ancestors = secure_root(args.base_root)
+    helper = node = None
+    try:
+        descriptor = owner_only_descriptor()
+        try:
+            # Explicit DACLs prevent inherited temporary-directory permissions
+            # from granting a second principal access. FILE_SHARE_WRITE is not
+            # requested anywhere: even the same owner cannot open a concurrent
+            # writer while these receipts are held.
+            helper = nt_open("helper-outcome.json", root, FILE_WRITE_DATA | SYNCHRONIZE, FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, descriptor)
+            node = nt_open("node-exit-outcome.json", root, FILE_WRITE_DATA | SYNCHRONIZE, FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT, descriptor)
+        finally:
+            kernel32.LocalFree(descriptor)
+        emit({"ok": True, "event": "ready", "root": os.path.join(os.path.abspath(args.base_root), leaf)})
+        for line in sys.stdin:
+            try: request = json.loads(line)
+            except Exception: emit({"ok": False, "event": "invalid"}); continue
+            if request == {"op": "close"}: emit({"ok": True, "event": "closed"}); return
+            if not isinstance(request, dict):
+                emit({"ok": False, "event": "invalid"}); continue
+            sink, receipt = request.get("sink"), request.get("receipt")
+            if request.get("op") != "write" or sink not in {"helper", "node"} or not valid(receipt): emit({"ok": False, "event": "invalid"}); continue
+            write(helper if sink == "helper" else node, receipt); emit({"ok": True, "event": "written", "sink": sink})
+    finally:
+        close(helper); close(node); close(root)
+        for handle in reversed(ancestors): close(handle)
+
+if __name__ == "__main__": main()

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,14 +19,14 @@ func main() {
 
 	manager, client, err := api.ResolveConnections(api.ConnectionOptions{ConfigPath: *configPath, Profile: *profile, APIURL: *apiURL, TokenEnv: *tokenEnv})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		reportStartupFailure(os.Stderr, startupBoundaryForAPIError(err), err)
 		os.Exit(2)
 	}
 
 	model := app.NewWithConnections(client, manager, context.Background())
 	program := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := program.Run(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		reportStartupFailure(os.Stderr, startupBoundaryForProgramError(err), err)
 		os.Exit(1)
 	}
 }

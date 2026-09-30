@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -16,6 +16,12 @@ const candidate = Object.freeze({
   archiveSha256: "b8838f245d4b1d39cac0b51ed2ad14ffd0237779f1a5e9d3e61358066370e479",
   archive: "service-lasso-tui-2026.9.30-97fafb0-win32-amd64.zip",
   executable: "service-lasso-tui.exe",
+  assets: Object.freeze([
+    { platform: "darwin-amd64", name: "service-lasso-tui-2026.9.30-97fafb0-darwin-amd64.tar.gz", sha256: "5d6df8cfa18771e159b7af34c1c5c00d70ae5eef1ddf727896ae2afb30b63638", executable: "service-lasso-tui" },
+    { platform: "darwin-arm64", name: "service-lasso-tui-2026.9.30-97fafb0-darwin-arm64.tar.gz", sha256: "a9523555416a1b332107a9a92cfecc2aa3b7cdd23caab1063540496e4e20b33c", executable: "service-lasso-tui" },
+    { platform: "linux-amd64", name: "service-lasso-tui-2026.9.30-97fafb0-linux-amd64.tar.gz", sha256: "238a8e3f92ae5f9cf28c5cd29af91b698addb9bfa546a7b31c7f7a71b7c33e70", executable: "service-lasso-tui" },
+    { platform: "win32-amd64", name: "service-lasso-tui-2026.9.30-97fafb0-win32-amd64.zip", sha256: "b8838f245d4b1d39cac0b51ed2ad14ffd0237779f1a5e9d3e61358066370e479", executable: "service-lasso-tui.exe" },
+  ]),
 });
 const coreDevelop = "10e4d72b75c66977ad1dd629991a27443ffc0fd3";
 let stage = "setup";
@@ -25,6 +31,11 @@ const run = (command, args, options = {}) => execFileAsync(command, args, { cwd:
 
 export function assertCandidateManifest(manifest) {
   const asset = manifest?.assets?.find(item => item?.platform === "win32-amd64");
+  const completeAssetBinding = Array.isArray(manifest?.assets) && manifest.assets.length === candidate.assets.length &&
+    candidate.assets.every(expected => manifest.assets.some(actual =>
+      actual?.platform === expected.platform && actual?.name === expected.name &&
+      actual?.sha256 === expected.sha256 && actual?.executable === expected.executable
+    ));
   if (
     manifest?.schemaVersion !== 1 || manifest?.kind !== "develop-prerelease-candidate" ||
     manifest?.source?.repository !== "service-lasso/service-lasso-tui" ||
@@ -32,7 +43,8 @@ export function assertCandidateManifest(manifest) {
     manifest?.release?.tag !== `candidate-${candidate.version}` || manifest?.release?.prerelease !== true ||
     manifest?.version !== candidate.version || manifest?.checksumManifest?.name !== "SHA256SUMS.txt" ||
     manifest?.checksumManifest?.sha256 !== "638ad5e54e06dcb894a4579872e788ddc4521cd3ffca46fb06574c8b78de1cf5" ||
-    asset?.name !== candidate.archive || asset?.sha256 !== candidate.archiveSha256 || asset?.executable !== candidate.executable
+    asset?.name !== candidate.archive || asset?.sha256 !== candidate.archiveSha256 || asset?.executable !== candidate.executable ||
+    !completeAssetBinding
   ) throw new Error("candidate manifest does not bind the expected Windows release asset");
 }
 
@@ -54,7 +66,11 @@ async function reserveUnavailableLoopbackURL() {
   await new Promise((resolve, reject) => { listener.once("error", reject); listener.listen({ host: "127.0.0.1", port: 0 }, resolve); });
   const address = listener.address();
   if (!address || typeof address === "string") throw new Error("unavailable loopback port was not allocated");
-  return { url: `http://127.0.0.1:${address.port}`, close: () => new Promise((resolve, reject) => listener.close(error => error ? reject(error) : resolve())) };
+  return {
+    port: address.port,
+    url: `http://127.0.0.1:${address.port}`,
+    close: () => new Promise((resolve, reject) => listener.close(error => error ? reject(error) : resolve())),
+  };
 }
 
 function parseProbe(stdout, mode) {
@@ -68,12 +84,68 @@ function parseProbe(stdout, mode) {
   throw new Error("release-asset ConPTY probe did not complete its bounded assertions");
 }
 
-async function runProbe(executable, mode, apiURL) {
-  try {
-    return parseProbe((await run("python", [helper, "--executable", executable, "--mode", mode, "--api-url", apiURL])).stdout, mode);
-  } catch (error) {
-    return parseProbe(error?.stdout ?? "", mode);
+function startReconnectProbe(executable, apiURL, readyPath, reconnectPath) {
+  const child = spawn("python", [
+    helper,
+    "--executable", executable,
+    "--mode", "reconnect",
+    "--api-url", apiURL,
+    "--ready-file", readyPath,
+    "--reconnect-file", reconnectPath,
+  ], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", chunk => { stdout += chunk; });
+  child.stderr.on("data", chunk => { stderr += chunk; });
+  const completed = new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", code => {
+      try {
+        if (code !== 0) throw new Error(`release-asset ConPTY reconnect probe failed (${stderr.trim() || "no stderr"})`);
+        resolve(parseProbe(stdout, "reconnect"));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+  return { child, completed };
+}
+
+async function waitForFile(file, timeoutMs = 20_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      await stat(file);
+      return;
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+    await new Promise(resolve => setTimeout(resolve, 50));
   }
+  throw new Error("release-asset ConPTY probe did not reach unavailable state");
+}
+
+async function stopProbe(probe) {
+  if (!probe?.child || probe.child.exitCode !== null) return;
+  probe.child.kill();
+  await Promise.race([
+    probe.completed.catch(() => undefined),
+    new Promise(resolve => setTimeout(resolve, 5_000)),
+  ]);
+}
+
+async function closeAll(resources) {
+  let cleanupError;
+  for (const close of resources) {
+    try {
+      await close?.();
+    } catch (error) {
+      cleanupError ??= error;
+    }
+  }
+  if (cleanupError) throw cleanupError;
 }
 
 async function main() {
@@ -88,7 +160,7 @@ async function main() {
   if (coreHead.trim() !== coreDevelop) throw new Error("Core source is not the pinned develop revision");
 
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "service-lasso-tui-release-asset-"));
-  let apiServer; let unavailable;
+  let apiServer; let unavailable; let probe; let primaryError;
   try {
     stage = "download";
     const base = `https://github.com/service-lasso/service-lasso-tui/releases/download/candidate-${candidate.version}`;
@@ -110,20 +182,37 @@ async function main() {
     await stat(executable);
     stage = "unavailable";
     unavailable = await reserveUnavailableLoopbackURL();
-    await runProbe(executable, "unavailable", unavailable.url);
+    const readyPath = path.join(tempRoot, "probe-unavailable-ready");
+    const reconnectPath = path.join(tempRoot, "probe-reconnect");
+    probe = startReconnectProbe(executable, unavailable.url, readyPath, reconnectPath);
+    await waitForFile(readyPath);
+    const loopbackPort = unavailable.port;
     await unavailable.close(); unavailable = undefined;
     stage = "core-start";
     const core = await import(pathToFileURL(path.join(coreRoot, "packages", "core", "index.js")).href);
     const servicesRoot = path.join(tempRoot, "services"); const workspaceRoot = path.join(tempRoot, "workspace");
     await Promise.all([mkdir(servicesRoot), mkdir(workspaceRoot)]);
-    apiServer = await core.startApiServer({ port: 0, servicesRoot, workspaceRoot, noAutostart: true });
-    stage = "connected";
-    const connected = await runProbe(executable, "connected", apiServer.url);
-    console.log(JSON.stringify({ ok: true, classification: "direct-release-asset-conpty-read", candidate: { version: candidate.version, sourceCommit: candidate.sourceCommit, manifestSha256: candidate.manifestSha256, archiveSha256: candidate.archiveSha256, executable: candidate.executable }, coreDevelop, platform: "win32-amd64", unavailable: "rendered", connectedDashboard: "rendered", navigation: connected.navigation, terminal: { narrowResize: connected.narrowResize }, exit: connected.exit }));
+    apiServer = await core.startApiServer({ host: "127.0.0.1", port: loopbackPort, servicesRoot, workspaceRoot, noAutostart: true });
+    // The listener was explicitly released above; preserve its exact loopback port
+    // for the same extracted candidate process that rendered the unavailable state.
+    await writeFile(reconnectPath, "ready\n", { flag: "wx" });
+    stage = "reconnect";
+    const connected = await probe.completed;
+    console.log(JSON.stringify({ ok: true, classification: "direct-release-asset-conpty-read", candidate: { version: candidate.version, sourceCommit: candidate.sourceCommit, manifestSha256: candidate.manifestSha256, archiveSha256: candidate.archiveSha256, executable: candidate.executable }, coreDevelop, platform: "win32-amd64", unavailable: "rendered", connectedDashboard: "rendered", reconnect: connected.reconnect, navigation: connected.navigation, terminal: { narrowResize: connected.narrowResize }, exit: connected.exit }));
+  } catch (error) {
+    primaryError = error;
+    throw error;
   } finally {
-    await apiServer?.stop();
-    await unavailable?.close();
-    await rm(tempRoot, { recursive: true, force: true });
+    try {
+      await closeAll([
+        () => stopProbe(probe),
+        () => apiServer?.stop(),
+        () => unavailable?.close(),
+        () => rm(tempRoot, { recursive: true, force: true }),
+      ]);
+    } catch (cleanupError) {
+      if (!primaryError) throw cleanupError;
+    }
   }
 }
 

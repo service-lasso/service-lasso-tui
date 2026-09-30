@@ -91,3 +91,8 @@ the required runtime dist is absent. A supplied packaged Core runtime must be
 selected explicitly and must already contain the verified package entry and
 runtime dist. Evidence records must distinguish `source-built` from
 `packaged`; source construction never establishes packaged-Core qualification.
+Before candidate acquisition, a failed Core preflight emits only a closed reason
+category (`source_identity_*`, `source_clone_failed`, `isolated_checkout_failed`,
+`isolated_identity_*`, `dependency_install_failed`, `source_build_failed`,
+`runtime_dist_unavailable`, or `packaged_runtime_invalid`). It never includes
+command output, paths, environment values, or credentials in that record.

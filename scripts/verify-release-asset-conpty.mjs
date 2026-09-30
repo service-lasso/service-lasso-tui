@@ -25,6 +25,23 @@ const candidate = Object.freeze({
 });
 const coreDevelop = "10e4d72b75c66977ad1dd629991a27443ffc0fd3";
 let stage = "setup";
+let failureReason;
+
+class CorePreflightFailure extends Error {
+  constructor(reason) {
+    super(reason);
+    this.reason = reason;
+  }
+}
+
+async function preflightStep(reason, operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof CorePreflightFailure) throw error;
+    throw new CorePreflightFailure(reason);
+  }
+}
 
 const sha256 = value => createHash("sha256").update(value).digest("hex");
 const run = (command, args, options = {}) => execFileAsync(command, args, { cwd: options.cwd, windowsHide: true, timeout: options.timeout ?? 120000 });
@@ -66,34 +83,36 @@ export function parseArgs(argv) {
   return { coreRoot, coreKind };
 }
 
-async function assertRuntimeDist(coreRoot) {
-  const entries = await Promise.all([
-    stat(path.join(coreRoot, "package.json")),
-    stat(path.join(coreRoot, "packages", "core", "index.js")),
-    stat(path.join(coreRoot, "dist", "server", "index.js")),
-  ]);
-  if (entries.some(entry => !entry.isFile())) throw new Error("Core runtime dist is not a regular-file package runtime");
+async function assertRuntimeDist(coreRoot, reason) {
+  await preflightStep(reason, async () => {
+    const entries = await Promise.all([
+      stat(path.join(coreRoot, "package.json")),
+      stat(path.join(coreRoot, "packages", "core", "index.js")),
+      stat(path.join(coreRoot, "dist", "server", "index.js")),
+    ]);
+    if (entries.some(entry => !entry.isFile())) throw new Error("invalid runtime dist");
+  });
 }
 
 export async function prepareSourceBuiltCore({ coreRoot, tempRoot, command = run }) {
-  const { stdout: suppliedHead } = await command("git", ["-C", coreRoot, "rev-parse", "HEAD"]);
-  if (suppliedHead.trim() !== coreDevelop) throw new Error("Core source is not the pinned develop revision");
+  const { stdout: suppliedHead } = await preflightStep("source_identity_unavailable", () => command("git", ["-C", coreRoot, "rev-parse", "HEAD"]));
+  if (suppliedHead.trim() !== coreDevelop) throw new CorePreflightFailure("source_identity_mismatch");
 
   const isolatedRoot = path.join(tempRoot, "core-source");
   // A normal clone (rather than a worktree) keeps npm's dependency and build
   // writes out of the caller-provided checkout and its Git common directory.
-  await command("git", ["clone", "--no-local", "--no-checkout", coreRoot, isolatedRoot]);
-  await command("git", ["-C", isolatedRoot, "checkout", "--detach", coreDevelop]);
-  const { stdout: isolatedHead } = await command("git", ["-C", isolatedRoot, "rev-parse", "HEAD"]);
-  if (isolatedHead.trim() !== coreDevelop) throw new Error("isolated Core checkout is not the pinned develop revision");
-  await command("npm", ["ci"], { cwd: isolatedRoot, timeout: 300_000 });
-  await command("npm", ["run", "build"], { cwd: isolatedRoot, timeout: 300_000 });
-  await assertRuntimeDist(isolatedRoot);
+  await preflightStep("source_clone_failed", () => command("git", ["clone", "--no-local", "--no-checkout", coreRoot, isolatedRoot]));
+  await preflightStep("isolated_checkout_failed", () => command("git", ["-C", isolatedRoot, "checkout", "--detach", coreDevelop]));
+  const { stdout: isolatedHead } = await preflightStep("isolated_identity_unavailable", () => command("git", ["-C", isolatedRoot, "rev-parse", "HEAD"]));
+  if (isolatedHead.trim() !== coreDevelop) throw new CorePreflightFailure("isolated_identity_mismatch");
+  await preflightStep("dependency_install_failed", () => command("npm", ["ci"], { cwd: isolatedRoot, timeout: 300_000 }));
+  await preflightStep("source_build_failed", () => command("npm", ["run", "build"], { cwd: isolatedRoot, timeout: 300_000 }));
+  await assertRuntimeDist(isolatedRoot, "runtime_dist_unavailable");
   return { coreRoot: isolatedRoot, evidence: "source-built" };
 }
 
 export async function verifyPackagedCore({ coreRoot }) {
-  await assertRuntimeDist(coreRoot);
+  await assertRuntimeDist(coreRoot, "packaged_runtime_invalid");
   return { coreRoot, evidence: "packaged" };
 }
 
@@ -244,6 +263,7 @@ async function main() {
     console.log(JSON.stringify({ ok: true, classification: coreRuntime.evidence === "packaged" ? "direct-release-asset-packaged-core-conpty-read" : "direct-release-asset-source-built-core-conpty-read", candidate: { version: candidate.version, sourceCommit: candidate.sourceCommit, manifestSha256: candidate.manifestSha256, archiveSha256: candidate.archiveSha256, executable: candidate.executable }, core: { evidence: coreRuntime.evidence, sourceCommit: coreRuntime.evidence === "source-built" ? coreDevelop : undefined }, platform: "win32-amd64", unavailable: "rendered", connectedDashboard: "rendered", reconnect: connected.reconnect, navigation: connected.navigation, terminal: { narrowResize: connected.narrowResize }, exit: connected.exit }));
   } catch (error) {
     primaryError = error;
+    if (stage === "core-runtime-preflight") failureReason = error instanceof CorePreflightFailure ? error.reason : "preflight_unclassified";
     throw error;
   } finally {
     try {
@@ -259,4 +279,4 @@ async function main() {
   }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(() => { console.log(JSON.stringify({ ok: false, stage })); process.exitCode = 1; });
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(() => { console.log(JSON.stringify({ ok: false, stage, ...(failureReason ? { reason: failureReason } : {}) })); process.exitCode = 1; });

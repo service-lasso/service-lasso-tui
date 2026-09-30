@@ -86,7 +86,28 @@ test("packaged Core mode rejects a missing runtime dist instead of falling back 
       writeFile(path.join(tempRoot, "package.json"), "{}"),
       writeFile(path.join(tempRoot, "packages", "core", "index.js"), ""),
     ]);
-    await assert.rejects(() => verifyPackagedCore({ coreRoot: tempRoot }), /ENOENT/);
+    await assert.rejects(
+      () => verifyPackagedCore({ coreRoot: tempRoot }),
+      error => error?.reason === "packaged_runtime_invalid",
+    );
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("Core preflight returns closed reason categories without exposing command output", async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-core-preflight-reason-${process.pid}-${Date.now()}`);
+  await mkdir(tempRoot, { recursive: true });
+  const command = async (program, args) => {
+    if (program === "git" && args.includes("rev-parse")) return { stdout: "10e4d72b75c66977ad1dd629991a27443ffc0fd3\n" };
+    if (program === "git" && args[0] === "clone") throw new Error("sensitive command output must not escape");
+    return { stdout: "" };
+  };
+  try {
+    await assert.rejects(
+      () => prepareSourceBuiltCore({ coreRoot: "supplied-core", tempRoot, command }),
+      error => error?.reason === "source_clone_failed" && error.message === "source_clone_failed",
+    );
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }

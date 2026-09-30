@@ -77,6 +77,12 @@ only with `--core-kind packaged`, and it must already contain its package entry
 and `dist/server/index.js`; that path is labelled separately and never falls
 back to source construction.
 
+If that preflight fails, its closed record includes `stage:
+"core-runtime-preflight"` and a safe `reason` category only. The categories
+identify the failed boundary (source identity, clone, isolated checkout or
+identity, dependency install, build, runtime dist, or packaged runtime) without
+including command output, paths, environment values, or credentials.
+
 The output is a closed-schema direct release-asset read record. Linux and
 macOS assets, authenticated reads, lifecycle operations, and independent
 release review remain outside this evidence.

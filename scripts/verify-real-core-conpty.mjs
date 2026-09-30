@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pinnedCoreDevelop = "d9e2ae799244317940c862fe1261dfd22b7bdda1";
+let acceptanceStage = "setup";
 
 function parseArgs(argv) {
   const marker = argv.indexOf("--core-root");
@@ -97,10 +98,12 @@ async function main() {
     return;
   }
   const { coreRoot } = parseArgs(process.argv.slice(2));
+  acceptanceStage = "architecture";
   const helper = path.join(repoRoot, "scripts", "verify-real-core-conpty.py");
   const hostArchitecture = await getWindowsHostArchitecture();
   const helperArchitecture = await getHelperArchitecture(helper);
   assertAmd64Evidence({ hostArchitecture, nodeArchitecture: process.arch, helperArchitecture });
+  acceptanceStage = "core-source";
   await stat(path.join(coreRoot, "package.json"));
   const { stdout: coreHead } = await run("git", ["-C", coreRoot, "rev-parse", "HEAD"]);
   if (coreHead.trim() !== pinnedCoreDevelop) {
@@ -115,21 +118,26 @@ async function main() {
   let apiServer;
   let unavailableReservation;
   try {
+    acceptanceStage = "build";
     const executable = path.join(tempRoot, "service-lasso-tui.exe");
     await run("go", ["build", "-o", executable, "./cmd/service-lasso-tui"], { cwd: repoRoot });
+    acceptanceStage = "unavailable";
     unavailableReservation = await reserveUnavailableLoopbackURL();
     const unavailable = parseProbe((await run("python", [helper, "--executable", executable, "--mode", "unavailable", "--api-url", unavailableReservation.url])).stdout, "unavailable");
     await unavailableReservation.close();
     unavailableReservation = undefined;
+    acceptanceStage = "core-import";
     const core = await import(pathToFileURL(path.join(coreRoot, "packages", "core", "index.js")).href);
     const servicesRoot = path.join(tempRoot, "services");
     const workspaceRoot = path.join(tempRoot, "workspace");
     await Promise.all([mkdir(servicesRoot), mkdir(workspaceRoot)]);
+    acceptanceStage = "core-start";
     apiServer = await core.startApiServer({
       port: 0,
       servicesRoot,
       workspaceRoot,
     });
+    acceptanceStage = "connected";
     const connected = parseProbe((await run("python", [helper, "--executable", executable, "--mode", "connected", "--api-url", apiServer.url])).stdout, "connected");
     console.log(JSON.stringify({ ok: true, evidence: "direct-real-core-conpty", coreDevelop: pinnedCoreDevelop, platform: "win32-amd64", architecture: { host: normalizedArchitecture(hostArchitecture), node: process.arch, helper: helperArchitecture }, unavailable: unavailable.mode, connectedDashboard: "rendered", navigation: connected.navigation, exit: connected.exit }));
   } finally {
@@ -147,7 +155,7 @@ async function main() {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch(() => {
-    console.log(JSON.stringify({ ok: false, stage: "bounded-acceptance" }));
+    console.log(JSON.stringify({ ok: false, stage: acceptanceStage }));
     process.exitCode = 1;
   });
 }

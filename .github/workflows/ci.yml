@@ -39,7 +39,7 @@ jobs:
           $sourceCommit = (git rev-parse HEAD).Trim()
           $binary = Join-Path $env:RUNNER_TEMP 'service-lasso-tui-check'
           go build -mod=readonly -buildvcs=true -o $binary ./cmd/service-lasso-tui
-          $metadata = go version -m $binary
+          $metadata = (go version -m $binary) -join "`n"
           if ($metadata -notmatch "vcs.revision=$sourceCommit" -or $metadata -notmatch 'vcs.modified=false') { throw 'built binary does not carry the clean checked-out VCS identity' }
       - name: Install pinned Windows ConPTY helper
         if: runner.os == 'Windows'
@@ -59,7 +59,7 @@ jobs:
           if ($sourceCommit -notmatch '^[a-f0-9]{40}$') { throw 'invalid checked-out source identity' }
           $binary = Join-Path $env:RUNNER_TEMP 'service-lasso-tui.exe'
           go build -mod=readonly -buildvcs=true -o $binary ./cmd/service-lasso-tui
-          $metadata = go version -m $binary
+          $metadata = (go version -m $binary) -join "`n"
           if ($metadata -notmatch "vcs.revision=$sourceCommit" -or $metadata -notmatch 'vcs.modified=false') { throw 'probe binary does not carry the clean checked-out VCS identity' }
           $binarySHA256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $binary).Hash.ToLowerInvariant()
           python scripts/verify-release-asset-conpty.py --executable $binary --mode unavailable --api-url http://127.0.0.1:1 --source-commit $sourceCommit --expected-executable-sha256 $binarySHA256

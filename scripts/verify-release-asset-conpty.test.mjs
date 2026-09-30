@@ -403,6 +403,7 @@ test("Windows CI executes the pinned Python ConPTY helper against a safe unavail
   assert.match(workflow, /actions\/setup-python@v6[\s\S]*?python-version: '3\.14'/u);
   assert.match(workflow, /GOFLAGS: ""[\s\S]*?GOWORK: "off"[\s\S]*?node scripts\/assert-go-source-provenance\.mjs/u);
   assert.match(workflow, /go build -mod=readonly -buildvcs=true -o \$binary/u);
+  assert.match(workflow, /\$metadata = \(go version -m \$binary\) -join "`n"/u);
   assert.match(workflow, /python -m pip install --require-hashes --only-binary=:all: --no-deps -r scripts\/requirements-conpty\.txt/u);
   assert.match(workflow, /verify-release-asset-conpty\.py --executable \$binary --mode unavailable --api-url http:\/\/127\.0\.0\.1:1/u);
 });

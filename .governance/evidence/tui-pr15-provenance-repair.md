@@ -27,3 +27,10 @@ Local evidence is surrogate only: Go unit tests, the adversarial overlay test,
 the Node receipt tests, and the Python receipt tests. Fresh natural exact-head
 hosted CI remains required. No candidate release, runtime acceptance,
 deployment, publication, or GA claim is made here.
+
+The first natural run for this repair (`36758552763`) reached the new clean
+source gate. Its cross-compilation job passed; Linux, macOS, and Windows
+completed their source tests then failed only because PowerShell evaluated the
+multi-line `go version -m` result as an array. The repair joins that result
+before requiring the two VCS fields. This is a workflow assertion correction,
+not evidence of a failed provenance condition; no failed run is retried.

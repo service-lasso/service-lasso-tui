@@ -111,9 +111,11 @@ export async function prepareSourceBuiltCore({ coreRoot, tempRoot, command = run
   return { coreRoot: isolatedRoot, evidence: "source-built" };
 }
 
-export async function verifyPackagedCore({ coreRoot }) {
-  await assertRuntimeDist(coreRoot, "packaged_runtime_invalid");
-  return { coreRoot, evidence: "packaged" };
+export async function prepareCoreRuntime({ coreKind, coreRoot, tempRoot, command = run }) {
+  // Retain the historical selector only as a closed preflight failure.  There
+  // is no installed Core package identity plus digest contract to verify here.
+  if (coreKind === "packaged") throw new CorePreflightFailure("packaged_runtime_invalid");
+  return prepareSourceBuiltCore({ coreRoot, tempRoot, command });
 }
 
 async function download(url, destination) {
@@ -189,9 +191,16 @@ async function waitForFile(file, timeoutMs = 20_000) {
   throw new Error("release-asset ConPTY probe did not reach unavailable state");
 }
 
-async function stopProbe(probe) {
+export async function stopProbe(probe, { platform = process.platform, taskkill = run } = {}) {
   if (!probe?.child || probe.child.exitCode !== null) return;
-  probe.child.kill();
+  // The Python helper owns the extracted TUI process.  Terminating only the
+  // helper can leave that ConPTY child running, while taskkill /T is bounded
+  // to the helper's own process tree rather than a name or system-wide match.
+  if (platform === "win32" && Number.isSafeInteger(probe.child.pid) && probe.child.pid > 0) {
+    await taskkill("taskkill", ["/pid", String(probe.child.pid), "/t", "/f"], { timeout: 5_000 }).catch(() => undefined);
+  } else {
+    probe.child.kill();
+  }
   await Promise.race([
     probe.completed.catch(() => undefined),
     new Promise(resolve => setTimeout(resolve, 5_000)),
@@ -221,9 +230,7 @@ async function main() {
   let apiServer; let unavailable; let probe; let primaryError;
   try {
     stage = "core-runtime-preflight";
-    const coreRuntime = coreKind === "source-built"
-      ? await prepareSourceBuiltCore({ coreRoot: suppliedCoreRoot, tempRoot })
-      : await verifyPackagedCore({ coreRoot: suppliedCoreRoot });
+    const coreRuntime = await prepareCoreRuntime({ coreKind, coreRoot: suppliedCoreRoot, tempRoot });
     stage = "download";
     const base = `https://github.com/service-lasso/service-lasso-tui/releases/download/candidate-${candidate.version}`;
     const manifestPath = path.join(tempRoot, "candidate-manifest.json");
@@ -260,7 +267,7 @@ async function main() {
     await writeFile(reconnectPath, "ready\n", { flag: "wx" });
     stage = "reconnect";
     const connected = await probe.completed;
-    console.log(JSON.stringify({ ok: true, classification: coreRuntime.evidence === "packaged" ? "direct-release-asset-packaged-core-conpty-read" : "direct-release-asset-source-built-core-conpty-read", candidate: { version: candidate.version, sourceCommit: candidate.sourceCommit, manifestSha256: candidate.manifestSha256, archiveSha256: candidate.archiveSha256, executable: candidate.executable }, core: { evidence: coreRuntime.evidence, sourceCommit: coreRuntime.evidence === "source-built" ? coreDevelop : undefined }, platform: "win32-amd64", unavailable: "rendered", connectedDashboard: "rendered", reconnect: connected.reconnect, navigation: connected.navigation, terminal: { narrowResize: connected.narrowResize }, exit: connected.exit }));
+    console.log(JSON.stringify({ ok: true, classification: "direct-release-asset-source-built-core-conpty-read", candidate: { version: candidate.version, sourceCommit: candidate.sourceCommit, manifestSha256: candidate.manifestSha256, archiveSha256: candidate.archiveSha256, executable: candidate.executable }, core: { evidence: coreRuntime.evidence, sourceCommit: coreDevelop }, platform: "win32-amd64", unavailable: "rendered", connectedDashboard: "rendered", reconnect: connected.reconnect, navigation: connected.navigation, terminal: { narrowResize: connected.narrowResize }, exit: connected.exit }));
   } catch (error) {
     primaryError = error;
     if (stage === "core-runtime-preflight") failureReason = error instanceof CorePreflightFailure ? error.reason : "preflight_unclassified";

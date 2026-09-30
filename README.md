@@ -68,14 +68,13 @@ From a Core checkout at `10e4d72b75c66977ad1dd629991a27443ffc0fd3`:
 node scripts/verify-release-asset-conpty.mjs --core-root <path-to-pinned-core>
 ```
 
-The default preflight clones the supplied exact Core source into a temporary
-isolated checkout, runs `npm ci` and `npm run build` there, and starts that
-source-built runtime only after its required `dist/server/index.js` exists. Its
-record is labelled `direct-release-asset-source-built-core-conpty-read`; it is
-not a packaged-Core claim. A separately supplied package runtime can be probed
-only with `--core-kind packaged`, and it must already contain its package entry
-and `dist/server/index.js`; that path is labelled separately and never falls
-back to source construction.
+The preflight clones the supplied exact Core source into a temporary isolated
+checkout, runs `npm ci` and `npm run build` there, and starts that source-built
+runtime only after its required `dist/server/index.js` exists. Its record is
+labelled `direct-release-asset-source-built-core-conpty-read`; it is not a
+packaged-Core claim. Packaged-Core mode is unavailable until a separate
+installed-package contract binds package identity and digest before runtime
+startup.
 
 If that preflight fails, its closed record includes `stage:
 "core-runtime-preflight"` and a safe `reason` category only. The categories

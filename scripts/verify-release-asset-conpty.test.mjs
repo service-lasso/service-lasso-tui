@@ -4,7 +4,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertCandidateManifest, parseArgs, prepareSourceBuiltCore, verifyPackagedCore } from "./verify-release-asset-conpty.mjs";
+import { assertCandidateManifest, parseArgs, prepareCoreRuntime, prepareSourceBuiltCore, stopProbe } from "./verify-release-asset-conpty.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -34,10 +34,13 @@ test("rejects an incomplete candidate asset inventory", () => {
   assert.throws(() => assertCandidateManifest(changed), /candidate manifest/);
 });
 
-test("defaults to isolated source-built Core and accepts packaged Core only when explicitly selected", () => {
+test("requires the isolated source-built Core preflight and retains packaged selection as a closed failure", async () => {
   assert.deepEqual(parseArgs(["--core-root", "core"]), { coreRoot: path.resolve("core"), coreKind: "source-built" });
   assert.deepEqual(parseArgs(["--core-kind", "packaged", "--core-root", "core"]), { coreRoot: path.resolve("core"), coreKind: "packaged" });
-  assert.throws(() => parseArgs(["--core-kind", "source"]), /usage/);
+  await assert.rejects(
+    () => prepareCoreRuntime({ coreKind: "packaged", coreRoot: "source-shaped-checkout", tempRoot: os.tmpdir() }),
+    error => error?.reason === "packaged_runtime_invalid" && error.message === "packaged_runtime_invalid",
+  );
 });
 
 test("source Core preparation clones, pins, installs, and builds an isolated runtime before use", async () => {
@@ -77,24 +80,6 @@ test("source Core preparation clones, pins, installs, and builds an isolated run
   }
 });
 
-test("packaged Core mode rejects a missing runtime dist instead of falling back to source", async () => {
-  const tempRoot = path.join(os.tmpdir(), `tui-packaged-core-${process.pid}-${Date.now()}`);
-  await mkdir(tempRoot, { recursive: true });
-  try {
-    await mkdir(path.join(tempRoot, "packages", "core"), { recursive: true });
-    await Promise.all([
-      writeFile(path.join(tempRoot, "package.json"), "{}"),
-      writeFile(path.join(tempRoot, "packages", "core", "index.js"), ""),
-    ]);
-    await assert.rejects(
-      () => verifyPackagedCore({ coreRoot: tempRoot }),
-      error => error?.reason === "packaged_runtime_invalid",
-    );
-  } finally {
-    await rm(tempRoot, { recursive: true, force: true });
-  }
-});
-
 test("Core preflight returns closed reason categories without exposing command output", async () => {
   const tempRoot = path.join(os.tmpdir(), `tui-core-preflight-reason-${process.pid}-${Date.now()}`);
   await mkdir(tempRoot, { recursive: true });
@@ -111,6 +96,18 @@ test("Core preflight returns closed reason categories without exposing command o
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
+});
+
+test("fault cleanup terminates only the owned Windows helper tree and absorbs its probe failure", async () => {
+  const invocations = [];
+  await assert.doesNotReject(() => stopProbe({
+    child: { pid: 4242, exitCode: null, kill: () => assert.fail("Windows cleanup must use the owned tree") },
+    completed: Promise.reject(new Error("helper failed while cleaning up")),
+  }, {
+    platform: "win32",
+    taskkill: async (...args) => { invocations.push(args); },
+  }));
+  assert.deepEqual(invocations, [["taskkill", ["/pid", "4242", "/t", "/f"], { timeout: 5_000 }]]);
 });
 
 test("Windows CI executes the pinned Python ConPTY helper against a safe unavailable endpoint", async () => {

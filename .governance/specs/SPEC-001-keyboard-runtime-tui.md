@@ -87,10 +87,10 @@ mutable release selector or incomplete asset set is rejected.
 `TUI-DISTRIBUTION-002`: Windows candidate-asset ConPTY acceptance must prepare
 an isolated Core source checkout at the pinned commit with `npm ci` and
 `npm run build` before starting the source runtime, and it must fail closed if
-the required runtime dist is absent. A supplied packaged Core runtime must be
-selected explicitly and must already contain the verified package entry and
-runtime dist. Evidence records must distinguish `source-built` from
-`packaged`; source construction never establishes packaged-Core qualification.
+the required runtime dist is absent. Packaged-Core acceptance is unavailable
+until an installed-package contract verifies and binds package identity and
+digest before runtime startup. Source construction never establishes
+packaged-Core qualification.
 Before candidate acquisition, a failed Core preflight emits only a closed reason
 category (`source_identity_*`, `source_clone_failed`, `isolated_checkout_failed`,
 `isolated_identity_*`, `dependency_install_failed`, `source_build_failed`,

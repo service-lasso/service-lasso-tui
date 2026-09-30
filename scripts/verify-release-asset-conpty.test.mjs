@@ -255,6 +255,23 @@ test("the Node exit receipt consumes only this attempt's fixed helper receipt", 
   }
 });
 
+test("a spawn failure records a closed Node receipt without consuming a helper target", async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-reconnect-spawn-${process.pid}-${Date.now()}`);
+  const helperReceiptPath = path.join(tempRoot, "helper-outcome.json");
+  const nodeReceiptPath = path.join(tempRoot, "node-exit-outcome.json");
+  await mkdir(tempRoot, { recursive: true });
+  try {
+    assert.deepEqual(await persistNodeExitReceipt(tempRoot, helperReceiptPath, nodeReceiptPath, null, null, true), {
+      stage: "helper-exit", outcome: "error", closedReason: "helper_exit_spawn_error",
+    });
+    assert.deepEqual(JSON.parse(await readFile(nodeReceiptPath, "utf8")), {
+      stage: "helper-exit", outcome: "error", closedReason: "helper_exit_spawn_error",
+    });
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("receipt sinks reject foreign targets and preserve the primary failure when publication fails", async () => {
   const tempRoot = path.join(os.tmpdir(), `tui-reconnect-receipt-path-${process.pid}-${Date.now()}`);
   await mkdir(tempRoot, { recursive: true });

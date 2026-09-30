@@ -5,6 +5,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 SCRIPT = os.path.join(os.path.dirname(__file__), "verify-release-asset-conpty.py")
@@ -45,6 +46,13 @@ class ReceiptTests(unittest.TestCase):
             self.assertFalse(probe_module.write_receipt(root, receipt, "startup", "timeout", "timed_out"))
             with open(receipt, encoding="utf-8") as saved:
                 self.assertEqual(saved.read(), "foreign")
+
+    def test_link_sink_failure_leaves_no_receipt(self):
+        with tempfile.TemporaryDirectory() as root:
+            receipt = os.path.join(root, "helper-outcome.json")
+            with patch.object(probe_module.os, "link", side_effect=OSError("injected link sink failure")):
+                self.assertFalse(probe_module.write_receipt(root, receipt, "startup", "timeout", "timed_out"))
+            self.assertFalse(os.path.lexists(receipt))
 
 
 if __name__ == "__main__":

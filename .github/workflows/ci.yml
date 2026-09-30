@@ -30,6 +30,8 @@ jobs:
           go-version-file: go.mod
       - run: go test ./...
       - run: go build ./cmd/service-lasso-tui
+      - name: Test direct-probe evidence guards
+        run: node --test scripts/verify-real-core-conpty.test.mjs
   release-asset-compile:
     name: Release asset cross-compilation
     runs-on: ubuntu-latest

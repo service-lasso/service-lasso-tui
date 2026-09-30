@@ -87,14 +87,35 @@ test("fresh job binds checked source before consuming its artifact and runs the 
     writeFile(path.join(artifact, "release.json"), JSON.stringify(release)),
     ...names.map(name => writeFile(path.join(artifact, "provider-bodies", name), bodies[name])),
   ]);
-  const fixtureFetch = path.join(source, "fixture-fetch.mjs");
+  const fixtureFetch = path.join(jobRoot, "fixture-fetch.mjs");
   await writeFile(fixtureFetch, `import { appendFile, readFile } from "node:fs/promises";\nimport path from "node:path";\nconst artifact = process.env.FRESH_JOB_ARTIFACT_DIR;\nglobalThis.fetch = async (url, options) => {\n  const value = String(url);\n  await appendFile(path.join(artifact, "fetch-calls.ndjson"), JSON.stringify({ url: value, options }) + "\\n");\n  const parsed = new URL(value);\n  const name = decodeURIComponent(parsed.pathname.split("/").at(-1));\n  if (parsed.hostname === "github.com") return { status: 302, headers: { get: key => key === "location" ? \`https://release-assets.githubusercontent.com/public/\${encodeURIComponent(name)}?signature=fresh\` : null } };\n  const body = await readFile(path.join(artifact, "provider-bodies", name));\n  return { status: 200, headers: { get: key => key === "content-length" ? String(body.length) : null }, body: (async function* () { yield body; })() };\n};\n`);
   const verifier = path.join(sourceScripts, "verify-candidate-publication.mjs");
   const sourceReceipt = path.join(jobRoot, "candidate-source-binding.json");
   const artifactName = `service-lasso-tui-candidate-${version}-${sha}`;
   await run(bash, [path.join(sourceScripts, "bind-candidate-publication-source.sh"), sha, "refs/heads/develop", sourceReceipt, artifactName], { cwd: source });
   assert.deepEqual(JSON.parse(await readFile(sourceReceipt, "utf8")), { sourceRef: "refs/heads/develop", sourceCommit: sha, checkedOutCommit: sha, artifactName });
-  const preflightResult = await run(process.execPath, [verifier, "--mode", "preflight", "--source-ref", "refs/heads/develop", "--source-commit", sha, "--version", version, "--tag", tag, "--immutable-releases", path.join(artifact, "immutable-releases.json"), "--environment", path.join(artifact, "development-candidate.json"), "--branch-protection", path.join(artifact, "develop-protection.json")], { cwd: source });
+  let artifactRetrieved = false;
+  const retrieveArtifact = () => {
+    artifactRetrieved = true;
+    return artifact;
+  };
+  await writeFile(path.join(source, "unexpected-untracked-input"), "dirty\n");
+  await assert.rejects(async () => {
+    await run(bash, [path.join(sourceScripts, "bind-candidate-publication-source.sh"), sha, "refs/heads/develop", sourceReceipt, artifactName], { cwd: source });
+    retrieveArtifact();
+  }, /candidate publication source must have no tracked or untracked changes/u);
+  assert.equal(artifactRetrieved, false);
+  await rm(path.join(source, "unexpected-untracked-input"));
+  const cleanVerifier = await readFile(verifier);
+  await writeFile(verifier, `${cleanVerifier}\ntracked dirty input\n`);
+  await assert.rejects(async () => {
+    await run(bash, [path.join(sourceScripts, "bind-candidate-publication-source.sh"), sha, "refs/heads/develop", sourceReceipt, artifactName], { cwd: source });
+    retrieveArtifact();
+  }, /candidate publication source must have no tracked or untracked changes/u);
+  assert.equal(artifactRetrieved, false);
+  await writeFile(verifier, cleanVerifier);
+  const retrievedArtifact = retrieveArtifact();
+  const preflightResult = await run(process.execPath, [verifier, "--mode", "preflight", "--source-ref", "refs/heads/develop", "--source-commit", sha, "--version", version, "--tag", tag, "--immutable-releases", path.join(retrievedArtifact, "immutable-releases.json"), "--environment", path.join(retrievedArtifact, "development-candidate.json"), "--branch-protection", path.join(retrievedArtifact, "develop-protection.json")], { cwd: source });
   assert.equal(JSON.parse(preflightResult.stdout).environment, "development-candidate");
   const receiptResult = await run(process.execPath, ["--import", pathToFileURL(fixtureFetch).href, verifier, "--mode", "receipt", "--source-ref", "refs/heads/develop", "--source-commit", sha, "--version", version, "--tag", tag, "--manifest", path.join(artifact, "candidate-manifest.json"), "--release", path.join(artifact, "release.json"), "--local-assets", path.join(artifact, "candidate-local-assets.json"), "--download-dir", path.join(jobRoot, "public-receipt")], { cwd: source, env: { ...process.env, FRESH_JOB_ARTIFACT_DIR: artifact } });
   assert.equal(JSON.parse(receiptResult.stdout).verified.length, 6);

@@ -8,4 +8,4 @@ Issue #18 adds source controls only. The following GitHub settings are proposals
 
 After an owner applies the settings, read them through GitHub before dispatching. The workflow independently reads `immutable-releases`, `environments/development-candidate`, and `branches/develop/protection` immediately before creating a draft release. Missing access or an unexpected response fails closed.
 
-The workflow never sends an authorization header to a download URL. It uses the workflow token only through GitHub's upload/API clients, and its testable transport policy permits headerless retrieval only from `github.com`, `github-releases.githubusercontent.com`, and `objects.githubusercontent.com` over HTTPS without URL credentials.
+The workflow never sends an authorization header to a download URL. It uses the workflow token only through GitHub's upload/API clients, and its testable transport policy permits headerless retrieval only from `github.com`, `github-releases.githubusercontent.com`, `objects.githubusercontent.com`, and `release-assets.githubusercontent.com` over HTTPS without URL credentials.

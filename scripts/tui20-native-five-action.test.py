@@ -33,6 +33,18 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertIn('runtimePathReceipt', source)
         self.assertIn('corePathReadback', source)
 
+    def test_posix_harness_uses_a_real_pty_and_retains_the_required_boundaries(self):
+        source = pathlib.Path(__file__).with_name("tui20-native-posix-five-action.py").read_text(encoding="utf-8")
+        ast.parse(source)
+        self.assertIn("pty.openpty()", source)
+        self.assertIn('"terminal_exited_zero"', source)
+        self.assertIn('os.open(executable,os.O_RDONLY)', source)
+        self.assertIn('"adverseAudit"', source)
+        self.assertIn('"completedOperationNoReplay":True', source)
+        self.assertIn('"unrelatedService"', source)
+        self.assertIn('"blocked_core_1553_no_adapter"', source)
+        self.assertNotIn("private-token.json", source)
+
 
 if __name__ == "__main__":
     unittest.main()

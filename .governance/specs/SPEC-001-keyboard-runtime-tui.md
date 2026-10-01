@@ -64,6 +64,22 @@ API state. It retains only closed-schema, metadata-only results and removes all
 temporary state. It does not autostart a managed Core service, persist operator
 credentials, perform a lifecycle mutation, or establish cross-platform, release,
 deployment, or GA acceptance.
+
+`TUI-ACCEPTANCE-002`: Linux and macOS lifecycle acceptance builds the TUI in a
+clean native checkout and builds the exact Core source
+`2633c07be25512d0a84f9bfa28de6be5edff35e8` with `npm ci` and `npm run build`.
+Before every Core Node invocation it sets distinct owned workspace, instance
+registry, and host-port registry paths. A real POSIX PTY drives install,
+config, start, stop, and restart through the guarded Core API, confirms the
+frozen preview once, and reconnects only to read a completed operation. It
+retains true terminal exit classifications, exact binary VCS provenance,
+Core-owned path readback, zero-operation adverse receipts and direct audit
+counts, and an unchanged named unrelated-service state. It does not replace
+Core with a mock, cross-compile a binary, derive persistent identity from a
+profile or credential, or claim pending reconciliation while Core #1553 lacks
+its reviewed adapter. Hosted runner availability remains direct native evidence
+only when the complete workflow succeeds; any unavailable or failed receipt is
+classified Blocked.
 It labels the result `win32-amd64` only after the Windows host, Node process,
 and Python/ConPTY helper report AMD64. This remains local direct-only evidence:
 bounded Windows CI dependency installation changes the pinned Core checkout,

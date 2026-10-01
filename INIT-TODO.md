@@ -19,6 +19,11 @@
 retained native fixture remains partial evidence and its restart readback
 failure has a causal Core-audit/registry diagnosis; pending reconciliation is
   separately blocked on Core #1553 and Linux/macOS native journeys remain open.
+- [ ] Run the Issue #20 Linux and macOS POSIX-PTY workflow against the clean,
+  pinned Core `2633c07be25512d0a84f9bfa28de6be5edff35e8`. The workflow must build
+  both source trees on its native host, set all three owned Core paths before
+  every Node invocation, retain closed terminal exits and metadata-only receipts,
+  and classify a missing hosted receipt as blocked rather than accepted.
 - [x] Issue #7 verified Core `develop` GET routes for capability/setup metadata,
   authenticated runtime identity, inbox list, and service health history. The
   TUI consumes only bounded display fields and no inbox detail or mutation.

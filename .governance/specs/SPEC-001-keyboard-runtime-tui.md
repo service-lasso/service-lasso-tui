@@ -111,6 +111,16 @@ source inode in place after the immutable execution object exists and proves
 the launch still reaches the verified object; it restores the source byte
 before proceeding. If a platform cannot establish and read back that mechanism,
 the lifecycle result is Blocked.
+When bounded terminal observation expires, the helper must not exit while it
+still owns the PTY, immutable execution object, or Core/JWKS parent lifecycle.
+It writes only a closed unresolved receipt and transfers no descriptor-based
+claim across a process boundary. A live external recovery parent retains those
+objects and the Core/JWKS parent until it directly observes the child exit,
+then writes the final child and cleanup receipts. `waitpid` ownership loss
+(`ECHILD`/`ChildProcessError`) is an unowned, reaped, unresolved outcome; it
+is never a successful terminal exit and must not overwrite the primary
+receipt. The native harness test guard and native workflow both exercise an
+adverse live-child recovery and an externally reaped child.
 It labels the result `win32-amd64` only after the Windows host, Node process,
 and Python/ConPTY helper report AMD64. This remains local direct-only evidence:
 bounded Windows CI dependency installation changes the pinned Core checkout,

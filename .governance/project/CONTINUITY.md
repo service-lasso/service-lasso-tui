@@ -5,6 +5,21 @@ request. Record a checkpoint when API contracts, launch packaging, ownership,
 or validation state changes. Store durable decisions in governance artifacts;
 do not rely on terminal history or an uncommitted local state.
 
+## 2026-10-02: PR #22 external recovery ownership checkpoint
+
+The `d9570fd` helper-only timeout handling is not durable recovery: returning
+or raising from that helper closes its owned PTY and immutable execution-object
+descriptors and allows the JavaScript parent to stop Core and JWKS while the
+terminal child may still be live. The repair must keep a real parent process
+live with authority over the child, PTY, execution object, and Core/JWKS
+lifecycle until it directly observes exit. It may write a bounded closed
+unresolved receipt while waiting, but must not force exit, widen deadlines, or
+claim an in-process descriptor survives process exit. `ECHILD` and
+`ChildProcessError` mean ownership was lost to reaping: retain the primary
+result, record an unresolved recovery outcome, and do not suppress the primary
+failure in finalization. The guarded Python harness must be wired into source
+CI and include real process-level live-child and reaped-child observations.
+
 ## 2026-10-01: PR #15 exact-head and unavailable observation checkpoint
 
 Natural PR run `36766315178` built and retained source `d51d1c82d884aa3bc5fa3e1707860c914634b64e`, a provider-generated merge commit, because the workflow used the default pull-request checkout. Its retained executable SHA-256 is `a34f4475ad5ea5bcb134dd8329986c1187710187082018485ddb0c8f2bceb05c`. The direct invalid-URL assertion passed for those held bytes; the following ConPTY unavailable probe returned only the closed `startup` / `timeout` / `timed_out` receipt. A controlled local replay of that same digest found the visible unavailable/retry frame and a clean `q` exit; its `q quit` footer was clipped from the terminal capture and was not a valid readiness predicate. The repaired bounded probe requires visible unavailable/retry labels and `q` exit; the TUI's retry transition remains covered by its state tests because this terminal renderer does not emit a separately readable redraw for an equivalent retry outcome. No terminal text, token, nonce, URL, or exception was retained. Repair scope is explicit head checkout and provenance binding, plus this retained executable replay before any rebuild. This preserves the failure and does not establish runtime acceptance, candidate qualification, release, deployment, or GA.

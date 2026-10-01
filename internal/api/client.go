@@ -459,12 +459,26 @@ func safePhrase(value string) bool {
 	return len(value) >= 10 && len(value) <= 200 && !strings.ContainsAny(value, "\r\n\x1b")
 }
 func safeTargetEffects(targets, effects []string) bool {
-	if len(targets) == 0 || len(targets) > 100 || len(effects) > 100 {
+	if len(targets) == 0 || len(targets) > 100 || len(effects) == 0 || len(effects) > 100 {
 		return false
 	}
-	for _, value := range append(append([]string{}, targets...), effects...) {
+	for _, value := range targets {
 		if !safeIdentifier(value, 128) {
 			return false
+		}
+	}
+	for _, effect := range effects {
+		// Core's preflight effects are operator-facing descriptions, not
+		// identifiers. Admit bounded printable ASCII so the detail screen can
+		// render the authoritative preview while still rejecting terminal
+		// controls and multi-line payloads.
+		if len(effect) == 0 || len(effect) > 240 {
+			return false
+		}
+		for _, character := range effect {
+			if character < 0x20 || character > 0x7e {
+				return false
+			}
 		}
 	}
 	return true

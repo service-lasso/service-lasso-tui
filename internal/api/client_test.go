@@ -307,7 +307,7 @@ func TestDurableLifecycleUsesPreviewOneFrozenSubmitAndSafeReadback(t *testing.T)
 				_, _ = w.Write([]byte(`{"accepted":true,"operation":{"operationId":"mcp-operation-12345678","action":"` + coreAction + `","status":"running","phase":"executing","progress":50,"outcome":null,"cancellationSupported":false,"ownership":"own","summary":"SECRET /private/path"}}`))
 				return
 			}
-			_, _ = w.Write([]byte(`{"action":"` + coreAction + `","preflight":{"targets":["echo"],"effects":["` + action + `"]},"confirmation":{"id":"mcp-confirmation-12345678","status":"pending","confirmationPhrase":"confirm ` + action + `"}}`))
+			_, _ = w.Write([]byte(`{"action":"` + coreAction + `","preflight":{"targets":["echo"],"effects":["The runtime will apply the requested lifecycle action."]},"confirmation":{"id":"mcp-confirmation-12345678","status":"pending","confirmationPhrase":"confirm ` + action + `"}}`))
 		case "/api/operator/lifecycle/operations/mcp-operation-12345678":
 			_, _ = w.Write([]byte(`{"operation":{"operationId":"mcp-operation-12345678","action":"service_start","status":"succeeded","phase":"completed","progress":100,"outcome":"succeeded","cancellationSupported":false,"ownership":"own","summary":"SECRET /private/path"}}`))
 		default:
@@ -345,6 +345,17 @@ func TestDurableLifecycleUsesPreviewOneFrozenSubmitAndSafeReadback(t *testing.T)
 	}
 	if got := submits.Load(); got != int32(len(workflows)) {
 		t.Fatalf("submit count = %d, want %d", got, len(workflows))
+	}
+}
+
+func TestSafeTargetEffectsAcceptsCorePreviewTextAndRejectsTerminalControls(t *testing.T) {
+	if !safeTargetEffects([]string{"node-sample-service"}, []string{"No materialized config file changes are expected."}) {
+		t.Fatal("valid Core preview effect was rejected")
+	}
+	for _, effect := range []string{"", "line one\nline two", "unsafe\x1b[2J", "\u0080"} {
+		if safeTargetEffects([]string{"node-sample-service"}, []string{effect}) {
+			t.Fatalf("unsafe preview effect was accepted: %q", effect)
+		}
 	}
 }
 

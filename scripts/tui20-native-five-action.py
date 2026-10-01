@@ -87,6 +87,8 @@ def action(process, transcript, transcript_path, key, name):
 
 
 def close_terminal(process):
+    if not process.isalive():
+        return
     process.write("q")
     deadline = time.monotonic() + 10
     while process.isalive() and time.monotonic() < deadline:
@@ -151,7 +153,7 @@ def main():
     try:
         missing = open_terminal(args.executable, "missing", env); terminals.append(missing)
         missing_transcript = [""]
-        wait_for(missing, ("Runtime API unavailable:",), 30, missing_transcript, transcript_path, "missing-credential")
+        wait_for(missing, ('connection profile "missing" credential is unavailable',), 30, missing_transcript, transcript_path, "missing-credential")
         close_terminal(missing); terminals.remove(missing)
 
         invalid = open_terminal(args.executable, "invalid", env); terminals.append(invalid)

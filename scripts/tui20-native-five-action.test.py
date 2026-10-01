@@ -11,6 +11,7 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertIn('append_terminal(transcript_path, label, chunk)', source)
         self.assertIn('"operationId": record.get("operationId")', source)
         self.assertIn('"reconnectNoReplay": True', source)
+        self.assertIn('connection profile "missing" credential is unavailable', source)
 
     def test_core_fixture_defines_only_owned_profiles_and_services(self):
         source = pathlib.Path(__file__).with_name("tui20-native-core.mjs").read_text(encoding="utf-8")

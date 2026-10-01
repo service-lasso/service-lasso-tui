@@ -37,14 +37,22 @@ unavailable-state probe. They do not establish an authenticated Core lifecycle
 operation, packaged candidate acceptance, release qualification, deployment,
 or GA.
 
-For a direct current-Core check, an owned detached checkout at
-`93d9d343a058d296069c017d17f4f8d1fc1505ea` was built after a clean
-dependency installation. Its `tests/durable-lifecycle-http.test.js` attempt
-reached the real lifecycle server startup path. One cross-process claim-window
-case passed. Two cases stopped before fixture operation execution because the
-shared host registry exceeded its bounded size. The registry was not reset,
-replaced, redirected, or otherwise mutated. This is a failed direct-Core
-receipt, not a TUI/Core acceptance result.
+For a direct current-Core check, owned detached checkouts at
+`93d9d343a058d296069c017d17f4f8d1fc1505ea` were built after clean dependency
+installations. The initial shared-registry attempt failed before fixture
+execution and is retained as failed evidence. A later run used fresh owned
+`SERVICE_LASSO_WORKSPACE_ROOT`, `SERVICE_LASSO_INSTANCE_REGISTRY_PATH`, and
+`SERVICE_LASSO_HOST_PORT_REGISTRY_PATH` values. Its durable HTTP suite passed
+nine of ten cases, including confirmation, idempotency, readback, safe
+cancellation, actor scoping, restart recovery, and redaction. The remaining
+case failed only while removing its own temporary fixture directory with
+`ENOTEMPTY`; no shared registry or service state was changed.
+
+The current-Core Windows ConPTY read harness also refused before launch on
+this host because the locally built TUI binary did not carry the required
+clean VCS build metadata. The script therefore produced no false compiled-TUI
+receipt. The hosted exact-head builds remain the available native compilation
+evidence.
 
 ## Required next evidence
 

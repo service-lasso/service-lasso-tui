@@ -9,18 +9,24 @@ import test from "node:test";
 
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 
-test("external parent keeps its helper alive through a live child and records reaped ownership loss", { skip: process.platform === "win32" }, async () => {
+test("external recovery owner keeps live PTY, sealed execution, Core, and JWKS after helper crash", { skip: process.platform !== "linux" }, async () => {
   const root = await mkdtemp(path.join(tmpdir(), "tui20-recovery-process-"));
   try {
     const child = spawn(process.execPath, [path.join(scripts, "tui20-native-core.mjs"), "--root", root, "--recovery-self-test", "--helper", path.join(scripts, "tui20-native-posix-five-action.py")], { stdio: "inherit" });
     const [code, signal] = await once(child, "exit");
     assert.equal(code, 0); assert.equal(signal, null);
-    const [helper, parent] = await Promise.all(["recovery-process-proof.json", "recovery-parent-proof.json"].map(async name => JSON.parse(await readFile(path.join(root, name), "utf8"))));
-    assert.equal(helper.childLiveAtUnresolvedReceipt, true);
-    assert.equal(helper.ownedExitObserved, "terminal_exited_zero");
-    assert.equal(helper.reapedChildOutcome, "terminal_unknown");
-    assert.equal(helper.reapedChildRecovery, "child_reaped_unowned");
-    assert.equal(parent.helperExitObserved, true);
-    assert.equal(parent.coreStopRequestedAfterHelperExit, true);
+    const [owner, parent, unresolved] = await Promise.all(["recovery-owner-proof.json", "recovery-parent-proof.json", "recovery-unresolved-receipt.json"].map(async name => JSON.parse(await readFile(path.join(root, name), "utf8"))));
+    assert.equal(owner.helperCrashObserved, true);
+    assert.equal(owner.childLiveAfterHelperCrash, true);
+    assert.equal(owner.ptyHeldAfterHelperCrash, true);
+    assert.equal(owner.immutableExecutionHeld, true);
+    assert.equal(owner.dependenciesLiveAfterHelperCrash, true);
+    assert.equal(owner.ownedExitObserved, "terminal_exited_zero");
+    assert.equal(owner.reapedChildOutcome, "terminal_unknown");
+    assert.equal(owner.reapedChildRecovery, "child_reaped_unowned");
+    assert.equal(unresolved.recoveryRetained, true);
+    assert.equal(parent.recoveryOwnerExitObserved, true);
+    assert.equal(parent.coreStopAfterOwnerExit, true);
+    assert.equal(parent.jwksStopAfterOwnerExit, true);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

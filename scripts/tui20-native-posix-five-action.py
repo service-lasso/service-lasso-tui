@@ -333,7 +333,7 @@ def action(term,key,name):
         term.read()
     raise RuntimeError("retained operation readback unavailable")
 def recovery_self_test(root):
-    """Real process proof: helper keeps the live PTY child until observed."""
+    """Legacy owner-only process probe retained for source-level reaped-child coverage."""
     os.makedirs(root,exist_ok=True)
     master,slave=pty.openpty(); pid=os.fork()
     if pid==0:
@@ -352,6 +352,47 @@ def recovery_self_test(root):
     except ChildReapedUnowned: pass
     else: raise RuntimeError("controlled reaped child was treated as terminal")
     write_json(os.path.join(root,"recovery-process-proof.json"),{"helperPID":os.getpid(),"childPID":pid,"childLiveAtUnresolvedReceipt":True,"ownedExitObserved":terminal_exit_reason(observed),"reapedChildOutcome":"terminal_unknown","reapedChildRecovery":"child_reaped_unowned"})
+def recovery_dependency_live(url,name):
+    """Read a dependency-owned loopback endpoint without retaining its address or body."""
+    with urllib.request.urlopen(url,timeout=2) as response:
+        value=json.load(response)
+    if value!={"owner":"tui20-external-recovery-parent","dependency":name}: raise RuntimeError("external recovery dependency ownership unavailable")
+def recovery_immutable_execution():
+    """The recovery owner, not the failed helper, holds this sealed launch object."""
+    if sys_platform()!="linux" or not hasattr(os,"memfd_create"): raise RuntimeError("external recovery process proof requires Linux sealed execution")
+    sealed=os.memfd_create("tui20-external-recovery-owner",os.MFD_ALLOW_SEALING)
+    try:
+        os.write(sealed,b"tui20 external recovery execution object\n")
+        seals=fcntl.F_SEAL_WRITE|fcntl.F_SEAL_GROW|fcntl.F_SEAL_SHRINK|fcntl.F_SEAL_SEAL
+        fcntl.fcntl(sealed,fcntl.F_ADD_SEALS,seals)
+        if fcntl.fcntl(sealed,fcntl.F_GET_SEALS)&seals!=seals: raise RuntimeError("external recovery immutable execution unavailable")
+        return sealed,seals
+    except Exception:
+        os.close(sealed); raise
+def recovery_owner_self_test(root,core_url,jwks_url):
+    """Prove a crashed helper cannot tear down the distinct PTY/resource owner."""
+    os.makedirs(root,exist_ok=True)
+    master,slave=pty.openpty(); sealed,seals=recovery_immutable_execution(); pid=os.fork()
+    if pid==0:
+        os.close(master); time.sleep(.25); os.close(slave); os._exit(0)
+    os.close(slave); live=BoundProcess(pid)
+    helper=subprocess.Popen([sys.executable,"-c","import os,signal; os.kill(os.getpid(),signal.SIGKILL)"])
+    helper_status=helper.wait()
+    if helper_status>=0: raise RuntimeError("controlled recovery helper did not crash")
+    try: live.wait(.01); raise RuntimeError("controlled child exited before helper-failure observation")
+    except subprocess.TimeoutExpired: pass
+    if live.poll() is not None or live.reaped_unowned: raise RuntimeError("controlled child was not live after helper crash")
+    try: os.fstat(master)
+    except OSError as error: raise RuntimeError("recovery owner lost PTY after helper crash") from error
+    if fcntl.fcntl(sealed,fcntl.F_GET_SEALS)&seals!=seals: raise RuntimeError("recovery owner lost immutable execution after helper crash")
+    recovery_dependency_live(core_url,"core"); recovery_dependency_live(jwks_url,"jwks")
+    write_json(os.path.join(root,"recovery-unresolved-receipt.json"),{"outcome":"failed","closedReason":"live_child_unresolved","recoveryRetained":True})
+    observed=live.wait_until_observed(); os.close(master); os.close(sealed)
+    reaped_pid=os.fork()
+    if reaped_pid==0: os._exit(0)
+    os.waitpid(reaped_pid,0); reaped=BoundProcess(reaped_pid)
+    if reaped.poll() is not None or not reaped.reaped_unowned: raise RuntimeError("controlled reaped child was not classified")
+    write_json(os.path.join(root,"recovery-owner-proof.json"),{"recoveryOwnerPID":os.getpid(),"failedHelperPID":helper.pid,"helperCrashObserved":True,"childPID":pid,"childLiveAfterHelperCrash":True,"ptyHeldAfterHelperCrash":True,"immutableExecutionHeld":True,"dependenciesLiveAfterHelperCrash":True,"ownedExitObserved":terminal_exit_reason(observed),"reapedChildOutcome":"terminal_unknown","reapedChildRecovery":"child_reaped_unowned"})
 def retain_primary_and_recover(root,outcome,terminal):
     """Persist an unresolved primary while its helper still owns recovery."""
     terminal.exit_reason=terminal.exit_reason or "terminal_unknown"
@@ -362,7 +403,10 @@ def retain_primary_and_recover(root,outcome,terminal):
     return True
 def main():
     OWNED_TERMINALS.clear()
-    parser=argparse.ArgumentParser(); parser.add_argument("--root",required=True); parser.add_argument("--executable"); parser.add_argument("--source-commit"); parser.add_argument("--core-commit"); parser.add_argument("--recovery-self-test",action="store_true"); args=parser.parse_args()
+    parser=argparse.ArgumentParser(); parser.add_argument("--root",required=True); parser.add_argument("--executable"); parser.add_argument("--source-commit"); parser.add_argument("--core-commit"); parser.add_argument("--recovery-self-test",action="store_true"); parser.add_argument("--recovery-owner-self-test",action="store_true"); parser.add_argument("--core-url"); parser.add_argument("--jwks-url"); args=parser.parse_args()
+    if args.recovery_owner_self_test:
+        if not args.core_url or not args.jwks_url: raise RuntimeError("external recovery dependency endpoints are required")
+        recovery_owner_self_test(args.root,args.core_url,args.jwks_url); return
     if args.recovery_self_test: recovery_self_test(args.root); return
     if not args.executable or not args.source_commit or not args.core_commit: raise RuntimeError("native executable and source identities are required")
     with open(os.path.join(args.root,"ready.json"),encoding="utf-8") as stream: ready=json.load(stream)

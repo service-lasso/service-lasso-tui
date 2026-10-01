@@ -13,9 +13,22 @@ const helperArgument = arg("--helper");
 const helper = helperArgument ? path.resolve(helperArgument) : path.join(path.dirname(fileURLToPath(import.meta.url)), "tui20-native-five-action.py");
 if (arg("--recovery-self-test")) {
   await mkdir(root, { recursive: true });
-  const child = spawn(python, [helper, "--root", root, "--recovery-self-test"], { stdio: "inherit" });
+  const listener = (name) => createServer((req, res) => {
+    if (req.url !== `/${name}`) { res.statusCode = 404; res.end(); return; }
+    res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ owner: "tui20-external-recovery-parent", dependency: name }));
+  });
+  const startListener = async (name) => {
+    const server = listener(name); server.listen(0, "127.0.0.1"); await once(server, "listening");
+    const address = server.address(); if (!address || typeof address === "string") throw new Error(`${name} listener unavailable`);
+    return { name, server, url: `http://127.0.0.1:${address.port}/${name}`, port: address.port };
+  };
+  const [coreDependency, jwksDependency] = await Promise.all([startListener("core"), startListener("jwks")]);
+  const child = spawn(python, [helper, "--root", root, "--recovery-owner-self-test", "--core-url", coreDependency.url, "--jwks-url", jwksDependency.url], { stdio: "inherit" });
   const [code, signal] = await once(child, "exit");
-  await writeFile(path.join(root, "recovery-parent-proof.json"), JSON.stringify({ helperExitObserved: true, helperExit: Number.isInteger(code) ? code : null, helperSignal: signal ?? null, coreStopRequestedAfterHelperExit: true }), { encoding: "utf8", mode: 0o600 });
+  const ownerProof = JSON.parse(await readFile(path.join(root, "recovery-owner-proof.json"), "utf8"));
+  if (!ownerProof.helperCrashObserved || !ownerProof.childLiveAfterHelperCrash || !ownerProof.immutableExecutionHeld || !ownerProof.dependenciesLiveAfterHelperCrash || ownerProof.ownedExitObserved !== "terminal_exited_zero") throw new Error("external recovery owner proof is incomplete");
+  await new Promise((resolve) => coreDependency.server.close(resolve)); await new Promise((resolve) => jwksDependency.server.close(resolve));
+  await writeFile(path.join(root, "recovery-parent-proof.json"), JSON.stringify({ recoveryOwnerExitObserved: true, recoveryOwnerExit: Number.isInteger(code) ? code : null, recoveryOwnerSignal: signal ?? null, corePort: coreDependency.port, jwksPort: jwksDependency.port, coreStopAfterOwnerExit: true, jwksStopAfterOwnerExit: true }), { encoding: "utf8", mode: 0o600 });
   process.exitCode = code ?? 1;
 } else {
 if (!executable || !sourceCommit) throw new Error("executable and source commit are required");
@@ -51,8 +64,8 @@ const corePathReadback = async () => {
 };
 const runtimePathReceipt = await corePathReadback();
 await writeFile(path.join(root, "ready.json"), JSON.stringify({ coreCommit, runtimePathReceipt }), { encoding: "utf8", mode: 0o600 });
-const child = spawn(python, [helper, "--root", root, "--executable", executable, "--source-commit", sourceCommit, "--core-commit", coreCommit], { stdio: "inherit", env: { ...process.env, SERVICE_LASSO_TUI20_TOKEN: token, SERVICE_LASSO_TUI20_DENIED_TOKEN: deniedToken, SERVICE_LASSO_TUI20_API_URL: server.url } });
-const [code, signal] = await once(child, "exit");
-await writeFile(path.join(root, "core-parent-exit.json"), JSON.stringify({ childExit: Number.isInteger(code) ? code : null, childSignal: signal ?? null, coreStopRequested: true }), { encoding: "utf8", mode: 0o600 });
+const recoveryOwner = spawn(python, [helper, "--root", root, "--executable", executable, "--source-commit", sourceCommit, "--core-commit", coreCommit], { stdio: "inherit", env: { ...process.env, SERVICE_LASSO_TUI20_TOKEN: token, SERVICE_LASSO_TUI20_DENIED_TOKEN: deniedToken, SERVICE_LASSO_TUI20_API_URL: server.url } });
+const [code, signal] = await once(recoveryOwner, "exit");
+await writeFile(path.join(root, "core-parent-exit.json"), JSON.stringify({ recoveryOwnerExit: Number.isInteger(code) ? code : null, recoveryOwnerSignal: signal ?? null, coreStopAfterRecoveryOwnerExit: true }), { encoding: "utf8", mode: 0o600 });
 await server.stop(); await new Promise((resolve) => jwks.close(resolve)); process.exitCode = code ?? 1;
 }

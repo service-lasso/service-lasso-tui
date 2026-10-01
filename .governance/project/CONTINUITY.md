@@ -22,18 +22,32 @@ CI and include real process-level live-child and reaped-child observations.
 
 ## 2026-10-02: PR #22 recovery repair evidence checkpoint
 
-PR #22 head `9f39cfe05835c9dca6b2430d1379dffac840c06d` replaces the helper-only
-retention path with an external JavaScript parent that keeps Core and JWKS live
-until the Python owner exits, while the Python owner retains its PTY and
-immutable execution object until it directly observes the terminal child. The
-source guard launches those three processes plus a real reaped-child case;
-live observation yields `terminal_exited_zero`, while the reaped case stays
-`terminal_unknown` with `child_reaped_unowned`. Finalization now refuses a live
-child without that recovery owner. Local source guards passed (19 Python
-receipt checks, 10 native-harness checks with platform skips, and 52 Node
-checks); they are source evidence only. Exact-head hosted Linux and macOS
-native PTY/action/hash/exit/adverse receipts remain queued and are required
-before native acceptance can be claimed.
+PR #22 head `9f39cfe05835c9dca6b2430d1379dffac840c06d` is an incomplete
+recovery repair. Its JavaScript parent waits for a Python helper and then
+unconditionally stops Core and JWKS. The Python helper is also the only owner
+of the PTY and immutable execution object, so a helper crash can still release
+all three while its terminal child remains live. The existing self-test starts
+no Core or JWKS dependency and asserts a parent declaration rather than their
+observed liveness.
+
+The active repair creates a distinct Python recovery owner. The owner holds
+the PTY and platform immutable execution object, directly observes its child,
+and remains alive after a separately launched helper exits abnormally. The
+JavaScript parent retains Core and JWKS until that owner writes an
+owned-exit-or-unowned-reap outcome. The adverse guard must prove a live child,
+held immutable resource, and live Core/JWKS endpoints after helper failure,
+then prove natural owned exit before dependency cleanup. `ECHILD` stays an
+unowned `terminal_unknown` result and does not replace the primary receipt.
+This is source guard work only; exact-head hosted Linux and macOS native
+PTY/action/hash/exit/adverse receipts remain required before native acceptance
+can be claimed.
+
+Local Windows source checks completed for this repair: 29 Python receipt and
+native-harness checks, 52 Node checks, and the Go suite/build passed. The
+process-level guard is intentionally Linux-only because it requires a real
+sealed `memfd`; it was skipped on this Windows checkout. CI invokes the guard,
+and native artifacts retain any recovery receipts it produces. A queued or
+failed hosted run remains blocked evidence, not native acceptance.
 
 ## 2026-10-01: PR #15 exact-head and unavailable observation checkpoint
 

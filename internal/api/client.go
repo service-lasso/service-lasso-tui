@@ -339,7 +339,9 @@ func (c *Client) LifecycleAvailability(ctx context.Context, serviceID string) ([
 	}
 	actions := make([]LifecycleAvailability, 0, len(result.Actions))
 	for _, entry := range result.Actions {
-		if !isDurableAction(entry.Action) || !safeIdentifier(entry.Permission, 96) {
+		if (!isDurableAction(entry.Action) && entry.Action != "reload") ||
+			(entry.Action == "reload" && entry.Available) ||
+			!safeIdentifier(entry.Permission, 96) {
 			return nil, fmt.Errorf("invalid lifecycle availability response")
 		}
 		reason := ""

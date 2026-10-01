@@ -287,7 +287,7 @@ func TestDurableLifecycleUsesPreviewOneFrozenSubmitAndSafeReadback(t *testing.T)
 		}
 		switch r.URL.Path {
 		case "/api/operator/lifecycle/services/echo/availability":
-			_, _ = w.Write([]byte(`{"actions":[{"action":"install","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"config","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"start","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"stop","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"restart","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true}]}`))
+			_, _ = w.Write([]byte(`{"actions":[{"action":"install","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"config","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"start","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"stop","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"restart","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"reload","available":false,"reason":"durable_operation_unavailable","permission":"service-lasso:lifecycle:write","requiresConfirmation":false}]}`))
 		case "/api/operator/lifecycle/operations":
 			var body map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&body)
@@ -320,7 +320,7 @@ func TestDurableLifecycleUsesPreviewOneFrozenSubmitAndSafeReadback(t *testing.T)
 		t.Fatal(err)
 	}
 	actions, err := client.LifecycleAvailability(context.Background(), "echo")
-	if err != nil || len(actions) != len(workflows) || !actions[0].Available {
+	if err != nil || len(actions) != len(workflows)+1 || !actions[0].Available || actions[len(actions)-1].Action != "reload" || actions[len(actions)-1].Available {
 		t.Fatalf("availability = %#v, %v", actions, err)
 	}
 	for _, workflow := range workflows {

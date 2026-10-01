@@ -32,7 +32,9 @@ def start_runtime(args):
     runtime=subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     ready_stream,_,_=select.select([runtime.stdout],[],[],10)
     if not ready_stream:
-        try: runtime.stdin.write("close\n"); runtime.stdin.flush(); runtime.wait()
+        try:
+            birth=process_birth(runtime.pid); result=close_runtime(runtime)
+            write_json(os.path.join(args.root,"owner-runtime-recovery.json"),{"outcome":"observed_closed","runtimePID":runtime.pid,"runtimeBirth":birth,**result})
         except Exception: pass
         raise RuntimeError("actual Core/JWKS runtime ready handoff timed out")
     try: ready=json.loads(runtime.stdout.readline())
@@ -81,7 +83,7 @@ def main():
         tuple_value.update({"tuiChildPID":live.get("tuiChildPID"),"tuiChildBirth":live.get("tuiChildBirth"),"phase":live.get("phase")})
     close={**tuple_value,"recoveryOwnerActualExit":status if status>=0 else None,"recoveryOwnerActualSignal":-status if status<0 else None,"actualWaitObserved":True}
     write_json(os.path.join(args.root,"owner-close.json"),close)
-    if status != 0:
+    if status != 0 and (status < 0 or (live is not None and live.get("phase")=="owner_death_live")):
         externally_reaped=False
         if live is not None and isinstance(live.get("tuiChildPID"),int):
             deadline=time.monotonic()+15
@@ -92,6 +94,17 @@ def main():
         except Exception: core_live=False
         write_json(os.path.join(args.root,"owner-death-recovery.json"),{**tuple_value,"outcome":"unresolved","ownerUnexpectedDeath":True,"terminal":"terminal_unknown","actualTuiExternallyReaped":externally_reaped,"coreAndJwksLiveAfterOwnerDeath":core_live,"runtimeRetained":runtime.poll() is None,"actualRuntimeExitObserved":False})
         raise SystemExit(1)
+    if status != 0:
+        # A reported harness/preflight failure is not an owner-death claim. The
+        # observer still owns the actual runtime and can close it only after
+        # directly observing the failed owner and its closed primary receipt.
+        result=close_runtime(runtime)
+        if args.invalid_ready_receipt:
+            write_json(os.path.join(args.root,"owner-preflight-cleanup.json"),{"outcome":"failed","preflight":"runtime_receipt_invalid","ownerDrivenRuntimeShutdown":result["shutdownRequested"],**result,"retainedOwnedRuntime":False})
+        else:
+            write_json(os.path.join(args.root,"owner-runtime-recovery.json"),{"outcome":"observed_closed","runtimePID":runtime.pid,"runtimeBirth":runtime_birth,**result})
+        write_json(os.path.join(args.root,"core-parent-exit.json"),{**tuple_value,**result,"coreStopAfterVerifiedOwnerTerminalReceipt":False})
+        raise SystemExit(status)
     if live is not None and live.get("phase")!="normal_q_exit": raise RuntimeError("normal owner exit lacks a natural TUI terminal phase")
     result=close_runtime(runtime)
     write_json(os.path.join(args.root,"core-parent-exit.json"),{**tuple_value,**result,"coreStopAfterVerifiedOwnerTerminalReceipt":True})

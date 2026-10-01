@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -39,34 +40,39 @@ type durableFake struct {
 // read through the retained client without another lifecycle mutation.
 type recordingDurableClient struct {
 	fakeClient
-	mu                sync.Mutex
-	availability      []api.LifecycleAvailability
-	preview           api.LifecyclePreview
-	submittedPreview  api.LifecyclePreview
-	operation         api.Operation
-	availabilityErr   error
-	previewErr        error
-	submitErr         error
-	operationErr      error
-	cancelErr         error
-	availabilityCalls int
-	previewCalls      int
-	submitCalls       int
-	operationCalls    int
-	cancelCalls       int
-	reconciliation    string
+	mu                  sync.Mutex
+	availability        []api.LifecycleAvailability
+	preview             api.LifecyclePreview
+	submittedPreview    api.LifecyclePreview
+	operation           api.Operation
+	availabilityErr     error
+	previewErr          error
+	submitErr           error
+	operationErr        error
+	cancelErr           error
+	availabilityCalls   int
+	previewCalls        int
+	submitCalls         int
+	operationCalls      int
+	cancelCalls         int
+	availabilityService string
+	previewService      string
+	previewAction       string
+	reconciliation      string
 }
 
-func (c *recordingDurableClient) LifecycleAvailability(context.Context, string) ([]api.LifecycleAvailability, error) {
+func (c *recordingDurableClient) LifecycleAvailability(_ context.Context, serviceID string) ([]api.LifecycleAvailability, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.availabilityCalls++
+	c.availabilityService = serviceID
 	return c.availability, c.availabilityErr
 }
-func (c *recordingDurableClient) PreviewLifecycle(context.Context, string, string) (api.LifecyclePreview, error) {
+func (c *recordingDurableClient) PreviewLifecycle(_ context.Context, serviceID, action string) (api.LifecyclePreview, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.previewCalls++
+	c.previewService, c.previewAction = serviceID, action
 	return c.preview, c.previewErr
 }
 func (c *recordingDurableClient) SubmitLifecycle(_ context.Context, preview api.LifecyclePreview, _ string) (api.Operation, error) {
@@ -231,22 +237,52 @@ func TestConfirmationSubmitsOnceAndRepeatedEscapeCannotMutate(t *testing.T) {
 }
 
 func TestCoreAvailabilityAndPreviewGateConfirmation(t *testing.T) {
-	preview := api.LifecyclePreview{Action: "start", ServiceID: "echo", ConfirmationID: "core-confirm-1", ConfirmationPhrase: "confirm", Targets: []string{"echo"}, Effects: []string{"start"}}
-	client := &recordingDurableClient{availability: []api.LifecycleAvailability{{Action: "start", Available: true, RequiresConfirmation: true}}, preview: preview}
-	m := New(client, context.Background()).(model)
-	m.services, m.selectedServiceID, m.screen = []api.Service{{ID: "echo", Name: "Echo"}}, "echo", detailScreen
-	updated, prepare := m.Update(key('s'))
-	if prepare == nil || !updated.(model).preparingAction {
-		t.Fatal("start did not request Core availability and preview")
+	workflows := []struct {
+		name   string
+		key    rune
+		action string
+	}{
+		{name: "install", key: 'i', action: "install"},
+		{name: "config", key: 'c', action: "config"},
+		{name: "start", key: 's', action: "start"},
+		{name: "stop", key: 'x', action: "stop"},
+		{name: "restart", key: 'R', action: "restart"},
 	}
-	confirmed, _ := updated.(model).Update(prepare())
-	got := confirmed.(model)
-	if got.pendingPreview == nil || got.pendingPreview.ConfirmationID != preview.ConfirmationID || got.preparingAction {
-		t.Fatalf("Core preview did not become the confirmation context: %#v", got)
-	}
-	availability, previews, submits, _, _ := client.calls()
-	if availability != 1 || previews != 1 || submits != 0 {
-		t.Fatalf("unexpected Core lifecycle calls before confirmation: availability/preview/submit=%d/%d/%d", availability, previews, submits)
+	for _, workflow := range workflows {
+		t.Run(workflow.name, func(t *testing.T) {
+			preview := api.LifecyclePreview{Action: workflow.action, ServiceID: "echo", ConfirmationID: "core-confirm-1", ConfirmationPhrase: "confirm", Targets: []string{"echo"}, Effects: []string{workflow.action}}
+			client := &recordingDurableClient{
+				availability: []api.LifecycleAvailability{{Action: workflow.action, Available: true, RequiresConfirmation: true}},
+				preview:      preview,
+				operation:    api.Operation{ID: "mcp-operation-12345678", Action: "service_" + workflow.action, Status: "accepted", Phase: "accepted", Ownership: "own"},
+			}
+			m := New(client, context.Background()).(model)
+			// The other service proves the client uses the selected service only;
+			// a keyboard action cannot be retargeted by adjacent dashboard data.
+			m.services, m.selectedServiceID, m.screen = []api.Service{{ID: "echo", Name: "Echo"}, {ID: "other", Name: "Other"}}, "echo", detailScreen
+			updated, prepare := m.Update(key(workflow.key))
+			if prepare == nil || !updated.(model).preparingAction {
+				t.Fatalf("%s did not request Core availability and preview", workflow.action)
+			}
+			confirmed, _ := updated.(model).Update(prepare())
+			got := confirmed.(model)
+			if got.pendingPreview == nil || got.pendingPreview.ConfirmationID != preview.ConfirmationID || got.preparingAction {
+				t.Fatalf("Core preview did not become the confirmation context: %#v", got)
+			}
+			availability, previews, submits, _, _ := client.calls()
+			if availability != 1 || previews != 1 || submits != 0 || client.availabilityService != "echo" || client.previewService != "echo" || client.previewAction != workflow.action {
+				t.Fatalf("unexpected pre-confirmation calls: availability/preview/submit=%d/%d/%d service/action=%q/%q", availability, previews, submits, client.previewService, client.previewAction)
+			}
+			submitted, submit := got.Update(key('y'))
+			if submit == nil || submitted.(model).operation == nil {
+				t.Fatalf("%s confirmation did not create one submission", workflow.action)
+			}
+			_ = submit()
+			_, _, submits, _, _ = client.calls()
+			if submits != 1 || !reflect.DeepEqual(client.submittedPreview, preview) {
+				t.Fatalf("%s submitted a changed or duplicate preview: calls=%d preview=%#v", workflow.action, submits, client.submittedPreview)
+			}
+		})
 	}
 }
 

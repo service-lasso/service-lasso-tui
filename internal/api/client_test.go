@@ -270,6 +270,16 @@ func TestClientDoesNotFollowHTTPSDowngradeRedirectWithOperatorToken(t *testing.T
 }
 
 func TestDurableLifecycleUsesPreviewOneFrozenSubmitAndSafeReadback(t *testing.T) {
+	workflows := []struct {
+		action     string
+		coreAction string
+	}{
+		{action: "install", coreAction: "service_install"},
+		{action: "config", coreAction: "service_configure"},
+		{action: "start", coreAction: "service_start"},
+		{action: "stop", coreAction: "service_stop"},
+		{action: "restart", coreAction: "service_restart"},
+	}
 	var submits atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("x-service-lasso-admin-token") != "local-token" {
@@ -277,19 +287,27 @@ func TestDurableLifecycleUsesPreviewOneFrozenSubmitAndSafeReadback(t *testing.T)
 		}
 		switch r.URL.Path {
 		case "/api/operator/lifecycle/services/echo/availability":
-			_, _ = w.Write([]byte(`{"actions":[{"action":"start","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true}]}`))
+			_, _ = w.Write([]byte(`{"actions":[{"action":"install","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"config","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"start","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"stop","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"restart","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true}]}`))
 		case "/api/operator/lifecycle/operations":
 			var body map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&body)
+			action, _ := body["action"].(string)
+			coreAction := "service_" + action
+			if action == "config" {
+				coreAction = "service_configure"
+			}
+			if body["serviceId"] != "echo" {
+				t.Fatalf("service target = %#v", body["serviceId"])
+			}
 			if body["execute"] == true {
 				submits.Add(1)
-				if body["confirmationPhrase"] != "confirm start" {
-					t.Fatal("missing frozen confirmation")
+				if body["confirmationPhrase"] != "confirm "+action || body["confirmationId"] != "mcp-confirmation-12345678" {
+					t.Fatalf("missing frozen confirmation: %#v", body)
 				}
-				_, _ = w.Write([]byte(`{"accepted":true,"operation":{"operationId":"mcp-operation-12345678","action":"service_start","status":"running","phase":"executing","progress":50,"outcome":null,"cancellationSupported":false,"ownership":"own","summary":"SECRET /private/path"}}`))
+				_, _ = w.Write([]byte(`{"accepted":true,"operation":{"operationId":"mcp-operation-12345678","action":"` + coreAction + `","status":"running","phase":"executing","progress":50,"outcome":null,"cancellationSupported":false,"ownership":"own","summary":"SECRET /private/path"}}`))
 				return
 			}
-			_, _ = w.Write([]byte(`{"action":"service_start","preflight":{"targets":["echo"],"effects":["start"]},"confirmation":{"id":"mcp-confirmation-12345678","status":"pending","confirmationPhrase":"confirm start"}}`))
+			_, _ = w.Write([]byte(`{"action":"` + coreAction + `","preflight":{"targets":["echo"],"effects":["` + action + `"]},"confirmation":{"id":"mcp-confirmation-12345678","status":"pending","confirmationPhrase":"confirm ` + action + `"}}`))
 		case "/api/operator/lifecycle/operations/mcp-operation-12345678":
 			_, _ = w.Write([]byte(`{"operation":{"operationId":"mcp-operation-12345678","action":"service_start","status":"succeeded","phase":"completed","progress":100,"outcome":"succeeded","cancellationSupported":false,"ownership":"own","summary":"SECRET /private/path"}}`))
 		default:
@@ -302,24 +320,31 @@ func TestDurableLifecycleUsesPreviewOneFrozenSubmitAndSafeReadback(t *testing.T)
 		t.Fatal(err)
 	}
 	actions, err := client.LifecycleAvailability(context.Background(), "echo")
-	if err != nil || len(actions) != 1 || !actions[0].Available {
+	if err != nil || len(actions) != len(workflows) || !actions[0].Available {
 		t.Fatalf("availability = %#v, %v", actions, err)
 	}
-	preview, err := client.PreviewLifecycle(context.Background(), "echo", "start")
-	if err != nil || preview.ConfirmationPhrase != "confirm start" {
-		t.Fatalf("preview = %#v, %v", preview, err)
+	for _, workflow := range workflows {
+		t.Run(workflow.action, func(t *testing.T) {
+			preview, err := client.PreviewLifecycle(context.Background(), "echo", workflow.action)
+			if err != nil || preview.ConfirmationPhrase != "confirm "+workflow.action || preview.Action != workflow.action {
+				t.Fatalf("preview = %#v, %v", preview, err)
+			}
+			key, err := NewIdempotencyKey()
+			if err != nil {
+				t.Fatal(err)
+			}
+			operation, err := client.SubmitLifecycle(context.Background(), preview, key)
+			if err != nil || operation.ID == "" || operation.Action != workflow.coreAction {
+				t.Fatalf("submit = %#v, %v", operation, err)
+			}
+			operation, err = client.Operation(context.Background(), operation.ID)
+			if err != nil || operation.Outcome != "succeeded" || operation.CancellationSupported {
+				t.Fatalf("readback = %#v, %v", operation, err)
+			}
+		})
 	}
-	key, err := NewIdempotencyKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-	operation, err := client.SubmitLifecycle(context.Background(), preview, key)
-	if err != nil || operation.ID == "" || submits.Load() != 1 {
-		t.Fatalf("submit = %#v, %v, count=%d", operation, err, submits.Load())
-	}
-	operation, err = client.Operation(context.Background(), operation.ID)
-	if err != nil || operation.Outcome != "succeeded" || operation.CancellationSupported {
-		t.Fatalf("readback = %#v, %v", operation, err)
+	if got := submits.Load(); got != int32(len(workflows)) {
+		t.Fatalf("submit count = %d, want %d", got, len(workflows))
 	}
 }
 

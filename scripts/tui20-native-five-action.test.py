@@ -1,0 +1,17 @@
+import ast
+import pathlib
+import unittest
+
+
+class NativeFiveActionHarnessTests(unittest.TestCase):
+    def test_harness_records_the_closed_reload_denial_and_incremental_transcript(self):
+        source = pathlib.Path(__file__).with_name("tui20-native-five-action.py").read_text(encoding="utf-8")
+        ast.parse(source)
+        self.assertIn('("reload is unavailable",)', source)
+        self.assertIn('append_terminal(transcript_path, label, chunk)', source)
+        self.assertIn('"operationId": record.get("operationId")', source)
+        self.assertIn('"reconnectNoReplay": True', source)
+
+
+if __name__ == "__main__":
+    unittest.main()

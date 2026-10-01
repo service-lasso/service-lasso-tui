@@ -12,6 +12,13 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertIn('"operationId": record.get("operationId")', source)
         self.assertIn('"reconnectNoReplay": True', source)
 
+    def test_core_fixture_defines_only_owned_profiles_and_services(self):
+        source = pathlib.Path(__file__).with_name("tui20-native-core.mjs").read_text(encoding="utf-8")
+        self.assertIn('"tui20-fixture"', source)
+        self.assertIn('"tui20-unrelated"', source)
+        self.assertIn('}, invalid: {', source)
+        self.assertIn('}, missing: {', source)
+
 
 if __name__ == "__main__":
     unittest.main()

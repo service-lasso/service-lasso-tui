@@ -465,7 +465,7 @@ func safeTargetEffects(targets, effects []string) bool {
 		return false
 	}
 	for _, value := range targets {
-		if !safeIdentifier(value, 128) {
+		if !serviceIDPattern.MatchString(value) {
 			return false
 		}
 	}

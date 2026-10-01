@@ -349,8 +349,11 @@ func TestDurableLifecycleUsesPreviewOneFrozenSubmitAndSafeReadback(t *testing.T)
 }
 
 func TestSafeTargetEffectsAcceptsCorePreviewTextAndRejectsTerminalControls(t *testing.T) {
-	if !safeTargetEffects([]string{"node-sample-service"}, []string{"No materialized config file changes are expected."}) {
+	if !safeTargetEffects([]string{"@node"}, []string{"No materialized config file changes are expected."}) {
 		t.Fatal("valid Core preview effect was rejected")
+	}
+	if safeTargetEffects([]string{"@not/a-service"}, []string{"No materialized config file changes are expected."}) {
+		t.Fatal("invalid Core preview target was accepted")
 	}
 	for _, effect := range []string{"", "line one\nline two", "unsafe\x1b[2J", "\u0080"} {
 		if safeTargetEffects([]string{"node-sample-service"}, []string{effect}) {

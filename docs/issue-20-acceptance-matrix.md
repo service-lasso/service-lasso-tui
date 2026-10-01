@@ -66,13 +66,31 @@ The ConPTY helper now forwards only the token and connection-profile file that
 the explicitly selected TUI profile requires; it neither writes credentials
 nor relaxes profile admission.
 
-## Required next evidence
+## Completed native Windows acceptance
 
-The Core owner must provide a governed, ready normal service state whose
-documented lifecycle provider prerequisites are met. Then a fresh owned
-exact-Core run must execute the TUI binary through native terminal input
-against isolated services and a unique loopback port, covering authenticated
-allow and deny, the five action matrix, confirmation, one submission, readback,
-advertised cancellation, reconnect, and preservation of an unrelated service.
+On 2026-10-02, an owned Windows ConPTY experiment retained at
+`D:\projects\service-lasso\_verification\tui20-native-five-action-20261002-020000`
+compiled the detached, clean TUI source `6f6dfd9cd47523de4fe250f56c6c8a796b8f8936`
+with `GOWORK=off`, `-mod=readonly`, and `-buildvcs=true`. The built binary
+SHA-256 was `a5fd433c78f479391fa6d426ac6087a1ebed01caf9144771fafb675eccbf9400`;
+its embedded build information reports that same revision and
+`vcs.modified=false`. It drove Core `93d9d343a058d296069c017d17f4f8d1fc1505ea`
+through a fresh loopback API, fresh workspace/instance/port registries, an
+owned JWKS, and only the documented guarded OAuth fixture profiles.
+
+The retained `native-exit-receipt.json`, `operation-audit.json`, and durable
+`native-terminal.txt` prove one keyboard-confirmed install, config, start,
+stop, and restart. All five operation IDs reached `succeeded`, each has only
+`tui20-fixture` in `targetIds`, and none advertised cancellation. The same
+journey retained missing-credential admission, invalid-credential lifecycle
+denial, scoped permission denial, the closed `reload is unavailable` denial
+with no extra operation, and a terminal reconnect whose subsequent audit count
+remained five. `tui20-unrelated` was never targeted. This is direct native
+Windows/Core evidence for Issue #20's bounded lifecycle acceptance. It is not
+cross-platform, release, deployment, package, persistent-reconciliation, or
+GA evidence.
+
+## Remaining boundary
+
 A separate reviewed Core #1553 context adapter is required before persistent
 operation reconciliation can be claimed.

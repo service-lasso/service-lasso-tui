@@ -13,7 +13,7 @@
   #1553's reviewed server-issued validated opaque actor/client/instance context
   contract. The TUI must not derive binding authority from profile, URL, or
   credential material.
-- [ ] Retain exact-source Core lifecycle acceptance for Issue #20 (authenticated
+- [x] Retain exact-source Core lifecycle acceptance for Issue #20 (authenticated
   allow/deny, preview, one submission, readback/reconnect, cancellation, and
   unrelated-service preservation) separately from fixtures, source CI, package
   qualification, release, and GA.

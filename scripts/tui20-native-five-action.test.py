@@ -5,6 +5,17 @@ import runpy
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+import types
+
+
+def load_posix_harness():
+    # The receipt-order functions are platform-neutral; provide import stubs so
+    # this controlled recorder-path test also runs on Windows source CI.
+    if sys.platform == "linux":
+        return runpy.run_path(str(pathlib.Path(__file__).with_name("tui20-native-posix-five-action.py")))
+    with patch.dict(sys.modules, {"fcntl": types.ModuleType("fcntl"), "pty": types.ModuleType("pty")}):
+        return runpy.run_path(str(pathlib.Path(__file__).with_name("tui20-native-posix-five-action.py")))
 
 
 class NativeFiveActionHarnessTests(unittest.TestCase):
@@ -53,6 +64,11 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertIn('F_SEAL_WRITE', source)
         self.assertIn('schg', source)
         self.assertIn('system-immutable-held-directory-execve', source)
+        self.assertIn('existing-writer in-place write', source)
+        self.assertIn('Darwin immutable leaf digest mismatch', source)
+        self.assertIn('persist_primary_outcome(root,outcome,writer)', source)
+        self.assertIn('finalize_native_outcome(args.root,outcome', source)
+        self.assertIn('native-cleanup-receipt.json', source)
         self.assertIn('"adverseAudit"', source)
         self.assertIn('len(set(operation_ids))!=5', source)
         self.assertIn('"mcp.operation.succeeded"', source)
@@ -64,7 +80,7 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == "linux", "requires Linux memfd seals")
     def test_linux_kernel_seal_rejects_an_in_place_write(self):
-        harness = runpy.run_path(str(pathlib.Path(__file__).with_name("tui20-native-posix-five-action.py")))
+        harness = load_posix_harness()
         with tempfile.NamedTemporaryFile() as candidate:
             candidate.write(b"trusted native executable bytes")
             candidate.flush()
@@ -79,6 +95,28 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
                 if sealed is not None:
                     os.close(sealed)
                 os.close(held)
+
+    def test_cleanup_failure_is_recorded_after_primary_without_replacing_it(self):
+        harness = load_posix_harness()
+        writes = []
+        primary = {"outcome": "succeeded", "terminals": [{"exit": "terminal_exited_zero"}]}
+        def record(path, value): writes.append((pathlib.Path(path).name, value))
+        cleanup = lambda *_: {"outcome":"failed","closedReason":"leaf_release_failed","recoveryRetained":True}
+        actual = harness["finalize_native_outcome"]("controlled-root", primary, None, object(), -1, cleanup=cleanup, writer=record)
+        self.assertEqual(actual["closedReason"], "leaf_release_failed")
+        self.assertEqual(writes, [("native-exit-receipt.json", primary), ("native-cleanup-receipt.json", actual)])
+
+    def test_cleanup_receipt_writer_failure_cannot_replace_primary_outcome(self):
+        harness = load_posix_harness()
+        writes = []
+        primary = {"outcome": "failed", "failureReason": "native_harness_assertion_failed"}
+        def record(path, value):
+            writes.append((pathlib.Path(path).name, value))
+            if path.endswith("native-cleanup-receipt.json"): raise OSError("controlled recorder failure")
+        cleanup = lambda *_: {"outcome":"failed","closedReason":"protected_artifact_removal_failed","recoveryRetained":True}
+        actual = harness["finalize_native_outcome"]("controlled-root", primary, None, object(), -1, cleanup=cleanup, writer=record)
+        self.assertEqual(actual["recoveryRetained"], True)
+        self.assertEqual(writes[0], ("native-exit-receipt.json", primary))
 
 
 if __name__ == "__main__":

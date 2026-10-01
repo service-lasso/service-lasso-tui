@@ -87,14 +87,20 @@ the write, grow, shrink, and seal seals, verifies those seals, and executes
 only that sealed object with `fexecve`. On macOS, it copies the verified bytes
 to a leaf in an owned staging directory and requires the OS-reported
 `SF_IMMUTABLE` system flag on both the leaf and its parent before execution.
+The Darwin leaf is flagged and read back first; the harness retains a writable
+leaf descriptor from before activation and requires its post-activation
+in-place write to be denied, then hashes that immutable leaf against the held
+candidate digest before flagging and reading back the parent.
 The PTY child retains the staging-directory descriptor, changes directory
 through that held descriptor, verifies the leaf identity relative to it, and
 uses Darwin's pathname `execve` on that relative leaf; it does not execute
 `/dev/fd/N`. Activation and later removal require a non-interactive privileged
 helper. User immutable flags, chmod, ACLs, descriptor retention, and a
-same-user promise are insufficient. The retained receipt records only the
-mechanism, flag readback, denied in-place-write probe, and the existing digest
-identity. Each native run also mutates the
+same-user promise are insufficient. The metadata-only primary receipt records
+only the mechanism, flag readback, denied in-place-write probe, and existing
+digest identity before teardown. A separate closed cleanup receipt records its
+outcome and whether recovery material remains; it cannot replace the primary
+child outcome. Each native run also mutates the
 source inode in place after the immutable execution object exists and proves
 the launch still reaches the verified object; it restores the source byte
 before proceeding. If a platform cannot establish and read back that mechanism,

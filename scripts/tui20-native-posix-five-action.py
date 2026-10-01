@@ -3,7 +3,14 @@ import argparse, ctypes, fcntl, hashlib, json, os, pty, select, stat, subprocess
 
 ALLOWED_ENV=("HOME","LANG","LC_ALL","PATH","SHELL","TERM","TMPDIR","USER")
 def write_json(path,value):
-    with open(path,"w",encoding="utf-8",newline="") as out: json.dump(value,out,separators=(",",":"))
+    with open(path,"w",encoding="utf-8",newline="") as out:
+        json.dump(value,out,separators=(",",":")); out.flush(); os.fsync(out.fileno())
+def persist_primary_outcome(root,outcome,writer=write_json):
+    """Durably retain the closed primary result before immutable-object teardown."""
+    writer(os.path.join(root,"native-exit-receipt.json"),outcome)
+def persist_cleanup_outcome(root,outcome,writer=write_json):
+    """Retain a separate closed cleanup result without rewriting the primary result."""
+    writer(os.path.join(root,"native-cleanup-receipt.json"),outcome)
 def request(url,token,path):
     with urllib.request.urlopen(urllib.request.Request(url+path,headers={"Authorization":"Bearer "+token}),timeout=15) as response: return json.load(response)
 def operations(url,token): return request(url,token,"/api/operator/lifecycle/operations")["operations"]
@@ -148,20 +155,30 @@ def darwin_system_immutable_execution(held,identity,root):
                 if not chunk: break
                 out.write(chunk)
         os.chmod(protected,0o700)
+        # Darwin must deny a writer that was already open before SF_IMMUTABLE;
+        # a later O_RDWR-open denial alone would not establish that property.
+        protected_writer=os.open(protected,os.O_RDWR)
         protected_fd=os.open(protected,os.O_RDONLY)
         directory_fd=os.open(directory,os.O_RDONLY|getattr(os,"O_DIRECTORY",0))
-        if sha256_fd(protected_fd)!=identity["binarySHA256"]: raise RuntimeError("Darwin protected executable digest mismatch")
-        for target in (protected,directory):
-            result=subprocess.run(["sudo","-n","/usr/bin/chflags","schg",target],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
-            if result.returncode!=0: raise RuntimeError("Darwin system immutable activation unavailable")
         system_immutable=getattr(stat,"SF_IMMUTABLE",0x00020000)
-        if not os.stat(protected).st_flags&system_immutable or not os.stat(directory).st_flags&system_immutable: raise RuntimeError("Darwin system immutable readback failed")
+        result=subprocess.run(["sudo","-n","/usr/bin/chflags","schg",protected],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
+        if result.returncode!=0: raise RuntimeError("Darwin leaf system immutable activation unavailable")
+        if not os.fstat(protected_fd).st_flags&system_immutable: raise RuntimeError("Darwin leaf system immutable readback failed")
         try: os.open(protected,os.O_RDWR)
         except OSError: pass
         else: raise RuntimeError("Darwin system immutable executable accepted an in-place write")
+        try: os.pwrite(protected_writer,b"X",0)
+        except OSError: pass
+        else: raise RuntimeError("Darwin system immutable executable accepted an existing-writer in-place write")
+        if sha256_fd(protected_fd)!=identity["binarySHA256"]: raise RuntimeError("Darwin immutable leaf digest mismatch")
+        result=subprocess.run(["sudo","-n","/usr/bin/chflags","schg",directory],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
+        if result.returncode!=0: raise RuntimeError("Darwin parent system immutable activation unavailable")
+        if not os.fstat(directory_fd).st_flags&system_immutable: raise RuntimeError("Darwin parent system immutable readback failed")
         leaf=os.fstat(protected_fd)
-        return {"leafFD":protected_fd,"directoryFD":directory_fd,"leaf":"launch","leafIdentity":(leaf.st_dev,leaf.st_ino),"systemImmutable":system_immutable,"path":protected,"directory":directory},{"platform":"darwin","mechanism":"system-immutable-held-directory-execve","systemImmutableLeaf":True,"systemImmutableParent":True,"inPlaceWriteDenied":True}
+        os.close(protected_writer); protected_writer=None
+        return {"leafFD":protected_fd,"directoryFD":directory_fd,"leaf":"launch","leafIdentity":(leaf.st_dev,leaf.st_ino),"systemImmutable":system_immutable,"path":protected,"directory":directory},{"platform":"darwin","mechanism":"system-immutable-held-directory-execve","systemImmutableLeaf":True,"systemImmutableParent":True,"inPlaceWriteDenied":True,"existingWriterDenied":True,"immutableLeafDigestVerified":True}
     except Exception:
+        if locals().get('protected_writer') is not None: os.close(protected_writer)
         if 'protected_fd' in locals(): os.close(protected_fd)
         if 'directory_fd' in locals(): os.close(directory_fd)
         if os.path.lexists(protected): subprocess.run(["sudo","-n","/usr/bin/chflags","noschg",protected],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
@@ -174,12 +191,36 @@ def darwin_system_immutable_execution(held,identity,root):
             except OSError: pass
         raise
 def release_darwin_system_immutable_execution(launch):
+    """Return closed cleanup evidence; leave the protected artifact on failure."""
     result=subprocess.run(["sudo","-n","/usr/bin/chflags","noschg",launch["path"]],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
-    if result.returncode!=0: raise RuntimeError("Darwin protected executable release unavailable")
+    if result.returncode!=0: return {"outcome":"failed","closedReason":"leaf_release_failed","recoveryRetained":True}
+    if os.stat(launch["path"]).st_flags&launch["systemImmutable"]: return {"outcome":"failed","closedReason":"leaf_release_readback_failed","recoveryRetained":True}
     result=subprocess.run(["sudo","-n","/usr/bin/chflags","noschg",launch["directory"]],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
-    if result.returncode!=0: raise RuntimeError("Darwin protected directory release unavailable")
-    os.close(launch["leafFD"]); os.close(launch["directoryFD"])
-    os.unlink(launch["path"]); os.rmdir(launch["directory"])
+    if result.returncode!=0: return {"outcome":"failed","closedReason":"parent_release_failed","recoveryRetained":True}
+    if os.stat(launch["directory"]).st_flags&launch["systemImmutable"]: return {"outcome":"failed","closedReason":"parent_release_readback_failed","recoveryRetained":True}
+    try:
+        os.close(launch["leafFD"]); os.close(launch["directoryFD"])
+        os.unlink(launch["path"]); os.rmdir(launch["directory"])
+    except OSError:
+        return {"outcome":"failed","closedReason":"protected_artifact_removal_failed","recoveryRetained":True}
+    return {"outcome":"succeeded","closedReason":"released_and_removed","recoveryRetained":False}
+def cleanup_execution(launch_fd,darwin_protected,held):
+    try:
+        if darwin_protected is not None: result=release_darwin_system_immutable_execution(darwin_protected)
+        elif launch_fd is not None:
+            os.close(launch_fd); result={"outcome":"succeeded","closedReason":"sealed_descriptor_closed","recoveryRetained":False}
+        else: result={"outcome":"succeeded","closedReason":"no_execution_object","recoveryRetained":False}
+        os.close(held)
+        return result
+    except OSError:
+        return {"outcome":"failed","closedReason":"descriptor_close_failed","recoveryRetained":darwin_protected is not None}
+def finalize_native_outcome(root,outcome,launch_fd,darwin_protected,held,cleanup=cleanup_execution,writer=write_json):
+    """Record primary state first; cleanup recording can never mask that state."""
+    persist_primary_outcome(root,outcome,writer)
+    cleanup_outcome=cleanup(launch_fd,darwin_protected,held)
+    try: persist_cleanup_outcome(root,cleanup_outcome,writer)
+    except OSError: pass
+    return cleanup_outcome
 def bound_execution(held,identity,root):
     if sys_platform()=="linux":
         fd,binding=linux_sealed_execution(held,identity); return fd,None,binding
@@ -278,7 +319,6 @@ def main():
         write_json(os.path.join(args.root,"operation-audit.json"),{"operations":records,"coreAudit":audit_matches}); outcome.update({"outcome":"succeeded","actions":["install","config","start","stop","restart"],"adverseAudit":adverse,"reloadDenied":True,"cancellation":{"advertised":False,"supportedActionTested":False},"reconnect":{"completedOperationNoReplay":True,"pendingReconciliation":"blocked_core_1553_no_adapter"},"unrelatedService":{**before,"unchangedAfterFiveActions":True},"fixtureOperationCount":len(records)})
     except Exception: outcome["failureReason"]="native_harness_assertion_failed"; raise
     finally:
-        if darwin_protected is not None: release_darwin_system_immutable_execution(darwin_protected)
-        elif launch_fd is not None: os.close(launch_fd)
-        os.close(held); write_json(os.path.join(args.root,"native-exit-receipt.json"),outcome)
+        # Cleanup is reported separately and cannot relabel a true child exit.
+        finalize_native_outcome(args.root,outcome,launch_fd,darwin_protected,held)
 if __name__=="__main__": main()

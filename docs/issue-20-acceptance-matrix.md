@@ -133,14 +133,22 @@ The receipt must show that the exact bytes launched by the PTY are
 platform-enforced immutable. Linux uses a verified `memfd` with kernel readback
 of `F_SEAL_WRITE`, `F_SEAL_GROW`, `F_SEAL_SHRINK`, and `F_SEAL_SEAL`, then
 launches that anonymous object with `fexecve`. macOS requires a copied verified
-object with the OS-reported `SF_IMMUTABLE` system flag and executes its retained
-descriptor through fdescfs; the runner must be able to set and later clear that
-system flag through non-interactive privilege. A user immutable flag, POSIX
+object with the OS-reported `SF_IMMUTABLE` system flag and executes through its
+held directory descriptor with relative pathname `execve`; the runner must be
+able to set and later clear that system flag through non-interactive privilege.
+It retains a writable leaf descriptor before leaf activation and requires the
+kernel to deny its post-activation in-place write, hashes the immutable leaf
+against the held candidate digest, then flags and reads back the parent. A user
+immutable flag, POSIX
 permissions, an ACL/DACL, a hash re-run, or an open read descriptor is not
 equivalent. The harness performs an adversarial in-place mutation of the source
 inode after Linux sealing and requires the sealed launch to succeed, while the
-Darwin system flag must deny an in-place writable open. A missing seal/flag
-readback, denied-write probe, or native-host receipt is **Blocked**.
+Darwin system flag must deny both a new writable open and the pre-existing
+writable descriptor. The primary metadata-only exit receipt is fsync-persisted
+before immutable-object teardown; a separate closed cleanup receipt records
+cleanup outcome and recovery retention without replacing the primary child
+outcome. A missing seal/flag readback, denied-write probe, or native-host
+receipt is **Blocked**.
 
 The mechanisms are constrained by their native operating systems, rather than
 by advisory process behavior: Linux documents sealing for `memfd_create` and

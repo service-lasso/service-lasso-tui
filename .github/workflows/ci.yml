@@ -156,6 +156,7 @@ jobs:
           prepare_phase "$attempt/five-actions"
           prepare_phase "$attempt/finalization-failure"
           prepare_phase "$attempt/adverse-controller"
+          prepare_phase "$attempt/adverse-owner-death"
           prepare_phase "$attempt/handoff-timeout"
           prepare_phase "$attempt/shutdown-pipe-failure"
           phase="$attempt/preflight"
@@ -209,6 +210,17 @@ jobs:
           for attempt_number in $(seq 1 150); do test -f "$attempt/recovery-owner-proof.json" && break; sleep 0.1; done
            for attempt_number in $(seq 1 150); do test -f "$attempt/owner-close.json" && break; sleep 0.1; done
            node -e 'const fs=require("fs"); const root=process.argv[1]; const proof=JSON.parse(fs.readFileSync(root+"/recovery-owner-proof.json","utf8")); const exit=JSON.parse(fs.readFileSync(root+"/native-exit-receipt.json","utf8")); const birth=JSON.parse(fs.readFileSync(root+"/owner-birth.json","utf8")); const close=JSON.parse(fs.readFileSync(root+"/owner-close.json","utf8")); if (!proof.controllerFailed || !proof.childLiveAfterFailure || !proof.ptyHeldAfterFailure || !proof.immutableExecutionHeldAfterFailure || !proof.coreAndJwksLiveAfterFailure || proof.naturalChildExit!=="terminal_exited_zero" || exit.outcome!=="succeeded" || !birth.recoveryOwnerBirth || !birth.runtimeBirth || !birth.nativeSHA256 || close.recoveryOwnerPID!==birth.recoveryOwnerPID || close.recoveryOwnerActualExit!==0 || !close.actualWaitObserved) process.exit(1);' "$attempt"
+      - name: Record actual TUI external reaping after adverse owner death
+        shell: bash
+        run: |
+          set -euo pipefail
+          attempt="$RUNNER_TEMP/tui20-native-${{ matrix.name }}-$CI_SOURCE_SHA/adverse-owner-death"
+          set +e
+          SERVICE_LASSO_WORKSPACE_ROOT="$attempt/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$attempt/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$attempt/registry/ports.json" node scripts/tui20-native-core.mjs --root "$attempt" --executable "$attempt/service-lasso-tui" --source-commit "$CI_SOURCE_SHA" --core-commit "$CORE_COMMIT" --helper scripts/tui20-native-posix-five-action.py --adverse-owner-death true
+          owner_status=$?
+          set -e
+          test "$owner_status" -ne 0
+          node -e 'const fs=require("fs"); const root=process.argv[1]; const proof=JSON.parse(fs.readFileSync(root+"/owner-death-recovery.json","utf8")); const close=JSON.parse(fs.readFileSync(root+"/owner-close.json","utf8")); if (!proof.ownerUnexpectedDeath || proof.terminal!=="terminal_unknown" || !proof.actualTuiExternallyReaped || !proof.coreAndJwksLiveAfterOwnerDeath || !proof.runtimeRetained || proof.actualRuntimeExitObserved || close.recoveryOwnerActualSignal!==9 || close.phase!=="owner_death_live") process.exit(1);' "$attempt"
       - name: Retain native direct-evidence receipt
         if: always()
         uses: actions/upload-artifact@v4
@@ -231,6 +243,7 @@ jobs:
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/recovery-unresolved-receipt.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/recovery-owner-proof.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/external-owner-live.json
+            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/owner-death-recovery.json
           if-no-files-found: warn
           retention-days: 90
   release-asset-compile:

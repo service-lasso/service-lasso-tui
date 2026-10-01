@@ -23,7 +23,7 @@ function run(program, args, options = {}) {
   });
 }
 
-test("an overlay can forge an api_client_error under a clean VCS stamp, and the source gate rejects it", async () => {
+test("the source gate rejects an overlay while the invalid URL keeps its typed boundary", async () => {
   const root = path.join(os.tmpdir(), `tui-go-overlay-${process.pid}-${Date.now()}`);
   const checkout = path.join(root, "checkout");
   try {
@@ -62,7 +62,9 @@ test("an overlay can forge an api_client_error under a clean VCS stamp, and the 
       env: { ...process.env, SERVICE_LASSO_STARTUP_PROBE_NONCE: nonce },
     }).catch(error => ({ stdout: error.stdout, stderr: error.stderr, code: error.code }));
     assert.equal(result.code, 2);
-    assert.match(result.stderr, new RegExp(`SERVICE_LASSO_TUI_STARTUP_BOUNDARY:${nonce}:api_client_error:${sourceCommit}:${binarySHA256}`));
+    // `://invalid` is rejected by parseBaseURL before any generic client path.
+    // The receipt contract must retain that typed ConfigurationError boundary.
+    assert.match(result.stderr, new RegExp(`SERVICE_LASSO_TUI_STARTUP_BOUNDARY:${nonce}:api_url_invalid:${sourceCommit}:${binarySHA256}`));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

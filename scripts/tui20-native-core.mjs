@@ -12,11 +12,11 @@ const scripts = path.dirname(fileURLToPath(import.meta.url));
 const owner = arg("--helper") ? path.resolve(arg("--helper")) : path.join(scripts, "tui20-native-posix-five-action.py");
 const observer = path.join(scripts, "tui20-native-owner-observer.py");
 const runtime = path.join(scripts, "tui20-native-runtime.mjs");
-const adverse = arg("--adverse-controller-crash") === "true", invalidReadyReceipt = arg("--invalid-ready-receipt") === "true", injectFinalizationCleanupFailure = arg("--inject-finalization-cleanup-failure") === "true", runtimeReadyMode = arg("--runtime-ready-mode"), shutdownPipeFailure = arg("--shutdown-pipe-failure") === "true";
+const adverse = arg("--adverse-controller-crash") === "true", adverseOwnerDeath = arg("--adverse-owner-death") === "true", invalidReadyReceipt = arg("--invalid-ready-receipt") === "true", injectFinalizationCleanupFailure = arg("--inject-finalization-cleanup-failure") === "true", runtimeReadyMode = arg("--runtime-ready-mode"), shutdownPipeFailure = arg("--shutdown-pipe-failure") === "true";
 await mkdir(root, { recursive: true });
 // The observer is the parent of the resource owner.  It alone can attest the
 // owner's actual wait status after a volatile controller disappears.
-const child = spawn(python, [observer, "--owner", owner, "--root", root, "--executable", executable, "--source-commit", sourceCommit, "--core-commit", coreCommit, "--runtime-script", runtime, "--node", process.execPath, ...(adverse ? ["--adverse-controller-crash", "--controller-pid", String(process.pid)] : []), ...(invalidReadyReceipt ? ["--invalid-ready-receipt"] : []), ...(injectFinalizationCleanupFailure ? ["--inject-finalization-cleanup-failure"] : []), ...(runtimeReadyMode ? ["--runtime-ready-mode", runtimeReadyMode] : []), ...(shutdownPipeFailure ? ["--shutdown-pipe-failure"] : [])], { stdio: "inherit", env: { ...process.env } });
+const child = spawn(python, [observer, "--owner", owner, "--root", root, "--executable", executable, "--source-commit", sourceCommit, "--core-commit", coreCommit, "--runtime-script", runtime, "--node", process.execPath, ...(adverse ? ["--adverse-controller-crash", "--controller-pid", String(process.pid)] : []), ...(adverseOwnerDeath ? ["--adverse-owner-death"] : []), ...(invalidReadyReceipt ? ["--invalid-ready-receipt"] : []), ...(injectFinalizationCleanupFailure ? ["--inject-finalization-cleanup-failure"] : []), ...(runtimeReadyMode ? ["--runtime-ready-mode", runtimeReadyMode] : []), ...(shutdownPipeFailure ? ["--shutdown-pipe-failure"] : [])], { stdio: "inherit", env: { ...process.env } });
 if (adverse) {
   const marker = path.join(root, "external-owner-live.json");
   for (let attempt = 0; attempt < 300; attempt += 1) {

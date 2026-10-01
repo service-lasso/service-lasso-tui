@@ -1,5 +1,5 @@
 """Native Linux/macOS PTY evidence for Issue 20; credentials remain process-memory only."""
-import argparse, ctypes, fcntl, hashlib, json, os, pty, select, stat, subprocess, sys, time, urllib.request
+import argparse, ctypes, fcntl, hashlib, json, os, pty, select, signal, stat, subprocess, sys, time, urllib.request
 
 ALLOWED_ENV=("HOME","LANG","LC_ALL","PATH","SHELL","TERM","TMPDIR","USER")
 OWNED_TERMINALS=[]
@@ -98,7 +98,7 @@ class Terminal:
         elif sys_platform()=="darwin":
             self.child=darwin_execve_child(held,args,env,self.master,self.slave)
         else: raise RuntimeError("native held-executable launch unsupported on this platform")
-        self.text=""; self.label=profile; self.exit_reason=None; OWNED_TERMINALS.append(self)
+        self.child.tui20_birth=process_birth(self.child.pid); self.text=""; self.label=profile; self.exit_reason=None; OWNED_TERMINALS.append(self)
     def write(self,value): os.write(self.master,value.encode())
     def read(self):
         ready,_,_=select.select([self.master],[],[],.1)
@@ -455,12 +455,12 @@ def retain_primary_and_recover(root,outcome,terminal):
     return True
 def main():
     OWNED_TERMINALS.clear()
-    parser=argparse.ArgumentParser(); parser.add_argument("--root",required=True); parser.add_argument("--executable"); parser.add_argument("--source-commit"); parser.add_argument("--core-commit"); parser.add_argument("--runtime-script"); parser.add_argument("--node"); parser.add_argument("--adverse-controller-crash",action="store_true"); parser.add_argument("--controller-pid",type=int); parser.add_argument("--recovery-self-test",action="store_true"); parser.add_argument("--recovery-owner-self-test",action="store_true"); parser.add_argument("--core-url"); parser.add_argument("--jwks-url"); parser.add_argument("--invalid-ready-receipt",action="store_true"); parser.add_argument("--inject-finalization-cleanup-failure",action="store_true"); parser.add_argument("--runtime-ready-mode",choices=("normal","timeout","eof")); parser.add_argument("--shutdown-pipe-failure",action="store_true"); args=parser.parse_args()
+    parser=argparse.ArgumentParser(); parser.add_argument("--root",required=True); parser.add_argument("--executable"); parser.add_argument("--source-commit"); parser.add_argument("--core-commit"); parser.add_argument("--runtime-script"); parser.add_argument("--node"); parser.add_argument("--external-runtime",action="store_true"); parser.add_argument("--adverse-controller-crash",action="store_true"); parser.add_argument("--adverse-owner-death",action="store_true"); parser.add_argument("--controller-pid",type=int); parser.add_argument("--recovery-self-test",action="store_true"); parser.add_argument("--recovery-owner-self-test",action="store_true"); parser.add_argument("--core-url"); parser.add_argument("--jwks-url"); parser.add_argument("--invalid-ready-receipt",action="store_true"); parser.add_argument("--inject-finalization-cleanup-failure",action="store_true"); parser.add_argument("--runtime-ready-mode",choices=("normal","timeout","eof")); parser.add_argument("--shutdown-pipe-failure",action="store_true"); args=parser.parse_args()
     if args.recovery_owner_self_test:
         if not args.core_url or not args.jwks_url: raise RuntimeError("external recovery dependency endpoints are required")
         recovery_owner_self_test(args.root,args.core_url,args.jwks_url); return
     if args.recovery_self_test: recovery_self_test(args.root); return
-    if not args.executable or not args.source_commit or not args.core_commit or not args.runtime_script or not args.node: raise RuntimeError("native executable, source identity, and owned runtime are required")
+    if not args.executable or not args.source_commit or not args.core_commit or (not args.external_runtime and (not args.runtime_script or not args.node)): raise RuntimeError("native executable, source identity, and owned runtime are required")
     if args.adverse_controller_crash and not args.controller_pid: raise RuntimeError("adverse controller proof requires controller identity")
     paths={"coreReadback":True,"uniqueOwnedPaths":["workspaceRoot","instanceRegistryPath","hostPortRegistryPath"],"runtimeInstanceBound":True}
     runtime=None; held=None; launch_fd=None; darwin_protected=None; term=None; primary_persisted=False; finalization_failure=None
@@ -469,17 +469,25 @@ def main():
         # Every post-start preflight stays inside this owner boundary. A bad
         # receipt or candidate can therefore never strand the actual Core/JWKS
         # child that this process owns.
-        runtime,runtime_handoff=start_owned_runtime(args)
+        if args.external_runtime:
+            try: runtime_handoff=json.loads(sys.stdin.readline())
+            except Exception as error: raise RuntimeError("external runtime handoff unavailable") from error
+            if not all(isinstance(runtime_handoff.get(key),str) and runtime_handoff[key] for key in ("url","token","deniedToken")) or not isinstance(runtime_handoff.get("jwksPort"),int) or not isinstance(runtime_handoff.get("_runtimePID"),int) or not isinstance(runtime_handoff.get("_runtimeBirth"),dict): raise RuntimeError("external runtime handoff invalid")
+        else:
+            runtime,runtime_handoff=start_owned_runtime(args)
         if args.shutdown_pipe_failure: raise RuntimeError("controlled post-handoff runtime pipe failure")
         with open(os.path.join(args.root,"ready.json"),encoding="utf-8") as stream: ready=json.load(stream)
         if ready.get("coreCommit")!=args.core_commit or ready.get("runtimePathReceipt")!=paths: raise RuntimeError("Core fixture receipt invalid")
         token,denied,url=runtime_handoff["token"],runtime_handoff["deniedToken"],runtime_handoff["url"]
         env={key:os.environ[key] for key in ALLOWED_ENV if os.environ.get(key)}; env.update({"TERM":"xterm-256color","SERVICE_LASSO_API_TOKEN":token,"SERVICE_LASSO_DENIED_TOKEN":denied,"SERVICE_LASSO_INVALID_TOKEN":"tui20-invalid-token","SERVICE_LASSO_CONNECTIONS_CONFIG":os.path.join(args.root,"connections.json")})
-        held,identity,held_inode=hold_candidate(args.executable,args.source_commit); outcome["candidateIdentity"]=identity; write_owner_birth(args,runtime,identity); log=os.path.join(args.root,"native-terminal.txt")
+        held,identity,held_inode=hold_candidate(args.executable,args.source_commit); outcome["candidateIdentity"]=identity
+        if runtime is not None: write_owner_birth(args,runtime,identity)
+        log=os.path.join(args.root,"native-terminal.txt")
         launch_fd,darwin_protected,binding=bound_execution(held,identity,args.root); outcome["heldExecutableBinding"]=binding
         if args.adverse_controller_crash:
             term=Terminal(launch_fd,args.executable,"native",env,log); term.wait(("Runtime identity:",),30); detail(term)
-            write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"coreRuntimePID":runtime.pid,"tuiChildPID":term.child.pid,"immutableExecutionHeld":True,"ptyHeld":True})
+            runtime_pid=runtime.pid if runtime is not None else runtime_handoff["_runtimePID"]; runtime_birth=runtime.tui20_birth if runtime is not None else runtime_handoff["_runtimeBirth"]
+            write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"coreRuntimePID":runtime_pid,"runtimeBirth":runtime_birth,"tuiChildPID":term.child.pid,"tuiChildBirth":term.child.tui20_birth,"sourceCommit":identity["sourceCommit"],"binarySHA256":identity["binarySHA256"],"phase":"controller_failure_live","immutableExecutionHeld":True,"ptyHeld":True})
             deadline=time.monotonic()+15
             while not controller_failed(args.controller_pid):
                 if time.monotonic()>=deadline: raise RuntimeError("actual controller did not fail")
@@ -490,7 +498,16 @@ def main():
             outcome["terminals"].append({"terminal":"controller-failure-recovery","exit":exit_reason})
             outcome.update({"outcome":"succeeded","adverseControllerFailure":{"controllerFailed":True,"childLiveAfterFailure":True,"ptyHeldAfterFailure":True,"immutableExecutionHeldAfterFailure":True,"coreAndJwksLiveAfterFailure":True,"naturalChildExit":exit_reason}})
             write_json(os.path.join(args.root,"recovery-owner-proof.json"),outcome["adverseControllerFailure"])
+            write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"coreRuntimePID":runtime_pid,"runtimeBirth":runtime_birth,"tuiChildPID":term.child.pid,"tuiChildBirth":term.child.tui20_birth,"sourceCommit":identity["sourceCommit"],"binarySHA256":identity["binarySHA256"],"phase":"normal_q_exit","immutableExecutionHeld":True,"ptyHeld":False})
             return
+        if args.adverse_owner_death:
+            term=Terminal(launch_fd,args.executable,"native",env,log); term.wait(("Runtime identity:",),30); detail(term)
+            runtime_pid=runtime.pid if runtime is not None else runtime_handoff["_runtimePID"]; runtime_birth=runtime.tui20_birth if runtime is not None else runtime_handoff["_runtimeBirth"]
+            write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"coreRuntimePID":runtime_pid,"runtimeBirth":runtime_birth,"tuiChildPID":term.child.pid,"tuiChildBirth":term.child.tui20_birth,"sourceCommit":identity["sourceCommit"],"binarySHA256":identity["binarySHA256"],"phase":"owner_death_live","immutableExecutionHeld":True,"ptyHeld":True})
+            # This is an adverse owner death while the production TUI is live.
+            # The observer owns Core/JWKS and records the later external reaping;
+            # no child is force-closed and no terminal status is fabricated.
+            os.kill(os.getpid(),signal.SIGKILL)
         before=unrelated(url,token); adverse=[]
         for profile,label,expected,audit_expected in (("missing","missing-credential",2,0),("invalid","invalid-credential",0,0),("denied","scope-denied",0,5)):
             count=len(operations(url,token)); audit=audit_count(url,token)
@@ -513,6 +530,8 @@ def main():
         before_reload=operations(url,token); term.write("l"); term.wait(("reload is unavailable",),15)
         if operations(url,token)!=before_reload or "z cancel" in term.text: raise RuntimeError("reload or cancellation contract changed")
         outcome["terminals"].append({"terminal":"allowed","exit":term.close()})
+        runtime_pid=runtime.pid if runtime is not None else runtime_handoff["_runtimePID"]; runtime_birth=runtime.tui20_birth if runtime is not None else runtime_handoff["_runtimeBirth"]
+        write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"coreRuntimePID":runtime_pid,"runtimeBirth":runtime_birth,"tuiChildPID":term.child.pid,"tuiChildBirth":term.child.tui20_birth,"sourceCommit":identity["sourceCommit"],"binarySHA256":identity["binarySHA256"],"phase":"normal_q_exit","immutableExecutionHeld":True,"ptyHeld":False})
         term=Terminal(launch_fd,args.executable,"native",env,log); term.wait(("Runtime identity:",),30); detail(term); outcome["terminals"].append({"terminal":"reconnect","exit":term.close()})
         records=[{key:record.get(key) for key in ("operationId","action","targetIds","status","outcome","cancellationSupported")} for record in operations(url,token) if record.get("targetIds")==["tui20-fixture"]]
         expected=["service_restart","service_stop","service_start","service_configure","service_install"]

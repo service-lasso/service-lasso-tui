@@ -40,5 +40,5 @@ if (shutdownPipeFailure) {
   process.stdin.destroy();
   setTimeout(async () => { await server.stop(); await new Promise(resolve => jwks.close(resolve)); process.exit(0); }, 250).unref();
 }
-process.stdin.setEncoding("utf8"); await new Promise(resolve => process.stdin.once("data", resolve));
+process.stdin.setEncoding("utf8"); await new Promise(resolve => { process.stdin.once("data", resolve); process.stdin.once("end", resolve); });
 await server.stop(); await new Promise(resolve => jwks.close(resolve));

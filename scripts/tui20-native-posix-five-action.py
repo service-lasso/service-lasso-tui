@@ -268,7 +268,7 @@ def cleanup_execution(launch_fd,darwin_protected,held,live_child=False):
         elif launch_fd is not None:
             os.close(launch_fd); result={"outcome":"succeeded","closedReason":"sealed_descriptor_closed","recoveryRetained":False}
         else: result={"outcome":"succeeded","closedReason":"no_execution_object","recoveryRetained":False}
-        os.close(held)
+        if held is not None: os.close(held)
         return result
     except OSError:
         return {"outcome":"failed","closedReason":"descriptor_close_failed","recoveryRetained":darwin_protected is not None}
@@ -395,7 +395,9 @@ def recovery_owner_self_test(root,core_url,jwks_url):
     write_json(os.path.join(root,"recovery-owner-proof.json"),{"recoveryOwnerPID":os.getpid(),"failedHelperPID":helper.pid,"helperCrashObserved":True,"childPID":pid,"childLiveAfterHelperCrash":True,"ptyHeldAfterHelperCrash":True,"immutableExecutionHeld":True,"dependenciesLiveAfterHelperCrash":True,"ownedExitObserved":terminal_exit_reason(observed),"reapedChildOutcome":"terminal_unknown","reapedChildRecovery":"child_reaped_unowned"})
 def start_owned_runtime(args):
     """Start the actual Core/JWKS process under this durable resource owner."""
-    runtime=subprocess.Popen([args.node,args.runtime_script,"--root",args.root,"--core-commit",args.core_commit],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
+    command=[args.node,args.runtime_script,"--root",args.root,"--core-commit",args.core_commit]
+    if args.invalid_ready_receipt: command.append("--invalid-ready-receipt")
+    runtime=subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
     line=runtime.stdout.readline()
     try: ready=json.loads(line)
     except Exception as error:
@@ -410,6 +412,7 @@ def stop_owned_runtime(runtime):
     except Exception:
         raise RuntimeError("owned Core runtime did not stop after verified terminal finalization")
     if runtime.returncode!=0: raise RuntimeError("owned Core runtime exited unsuccessfully")
+    return terminal_exit_reason(runtime.returncode)
 def controller_failed(pid):
     try: os.kill(pid,0)
     except ProcessLookupError: return True
@@ -424,22 +427,26 @@ def retain_primary_and_recover(root,outcome,terminal):
     return True
 def main():
     OWNED_TERMINALS.clear()
-    parser=argparse.ArgumentParser(); parser.add_argument("--root",required=True); parser.add_argument("--executable"); parser.add_argument("--source-commit"); parser.add_argument("--core-commit"); parser.add_argument("--runtime-script"); parser.add_argument("--node"); parser.add_argument("--adverse-controller-crash",action="store_true"); parser.add_argument("--controller-pid",type=int); parser.add_argument("--recovery-self-test",action="store_true"); parser.add_argument("--recovery-owner-self-test",action="store_true"); parser.add_argument("--core-url"); parser.add_argument("--jwks-url"); args=parser.parse_args()
+    parser=argparse.ArgumentParser(); parser.add_argument("--root",required=True); parser.add_argument("--executable"); parser.add_argument("--source-commit"); parser.add_argument("--core-commit"); parser.add_argument("--runtime-script"); parser.add_argument("--node"); parser.add_argument("--adverse-controller-crash",action="store_true"); parser.add_argument("--controller-pid",type=int); parser.add_argument("--recovery-self-test",action="store_true"); parser.add_argument("--recovery-owner-self-test",action="store_true"); parser.add_argument("--core-url"); parser.add_argument("--jwks-url"); parser.add_argument("--invalid-ready-receipt",action="store_true"); args=parser.parse_args()
     if args.recovery_owner_self_test:
         if not args.core_url or not args.jwks_url: raise RuntimeError("external recovery dependency endpoints are required")
         recovery_owner_self_test(args.root,args.core_url,args.jwks_url); return
     if args.recovery_self_test: recovery_self_test(args.root); return
     if not args.executable or not args.source_commit or not args.core_commit or not args.runtime_script or not args.node: raise RuntimeError("native executable, source identity, and owned runtime are required")
     if args.adverse_controller_crash and not args.controller_pid: raise RuntimeError("adverse controller proof requires controller identity")
-    runtime,runtime_handoff=start_owned_runtime(args)
-    with open(os.path.join(args.root,"ready.json"),encoding="utf-8") as stream: ready=json.load(stream)
     paths={"coreReadback":True,"uniqueOwnedPaths":["workspaceRoot","instanceRegistryPath","hostPortRegistryPath"],"runtimeInstanceBound":True}
-    if ready.get("coreCommit")!=args.core_commit or ready.get("runtimePathReceipt")!=paths: raise RuntimeError("Core fixture receipt invalid")
-    token,denied,url=runtime_handoff["token"],runtime_handoff["deniedToken"],runtime_handoff["url"]
-    env={key:os.environ[key] for key in ALLOWED_ENV if os.environ.get(key)}; env.update({"TERM":"xterm-256color","SERVICE_LASSO_API_TOKEN":token,"SERVICE_LASSO_DENIED_TOKEN":denied,"SERVICE_LASSO_INVALID_TOKEN":"tui20-invalid-token","SERVICE_LASSO_CONNECTIONS_CONFIG":os.path.join(args.root,"connections.json")})
-    held,identity,held_inode=hold_candidate(args.executable,args.source_commit); launch_fd=None; darwin_protected=None; term=None; log=os.path.join(args.root,"native-terminal.txt"); outcome={"outcome":"failed","candidateIdentity":identity,"coreCommit":args.core_commit,"runtimePathReceipt":paths,"terminals":[]}
-    primary_persisted=False
+    runtime=None; held=None; launch_fd=None; darwin_protected=None; term=None; primary_persisted=False
+    outcome={"outcome":"failed","coreCommit":args.core_commit,"runtimePathReceipt":paths,"terminals":[]}
     try:
+        # Every post-start preflight stays inside this owner boundary. A bad
+        # receipt or candidate can therefore never strand the actual Core/JWKS
+        # child that this process owns.
+        runtime,runtime_handoff=start_owned_runtime(args)
+        with open(os.path.join(args.root,"ready.json"),encoding="utf-8") as stream: ready=json.load(stream)
+        if ready.get("coreCommit")!=args.core_commit or ready.get("runtimePathReceipt")!=paths: raise RuntimeError("Core fixture receipt invalid")
+        token,denied,url=runtime_handoff["token"],runtime_handoff["deniedToken"],runtime_handoff["url"]
+        env={key:os.environ[key] for key in ALLOWED_ENV if os.environ.get(key)}; env.update({"TERM":"xterm-256color","SERVICE_LASSO_API_TOKEN":token,"SERVICE_LASSO_DENIED_TOKEN":denied,"SERVICE_LASSO_INVALID_TOKEN":"tui20-invalid-token","SERVICE_LASSO_CONNECTIONS_CONFIG":os.path.join(args.root,"connections.json")})
+        held,identity,held_inode=hold_candidate(args.executable,args.source_commit); outcome["candidateIdentity"]=identity; log=os.path.join(args.root,"native-terminal.txt")
         launch_fd,darwin_protected,binding=bound_execution(held,identity,args.root); outcome["heldExecutableBinding"]=binding
         if args.adverse_controller_crash:
             term=Terminal(launch_fd,args.executable,"native",env,log); term.wait(("Runtime identity:",),30); detail(term)
@@ -506,5 +513,8 @@ def main():
         # Cleanup is reported separately and cannot relabel a true child exit.
         live_child=any(owned.child.poll() is None and not owned.child.reaped_unowned for owned in OWNED_TERMINALS)
         finalize_native_outcome(args.root,outcome,launch_fd,darwin_protected,held,live_child,primary_persisted,outcome.get("recoveryObservation"))
-        if not live_child: stop_owned_runtime(runtime)
+        if runtime is not None and not live_child:
+            runtime_exit=stop_owned_runtime(runtime)
+            if args.invalid_ready_receipt:
+                write_json(os.path.join(args.root,"owner-preflight-cleanup.json"),{"outcome":"failed","preflight":"runtime_receipt_invalid","ownerDrivenRuntimeShutdown":True,"runtimeChildExit":runtime_exit,"retainedOwnedRuntime":False})
 if __name__=="__main__": main()

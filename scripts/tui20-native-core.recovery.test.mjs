@@ -14,6 +14,9 @@ test("native owner architecture is shared by Linux and Darwin and requires real 
   assert.match(owner, /TUI child did not survive actual controller failure/);
   assert.match(owner, /coreAndJwksLiveAfterFailure/);
   assert.match(owner, /naturalChildExit/);
+  assert.match(owner, /Every post-start preflight stays inside this owner boundary/);
+  assert.match(owner, /owner-preflight-cleanup\.json/);
+  assert.match(runtime, /invalidReadyReceipt/);
   assert.match(owner, /sys_platform\(\)=="linux"/);
   assert.match(owner, /sys_platform\(\)=="darwin"/);
   assert.match(runtime, /startApiServer/);

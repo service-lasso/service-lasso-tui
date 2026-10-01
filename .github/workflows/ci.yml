@@ -151,6 +151,12 @@ jobs:
           go version -m "$binary" | grep -F 'vcs.modified=false' >/dev/null
           sha256sum "$binary" > "$attempt/binary.sha256"
           node -e 'const fs=require("fs"); const path=process.argv[1]; fs.writeFileSync(path+"/head-tree.json", JSON.stringify({tuiCommit:process.env.CI_SOURCE_SHA,coreCommit:process.env.CORE_COMMIT,tuiClean:true,coreClean:true},null,2));' "$attempt"
+           set +e
+           SERVICE_LASSO_WORKSPACE_ROOT="$SERVICE_LASSO_WORKSPACE_ROOT" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$SERVICE_LASSO_INSTANCE_REGISTRY_PATH" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$SERVICE_LASSO_HOST_PORT_REGISTRY_PATH" node scripts/tui20-native-core.mjs --root "$attempt" --executable "$binary" --source-commit "$CI_SOURCE_SHA" --core-commit "$CORE_COMMIT" --helper scripts/tui20-native-posix-five-action.py --invalid-ready-receipt true
+           preflight_status=$?
+           set -e
+           test "$preflight_status" -ne 0
+           node -e 'const fs=require("fs"); const root=process.argv[1]; const proof=JSON.parse(fs.readFileSync(root+"/owner-preflight-cleanup.json","utf8")); const exit=JSON.parse(fs.readFileSync(root+"/native-exit-receipt.json","utf8")); if (proof.outcome!=="failed" || proof.preflight!=="runtime_receipt_invalid" || !proof.ownerDrivenRuntimeShutdown || proof.runtimeChildExit!=="terminal_exited_zero" || proof.retainedOwnedRuntime || exit.outcome!=="failed") process.exit(1);' "$attempt"
           SERVICE_LASSO_WORKSPACE_ROOT="$SERVICE_LASSO_WORKSPACE_ROOT" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$SERVICE_LASSO_INSTANCE_REGISTRY_PATH" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$SERVICE_LASSO_HOST_PORT_REGISTRY_PATH" node scripts/tui20-native-core.mjs --root "$attempt" --executable "$binary" --source-commit "$CI_SOURCE_SHA" --core-commit "$CORE_COMMIT" --helper scripts/tui20-native-posix-five-action.py
       - name: Prove external owner survives actual controller failure
         shell: bash
@@ -178,6 +184,7 @@ jobs:
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/native-cleanup-receipt.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/operation-audit.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/core-parent-exit.json
+            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/owner-preflight-cleanup.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/recovery-unresolved-receipt.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/recovery-owner-proof.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/external-owner-live.json

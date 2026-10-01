@@ -11,9 +11,9 @@ if (!root || !executable || !sourceCommit) throw new Error("root, executable, an
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 const owner = arg("--helper") ? path.resolve(arg("--helper")) : path.join(scripts, "tui20-native-posix-five-action.py");
 const runtime = path.join(scripts, "tui20-native-runtime.mjs");
-const adverse = arg("--adverse-controller-crash") === "true";
+const adverse = arg("--adverse-controller-crash") === "true", invalidReadyReceipt = arg("--invalid-ready-receipt") === "true";
 await mkdir(root, { recursive: true });
-const child = spawn(python, [owner, "--root", root, "--executable", executable, "--source-commit", sourceCommit, "--core-commit", coreCommit, "--runtime-script", runtime, "--node", process.execPath, ...(adverse ? ["--adverse-controller-crash", "--controller-pid", String(process.pid)] : [])], { stdio: "inherit", env: { ...process.env } });
+const child = spawn(python, [owner, "--root", root, "--executable", executable, "--source-commit", sourceCommit, "--core-commit", coreCommit, "--runtime-script", runtime, "--node", process.execPath, ...(adverse ? ["--adverse-controller-crash", "--controller-pid", String(process.pid)] : []), ...(invalidReadyReceipt ? ["--invalid-ready-receipt"] : [])], { stdio: "inherit", env: { ...process.env } });
 if (adverse) {
   const marker = path.join(root, "external-owner-live.json");
   for (let attempt = 0; attempt < 300; attempt += 1) {

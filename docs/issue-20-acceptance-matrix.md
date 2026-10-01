@@ -6,7 +6,7 @@ release acceptance distinct for the durable keyboard operator workflows.
 ## Exact TUI candidate
 
 - Branch: `feature/20-durable-keyboard-operations`
-- Head: `82927d958963cd5d2a59407428f378183a57b1ab`
+- Qualified direct-binary source: `e7d23695112e87b05d93a81e45117c8f080c6f83`
 - Base: `develop` `f99e8d493b19b088c9f6c9d9b2aacb9d25388094`
 - Pull request: [#21](https://github.com/service-lasso/service-lasso-tui/pull/21)
 
@@ -48,19 +48,31 @@ cancellation, actor scoping, restart recovery, and redaction. The remaining
 case failed only while removing its own temporary fixture directory with
 `ENOTEMPTY`; no shared registry or service state was changed.
 
-The current-Core Windows ConPTY read harness also refused before launch on
-this host because the locally built TUI binary did not carry the required
-clean VCS build metadata. The script therefore produced no false compiled-TUI
-receipt. The hosted exact-head builds remain the available native compilation
-evidence.
+The linked worktree build was correctly rejected because Go did not stamp
+linked-worktree VCS metadata. A fresh owned non-worktree clone at the exact
+TUI head was then admitted with `vcs.revision=e7d2369…` and
+`vcs.modified=false`, and its AMD64 binary reached the real current-Core
+dashboard and `echo-service` detail over ConPTY. A missing credential produced
+the retained startup denial; an arbitrary local-admin token produced a Core
+403 on lifecycle availability. Neither attempt submitted an operation.
+
+The subsequent owned OAuth-bearer profile used the documented loopback Core
+JWKS, issuer, audience, actor, client, and lifecycle scopes. It reached the
+Core lifecycle availability contract, which returned `409 provider_not_ready`
+for every service in the unchanged copied Core service set, including `@node`.
+Core therefore issued no preview and the TUI could not submit or mutate. This
+is a real current-Core precondition failure, not an accepted-operation receipt.
+The ConPTY helper now forwards only the token and connection-profile file that
+the explicitly selected TUI profile requires; it neither writes credentials
+nor relaxes profile admission.
 
 ## Required next evidence
 
-The Core owner must restore a valid, bounded host-registry state through its
-own governed recovery path. Then a fresh owned exact-Core run must execute the
-TUI binary through native terminal input against isolated services and a unique
-loopback port, covering authenticated allow and deny, the five action matrix,
-confirmation, one submission, readback, advertised cancellation, reconnect,
-and preservation of an unrelated service. A separate reviewed Core #1553
-context adapter is required before persistent operation reconciliation can be
-claimed.
+The Core owner must provide a governed, ready normal service state whose
+documented lifecycle provider prerequisites are met. Then a fresh owned
+exact-Core run must execute the TUI binary through native terminal input
+against isolated services and a unique loopback port, covering authenticated
+allow and deny, the five action matrix, confirmation, one submission, readback,
+advertised cancellation, reconnect, and preservation of an unrelated service.
+A separate reviewed Core #1553 context adapter is required before persistent
+operation reconciliation can be claimed.

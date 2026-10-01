@@ -12,7 +12,7 @@ from winpty.ptyprocess import PtyProcess
 
 
 def child_environment(api_url):
-    allowed = ("APPDATA", "COMSPEC", "LOCALAPPDATA", "PATHEXT", "PATH", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE", "WINDIR")
+    allowed = ("APPDATA", "COMSPEC", "LOCALAPPDATA", "PATHEXT", "PATH", "SERVICE_LASSO_API_TOKEN", "SERVICE_LASSO_CONNECTIONS_CONFIG", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE", "WINDIR")
     environment = {key: os.environ[key] for key in allowed if os.environ.get(key)}
     environment["TERM"] = "xterm-256color"
     if api_url:

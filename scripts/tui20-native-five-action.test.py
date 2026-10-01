@@ -38,15 +38,17 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertNotIn('private-token.json', source)
 
     def test_core_fixture_defines_only_owned_profiles_and_services(self):
-        source = pathlib.Path(__file__).with_name("tui20-native-core.mjs").read_text(encoding="utf-8")
+        source = pathlib.Path(__file__).with_name("tui20-native-runtime.mjs").read_text(encoding="utf-8")
         self.assertIn('"tui20-fixture"', source)
         self.assertIn('"tui20-unrelated"', source)
         self.assertIn('["invalid", "SERVICE_LASSO_INVALID_TOKEN"]', source)
         self.assertIn('["missing", "SERVICE_LASSO_MISSING_TOKEN"]', source)
         self.assertNotIn('private-token.json', source)
-        self.assertIn('SERVICE_LASSO_TUI20_TOKEN', source)
         self.assertIn('runtimePathReceipt', source)
-        self.assertIn('corePathReadback', source)
+        self.assertIn('coreReadback', source)
+        controller = pathlib.Path(__file__).with_name("tui20-native-core.mjs").read_text(encoding="utf-8")
+        self.assertIn('tui20-native-runtime.mjs', controller)
+        self.assertIn('--adverse-controller-crash', controller)
 
     def test_posix_harness_uses_a_real_pty_and_retains_the_required_boundaries(self):
         source = pathlib.Path(__file__).with_name("tui20-native-posix-five-action.py").read_text(encoding="utf-8")

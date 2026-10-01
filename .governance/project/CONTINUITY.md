@@ -49,6 +49,29 @@ sealed `memfd`; it was skipped on this Windows checkout. CI invokes the guard,
 and native artifacts retain any recovery receipts it produces. A queued or
 failed hosted run remains blocked evidence, not native acceptance.
 
+## 2026-10-02: PR #22 actual external resource-owner checkpoint
+
+The prior source guard remained unsound because the JavaScript controller
+started the real Core/JWKS objects and the sole Python helper owned the PTY and
+immutable execution object. This repair makes that controller volatile. A
+distinct POSIX resource owner starts the actual Core/JWKS runtime as its child,
+receives only an in-memory ready handoff, and itself retains the terminal PTY,
+immutable executable object, and the Core runtime process identity. It stops
+Core/JWKS only after terminal finalization records a verified child terminal
+result or an explicit unowned-reap outcome.
+
+The wired Linux and macOS native workflow now runs an adverse production-path
+exercise after the five-action acceptance: it starts a real TUI child against
+the real pinned Core/JWKS runtime, confirms the resource-owner boundary, kills
+the actual JavaScript controller, verifies the TUI child and both dependencies
+remain live, then requests normal TUI `q` exit and retains the closed receipt.
+No descriptor is claimed to survive the killed controller, no unknown process
+is killed, and no fixture lifetime is extended. Linux uses the sealed memfd
+path and Darwin uses the existing system-immutable held-directory execve path;
+the same owner/controller architecture is shared by both. Local source checks
+are only guards. Exact-head hosted Linux and macOS receipts remain required
+before native acceptance can be claimed.
+
 ## 2026-10-01: PR #15 exact-head and unavailable observation checkpoint
 
 Natural PR run `36766315178` built and retained source `d51d1c82d884aa3bc5fa3e1707860c914634b64e`, a provider-generated merge commit, because the workflow used the default pull-request checkout. Its retained executable SHA-256 is `a34f4475ad5ea5bcb134dd8329986c1187710187082018485ddb0c8f2bceb05c`. The direct invalid-URL assertion passed for those held bytes; the following ConPTY unavailable probe returned only the closed `startup` / `timeout` / `timed_out` receipt. A controlled local replay of that same digest found the visible unavailable/retry frame and a clean `q` exit; its `q quit` footer was clipped from the terminal capture and was not a valid readiness predicate. The repaired bounded probe requires visible unavailable/retry labels and `q` exit; the TUI's retry transition remains covered by its state tests because this terminal renderer does not emit a separately readable redraw for an equivalent retry outcome. No terminal text, token, nonce, URL, or exception was retained. Repair scope is explicit head checkout and provenance binding, plus this retained executable replay before any rebuild. This preserves the failure and does not establish runtime acceptance, candidate qualification, release, deployment, or GA.

@@ -120,7 +120,15 @@ then writes the final child and cleanup receipts. `waitpid` ownership loss
 (`ECHILD`/`ChildProcessError`) is an unowned, reaped, unresolved outcome; it
 is never a successful terminal exit and must not overwrite the primary
 receipt. The native harness test guard and native workflow both exercise an
-adverse live-child recovery and an externally reaped child.
+adverse live-child recovery and an externally reaped child. The volatile
+ JavaScript acceptance controller must not itself host Core or JWKS. A distinct
+ external POSIX resource owner starts the actual Core/JWKS runtime as its child
+ and retains that process identity together with the PTY and immutable launch
+ object. The native Linux and macOS workflows kill that actual controller only
+ after a real TUI child is live, read back live Core and JWKS dependencies from
+ the owner, observe normal `q` terminal exit, and only then permit owner-driven
+ dependency cleanup. A source-only or Linux-only toy process exercise cannot
+ substitute for this production-path proof.
 It labels the result `win32-amd64` only after the Windows host, Node process,
 and Python/ConPTY helper report AMD64. This remains local direct-only evidence:
 bounded Windows CI dependency installation changes the pinned Core checkout,

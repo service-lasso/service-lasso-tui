@@ -152,6 +152,18 @@ jobs:
           sha256sum "$binary" > "$attempt/binary.sha256"
           node -e 'const fs=require("fs"); const path=process.argv[1]; fs.writeFileSync(path+"/head-tree.json", JSON.stringify({tuiCommit:process.env.CI_SOURCE_SHA,coreCommit:process.env.CORE_COMMIT,tuiClean:true,coreClean:true},null,2));' "$attempt"
           SERVICE_LASSO_WORKSPACE_ROOT="$SERVICE_LASSO_WORKSPACE_ROOT" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$SERVICE_LASSO_INSTANCE_REGISTRY_PATH" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$SERVICE_LASSO_HOST_PORT_REGISTRY_PATH" node scripts/tui20-native-core.mjs --root "$attempt" --executable "$binary" --source-commit "$CI_SOURCE_SHA" --core-commit "$CORE_COMMIT" --helper scripts/tui20-native-posix-five-action.py
+      - name: Prove external owner survives actual controller failure
+        shell: bash
+        run: |
+          attempt="$RUNNER_TEMP/tui20-native-${{ matrix.name }}-$CI_SOURCE_SHA"
+          binary="$attempt/service-lasso-tui"
+          set +e
+          node scripts/tui20-native-core.mjs --root "$attempt" --executable "$binary" --source-commit "$CI_SOURCE_SHA" --core-commit "$CORE_COMMIT" --helper scripts/tui20-native-posix-five-action.py --adverse-controller-crash true
+          controller_status=$?
+          set -e
+          test "$controller_status" -eq 137
+          for attempt_number in $(seq 1 150); do test -f "$attempt/recovery-owner-proof.json" && break; sleep 0.1; done
+          node -e 'const fs=require("fs"); const root=process.argv[1]; const proof=JSON.parse(fs.readFileSync(root+"/recovery-owner-proof.json","utf8")); const exit=JSON.parse(fs.readFileSync(root+"/native-exit-receipt.json","utf8")); if (!proof.controllerFailed || !proof.childLiveAfterFailure || !proof.ptyHeldAfterFailure || !proof.immutableExecutionHeldAfterFailure || !proof.coreAndJwksLiveAfterFailure || proof.naturalChildExit!=="terminal_exited_zero" || exit.outcome!=="succeeded") process.exit(1);' "$attempt"
       - name: Retain native direct-evidence receipt
         if: always()
         uses: actions/upload-artifact@v4
@@ -168,7 +180,7 @@ jobs:
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/core-parent-exit.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/recovery-unresolved-receipt.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/recovery-owner-proof.json
-            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/recovery-parent-proof.json
+            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/external-owner-live.json
           if-no-files-found: warn
           retention-days: 90
   release-asset-compile:

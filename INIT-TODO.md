@@ -28,7 +28,9 @@ failure has a causal Core-audit/registry diagnosis; pending reconciliation is
   stay under a live parent that retains its PTY, immutable execution object,
   and Core/JWKS lifecycle until direct exit observation. A reaped/unowned
   wait status is unresolved, not success; prove both adverse paths in the
-  wired native-harness guard.
+  wired native-harness guard. The implementation now makes the POSIX owner
+  start and supervise a separate real Core/JWKS process, while the JavaScript
+  controller is volatile; exact-head Linux and macOS evidence remains pending.
 - [x] Issue #7 verified Core `develop` GET routes for capability/setup metadata,
   authenticated runtime identity, inbox list, and service health history. The
   TUI consumes only bounded display fields and no inbox detail or mutation.

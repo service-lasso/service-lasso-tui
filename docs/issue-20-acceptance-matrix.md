@@ -119,11 +119,16 @@ system-immutable object). Before acceptance actions, the
 harness replaces the executable pathname by rename and symlink attacks and
 mutates the original inode in place; each immutable-object launch must still
 reach the expected missing-credential boundary. The retained receipt contract includes binary
-digest, source-tree heads, Core path
-materialization readback, true terminal exits, five accepted operations,
+  digest, source-tree heads, Core path
+  materialization readback, true terminal exits, five accepted operations,
 adverse zero-operation/direct-audit counts, exactly one matching Core terminal
 success audit event per distinct operation ID, no-replay reconnect, and named
-unrelated-service comparison. Core #1553 remains fail-closed for persistent
+  unrelated-service comparison. Preflight, five-action, injected-finalization,
+  and controller-loss phases retain separate attempt roots, binary hashes, and
+  owner birth/close records; no later phase may replace another phase's primary
+  or cleanup receipt. The injected cleanup-failure phase proves that a real
+  owner gracefully closes Core/JWKS after finalization cleanup has failed.
+  Core #1553 remains fail-closed for persistent
 reconciliation. Until the exact-head Linux and macOS jobs complete and their
 receipts are read back, this is an executable path and remains **Blocked**, not
 native acceptance; hosted builds and cross-compilation are not replacements.

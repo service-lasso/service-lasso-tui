@@ -46,6 +46,10 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertNotIn('private-token.json', source)
         self.assertIn('runtimePathReceipt', source)
         self.assertIn('coreReadback', source)
+        self.assertLess(source.index('Object.assign(process.env, ownedRuntimeEnvironment)'), source.index('const { exportJWK, generateKeyPair, SignJWT }'))
+        self.assertIn('SERVICE_LASSO_WORKSPACE_ROOT: workspaceRoot', source)
+        self.assertIn('SERVICE_LASSO_INSTANCE_REGISTRY_PATH: instanceRegistryPath', source)
+        self.assertIn('SERVICE_LASSO_HOST_PORT_REGISTRY_PATH: hostPortRegistryPath', source)
         controller = pathlib.Path(__file__).with_name("tui20-native-core.mjs").read_text(encoding="utf-8")
         self.assertIn('tui20-native-runtime.mjs', controller)
         self.assertIn('--adverse-controller-crash', controller)
@@ -78,6 +82,10 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertIn('Every post-start preflight stays inside this owner boundary', source)
         self.assertIn('owner-preflight-cleanup.json', source)
         self.assertIn('runtime is not None and not live_child', source)
+        self.assertIn('OwnedRuntimeAcquisitionFailure', source)
+        self.assertNotIn('runtime.kill()', source)
+        self.assertIn('owner-finalization-failure-proof.json', source)
+        self.assertIn('injected native finalization cleanup failure', source)
         self.assertIn('native-cleanup-receipt.json', source)
         self.assertIn('"adverseAudit"', source)
         self.assertIn('len(set(operation_ids))!=5', source)
@@ -127,6 +135,16 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         actual = harness["finalize_native_outcome"]("controlled-root", primary, None, object(), -1, cleanup=cleanup, writer=record)
         self.assertEqual(actual["recoveryRetained"], True)
         self.assertEqual(writes[0], ("native-exit-receipt.json", primary))
+
+    def test_injected_cleanup_failure_can_be_observed_without_rewriting_primary(self):
+        harness = load_posix_harness()
+        writes = []
+        primary = {"outcome": "succeeded", "terminals": [{"exit": "terminal_exited_zero"}]}
+        def record(path, value): writes.append((pathlib.Path(path).name, value))
+        def failing_cleanup(*_): raise RuntimeError("injected native finalization cleanup failure")
+        with self.assertRaisesRegex(RuntimeError, "injected native finalization cleanup failure"):
+            harness["finalize_native_outcome"]("controlled-root", primary, None, None, -1, cleanup=failing_cleanup, writer=record)
+        self.assertEqual(writes, [("native-exit-receipt.json", primary)])
 
     def test_negative_owned_child_status_is_signaled_not_nonzero(self):
         harness = load_posix_harness()

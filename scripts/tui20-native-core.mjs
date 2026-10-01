@@ -11,9 +11,10 @@ if (!root || !executable || !sourceCommit) throw new Error("root, executable, an
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 const owner = arg("--helper") ? path.resolve(arg("--helper")) : path.join(scripts, "tui20-native-posix-five-action.py");
 const runtime = path.join(scripts, "tui20-native-runtime.mjs");
-const adverse = arg("--adverse-controller-crash") === "true", invalidReadyReceipt = arg("--invalid-ready-receipt") === "true";
+const adverse = arg("--adverse-controller-crash") === "true", invalidReadyReceipt = arg("--invalid-ready-receipt") === "true", injectFinalizationCleanupFailure = arg("--inject-finalization-cleanup-failure") === "true";
 await mkdir(root, { recursive: true });
-const child = spawn(python, [owner, "--root", root, "--executable", executable, "--source-commit", sourceCommit, "--core-commit", coreCommit, "--runtime-script", runtime, "--node", process.execPath, ...(adverse ? ["--adverse-controller-crash", "--controller-pid", String(process.pid)] : []), ...(invalidReadyReceipt ? ["--invalid-ready-receipt"] : [])], { stdio: "inherit", env: { ...process.env } });
+const child = spawn(python, [owner, "--root", root, "--executable", executable, "--source-commit", sourceCommit, "--core-commit", coreCommit, "--runtime-script", runtime, "--node", process.execPath, ...(adverse ? ["--adverse-controller-crash", "--controller-pid", String(process.pid)] : []), ...(invalidReadyReceipt ? ["--invalid-ready-receipt"] : []), ...(injectFinalizationCleanupFailure ? ["--inject-finalization-cleanup-failure"] : [])], { stdio: "inherit", env: { ...process.env } });
+await writeFile(path.join(root, "owner-birth.json"), JSON.stringify({ recoveryOwnerPID: child.pid, ownerStarted: true }), { encoding: "utf8", mode: 0o600 });
 if (adverse) {
   const marker = path.join(root, "external-owner-live.json");
   for (let attempt = 0; attempt < 300; attempt += 1) {
@@ -24,5 +25,6 @@ if (adverse) {
   process.kill(process.pid, "SIGKILL");
 }
 const [code, signal] = await once(child, "exit");
-await writeFile(path.join(root, "core-parent-exit.json"), JSON.stringify({ recoveryOwnerExit: Number.isInteger(code) ? code : null, recoveryOwnerSignal: signal ?? null, coreStopAfterVerifiedOwnerTerminalReceipt: true }), { encoding: "utf8", mode: 0o600 });
+const ownerClose = { recoveryOwnerPID: child.pid, recoveryOwnerExit: Number.isInteger(code) ? code : null, recoveryOwnerSignal: signal ?? null, coreStopAfterVerifiedOwnerTerminalReceipt: true };
+await Promise.all(["core-parent-exit.json", "owner-close.json"].map(name => writeFile(path.join(root, name), JSON.stringify(ownerClose), { encoding: "utf8", mode: 0o600 })));
 process.exitCode = code ?? 1;

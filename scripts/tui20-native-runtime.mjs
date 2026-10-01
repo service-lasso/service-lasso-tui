@@ -9,10 +9,14 @@ const arg = name => { const i = process.argv.indexOf(name); return i < 0 ? undef
 const root = arg("--root"), coreCommit = arg("--core-commit"), invalidReadyReceipt = arg("--invalid-ready-receipt") === "true" || process.argv.includes("--invalid-ready-receipt");
 if (!root || !coreCommit) throw new Error("runtime root and Core commit are required");
 const core = path.join(root, "core-source"), servicesRoot = path.join(root, "services"), workspaceRoot = path.join(root, "workspace"), instanceRegistryPath = path.join(root, "registry", "instances.json"), hostPortRegistryPath = path.join(root, "registry", "ports.json");
+// Core evaluates configuration during module loading. Establish all three
+// phase-owned paths before importing any Core or Core dependency module.
+const ownedRuntimeEnvironment = Object.freeze({ SERVICE_LASSO_WORKSPACE_ROOT: workspaceRoot, SERVICE_LASSO_INSTANCE_REGISTRY_PATH: instanceRegistryPath, SERVICE_LASSO_HOST_PORT_REGISTRY_PATH: hostPortRegistryPath });
+Object.assign(process.env, ownedRuntimeEnvironment);
+if (Object.entries(ownedRuntimeEnvironment).some(([key,value]) => process.env[key] !== value)) throw new Error("owned Core runtime environment unavailable before import");
 const { exportJWK, generateKeyPair, SignJWT } = await import(pathToFileURL(path.join(core, "node_modules", "jose", "dist", "webapi", "index.js")).href);
 const { startApiServer } = await import(pathToFileURL(path.join(core, "dist", "server", "index.js")).href);
 const { writeExecutableFixtureService } = await import(pathToFileURL(path.join(core, "tests", "test-helpers.js")).href);
-process.env.SERVICE_LASSO_WORKSPACE_ROOT = workspaceRoot; process.env.SERVICE_LASSO_INSTANCE_REGISTRY_PATH = instanceRegistryPath; process.env.SERVICE_LASSO_HOST_PORT_REGISTRY_PATH = hostPortRegistryPath;
 await mkdir(servicesRoot, { recursive: true }); await mkdir(workspaceRoot, { recursive: true });
 await writeExecutableFixtureService(servicesRoot, "tui20-fixture", { autoExitMs: null }); await writeExecutableFixtureService(servicesRoot, "tui20-unrelated", { autoExitMs: null });
 const issuer = "https://tui20-native-fixture.invalid", audience = "tui20-native-fixture", keyId = "tui20-native-fixture";

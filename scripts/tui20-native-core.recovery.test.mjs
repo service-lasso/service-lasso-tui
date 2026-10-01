@@ -19,10 +19,13 @@ test("native owner architecture is shared by Linux and Darwin and requires real 
   assert.match(owner, /Every post-start preflight stays inside this owner boundary/);
   assert.match(owner, /owner-preflight-cleanup\.json/);
   assert.match(owner, /owner-finalization-failure-proof\.json/);
+  assert.match(owner, /select\.select\(\[runtime\.stdout\],\[\],\[\],10\)/);
+  assert.match(owner, /owner-runtime-recovery\.json/);
   assert.match(owner, /OwnedRuntimeAcquisitionFailure/);
   assert.doesNotMatch(owner, /runtime\.kill\(\)/);
-  assert.match(controller, /owner-birth\.json/);
-  assert.match(controller, /owner-close\.json/);
+  assert.match(controller, /tui20-native-owner-observer\.py/);
+  assert.doesNotMatch(controller, /writeFile\(path\.join\(root, "owner-birth/);
+  assert.match(runtime, /shutdownPipeFailure/);
   assert.match(runtime, /invalidReadyReceipt/);
   assert.match(runtime, /ownedRuntimeEnvironment/);
   assert.ok(runtime.indexOf("Object.assign(process.env, ownedRuntimeEnvironment)") < runtime.indexOf("const { exportJWK, generateKeyPair, SignJWT }"));

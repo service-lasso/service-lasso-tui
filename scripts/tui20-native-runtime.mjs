@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 const arg = name => { const i = process.argv.indexOf(name); return i < 0 ? undefined : process.argv[i + 1]; };
-const root = arg("--root"), coreCommit = arg("--core-commit"), invalidReadyReceipt = arg("--invalid-ready-receipt") === "true" || process.argv.includes("--invalid-ready-receipt");
+const root = arg("--root"), coreCommit = arg("--core-commit"), invalidReadyReceipt = arg("--invalid-ready-receipt") === "true" || process.argv.includes("--invalid-ready-receipt"), readyMode = arg("--ready-mode") ?? "normal", shutdownPipeFailure = process.argv.includes("--shutdown-pipe-failure");
 if (!root || !coreCommit) throw new Error("runtime root and Core commit are required");
 const core = path.join(root, "core-source"), servicesRoot = path.join(root, "services"), workspaceRoot = path.join(root, "workspace"), instanceRegistryPath = path.join(root, "registry", "instances.json"), hostPortRegistryPath = path.join(root, "registry", "ports.json");
 // Core evaluates configuration during module loading. Establish all three
@@ -31,6 +31,14 @@ await writeFile(path.join(root, "connections.json"), JSON.stringify(profiles), {
 const [instanceRegistry, portRegistry, runtimeInstance] = await Promise.all([readFile(instanceRegistryPath, "utf8"), readFile(hostPortRegistryPath, "utf8"), readFile(path.join(workspaceRoot, ".service-lasso", "runtime-instance.json"), "utf8")]);
 if (!JSON.parse(runtimeInstance).instance?.instanceId || !JSON.parse(instanceRegistry).instances?.length || !JSON.parse(portRegistry).allocations?.length) throw new Error("Core runtime-path readback unavailable"); await Promise.all([stat(workspaceRoot), stat(instanceRegistryPath), stat(hostPortRegistryPath)]);
 await writeFile(path.join(root, "ready.json"), JSON.stringify({ coreCommit, runtimePathReceipt: invalidReadyReceipt ? { coreReadback: false } : { coreReadback: true, uniqueOwnedPaths: ["workspaceRoot", "instanceRegistryPath", "hostPortRegistryPath"], runtimeInstanceBound: true } }), { encoding: "utf8", mode: 0o600 });
-process.stdout.write(JSON.stringify({ event: "ready", url: server.url, token, deniedToken, jwksPort: address.port }) + "\n");
+if (readyMode === "normal") process.stdout.write(JSON.stringify({ event: "ready", url: server.url, token, deniedToken, jwksPort: address.port }) + "\n");
+if (readyMode === "eof") process.stdout.end();
+if (shutdownPipeFailure) {
+  // This remains the actual Core/JWKS runtime.  Its control pipe is closed and
+  // it exits naturally after its own bounded teardown, so the owner must not
+  // substitute a signal or an unobserved exit claim.
+  process.stdin.destroy();
+  setTimeout(async () => { await server.stop(); await new Promise(resolve => jwks.close(resolve)); process.exit(0); }, 250).unref();
+}
 process.stdin.setEncoding("utf8"); await new Promise(resolve => process.stdin.once("data", resolve));
 await server.stop(); await new Promise(resolve => jwks.close(resolve));

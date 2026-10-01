@@ -156,6 +156,8 @@ jobs:
           prepare_phase "$attempt/five-actions"
           prepare_phase "$attempt/finalization-failure"
           prepare_phase "$attempt/adverse-controller"
+          prepare_phase "$attempt/handoff-timeout"
+          prepare_phase "$attempt/shutdown-pipe-failure"
           phase="$attempt/preflight"
           binary="$phase/service-lasso-tui"
            set +e
@@ -167,6 +169,25 @@ jobs:
           phase="$attempt/five-actions"
           binary="$phase/service-lasso-tui"
           SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json" node scripts/tui20-native-core.mjs --root "$phase" --executable "$binary" --source-commit "$CI_SOURCE_SHA" --core-commit "$CORE_COMMIT" --helper scripts/tui20-native-posix-five-action.py
+      - name: Retain actual runtime ownership on failed handoff and shutdown pipe
+        shell: bash
+        run: |
+          set -euo pipefail
+          attempt="$RUNNER_TEMP/tui20-native-${{ matrix.name }}-$CI_SOURCE_SHA"
+          phase="$attempt/handoff-timeout"
+          set +e
+          SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json" node scripts/tui20-native-core.mjs --root "$phase" --executable "$phase/service-lasso-tui" --source-commit "$CI_SOURCE_SHA" --core-commit "$CORE_COMMIT" --helper scripts/tui20-native-posix-five-action.py --runtime-ready-mode timeout
+          handoff_status=$?
+          set -e
+          test "$handoff_status" -ne 0
+          node -e 'const fs=require("fs"); const root=process.argv[1]; const proof=JSON.parse(fs.readFileSync(root+"/owner-runtime-recovery.json","utf8")); if (proof.outcome!=="observed_closed" || proof.runtimeChildExit!=="terminal_exited_zero" || !proof.shutdownRequested || !proof.actualExitObserved) process.exit(1);' "$phase"
+          phase="$attempt/shutdown-pipe-failure"
+          set +e
+          SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json" node scripts/tui20-native-core.mjs --root "$phase" --executable "$phase/service-lasso-tui" --source-commit "$CI_SOURCE_SHA" --core-commit "$CORE_COMMIT" --helper scripts/tui20-native-posix-five-action.py --shutdown-pipe-failure true
+          pipe_status=$?
+          set -e
+          test "$pipe_status" -ne 0
+          node -e 'const fs=require("fs"); const root=process.argv[1]; const proof=JSON.parse(fs.readFileSync(root+"/owner-runtime-recovery.json","utf8")); if (proof.outcome!=="observed_closed" || proof.runtimeChildExit!=="terminal_exited_zero" || proof.shutdownRequested || !proof.actualExitObserved) process.exit(1);' "$phase"
       - name: Prove finalization failure still closes the actual owned runtime
         shell: bash
         run: |
@@ -186,7 +207,8 @@ jobs:
           set -e
           test "$controller_status" -eq 137
           for attempt_number in $(seq 1 150); do test -f "$attempt/recovery-owner-proof.json" && break; sleep 0.1; done
-          node -e 'const fs=require("fs"); const root=process.argv[1]; const proof=JSON.parse(fs.readFileSync(root+"/recovery-owner-proof.json","utf8")); const exit=JSON.parse(fs.readFileSync(root+"/native-exit-receipt.json","utf8")); if (!proof.controllerFailed || !proof.childLiveAfterFailure || !proof.ptyHeldAfterFailure || !proof.immutableExecutionHeldAfterFailure || !proof.coreAndJwksLiveAfterFailure || proof.naturalChildExit!=="terminal_exited_zero" || exit.outcome!=="succeeded") process.exit(1);' "$attempt"
+           for attempt_number in $(seq 1 150); do test -f "$attempt/owner-close.json" && break; sleep 0.1; done
+           node -e 'const fs=require("fs"); const root=process.argv[1]; const proof=JSON.parse(fs.readFileSync(root+"/recovery-owner-proof.json","utf8")); const exit=JSON.parse(fs.readFileSync(root+"/native-exit-receipt.json","utf8")); const birth=JSON.parse(fs.readFileSync(root+"/owner-birth.json","utf8")); const close=JSON.parse(fs.readFileSync(root+"/owner-close.json","utf8")); if (!proof.controllerFailed || !proof.childLiveAfterFailure || !proof.ptyHeldAfterFailure || !proof.immutableExecutionHeldAfterFailure || !proof.coreAndJwksLiveAfterFailure || proof.naturalChildExit!=="terminal_exited_zero" || exit.outcome!=="succeeded" || !birth.recoveryOwnerBirth || !birth.runtimeBirth || !birth.nativeSHA256 || close.recoveryOwnerPID!==birth.recoveryOwnerPID || close.recoveryOwnerActualExit!==0 || !close.actualWaitObserved) process.exit(1);' "$attempt"
       - name: Retain native direct-evidence receipt
         if: always()
         uses: actions/upload-artifact@v4
@@ -205,6 +227,7 @@ jobs:
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/core-parent-exit.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/owner-preflight-cleanup.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/owner-finalization-failure-proof.json
+            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/owner-runtime-recovery.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/recovery-unresolved-receipt.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/recovery-owner-proof.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/external-owner-live.json

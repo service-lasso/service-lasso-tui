@@ -55,6 +55,8 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertIn('"terminal_exited_zero"', source)
         self.assertIn('terminal_signaled', source)
         self.assertIn('live_child_unresolved', source)
+        self.assertIn('external recovery owner must observe a live child before finalization', source)
+        self.assertIn('ChildReapedUnowned', source)
         self.assertNotIn('self.child.kill()', source)
         self.assertIn('os.open(executable,os.O_RDONLY|getattr(os,"O_NOFOLLOW",0))', source)
         self.assertIn('libc.fexecve', source)
@@ -125,14 +127,14 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         harness = load_posix_harness()
         self.assertEqual(harness["terminal_exit_reason"](-9), "terminal_signaled")
 
-    def test_live_child_retains_execution_object_after_primary_receipt(self):
+    def test_finalization_rejects_a_live_child_without_external_recovery(self):
         harness = load_posix_harness()
         writes = []
         primary = {"outcome": "failed", "terminals": [{"exit": "terminal_unknown"}]}
         def record(path, value): writes.append((pathlib.Path(path).name, value))
-        actual = harness["finalize_native_outcome"]("controlled-root", primary, object(), object(), -1, live_child=True, writer=record)
-        self.assertEqual(actual, {"outcome":"failed","closedReason":"live_child_unresolved","recoveryRetained":True})
-        self.assertEqual(writes, [("native-exit-receipt.json", primary), ("native-cleanup-receipt.json", actual)])
+        with self.assertRaisesRegex(RuntimeError, "external recovery owner"):
+            harness["finalize_native_outcome"]("controlled-root", primary, object(), object(), -1, live_child=True, writer=record)
+        self.assertEqual(writes, [])
 
     def test_partial_darwin_activation_is_carried_to_closed_cleanup(self):
         harness = load_posix_harness()

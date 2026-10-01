@@ -274,6 +274,7 @@ def cleanup_execution(launch_fd,darwin_protected,held,live_child=False):
         return {"outcome":"failed","closedReason":"descriptor_close_failed","recoveryRetained":darwin_protected is not None}
 def finalize_native_outcome(root,outcome,launch_fd,darwin_protected,held,live_child=False,primary_persisted=False,recovery_observation=None,cleanup=cleanup_execution,writer=write_json):
     """Record primary state first; cleanup recording can never mask that state."""
+    if live_child: raise RuntimeError("external recovery owner must observe a live child before finalization")
     if not primary_persisted: persist_primary_outcome(root,outcome,writer)
     cleanup_outcome=cleanup(launch_fd,darwin_protected,held,live_child)
     if recovery_observation is not None: cleanup_outcome={**cleanup_outcome,"recoveryObservation":recovery_observation}
@@ -351,6 +352,14 @@ def recovery_self_test(root):
     except ChildReapedUnowned: pass
     else: raise RuntimeError("controlled reaped child was treated as terminal")
     write_json(os.path.join(root,"recovery-process-proof.json"),{"helperPID":os.getpid(),"childPID":pid,"childLiveAtUnresolvedReceipt":True,"ownedExitObserved":terminal_exit_reason(observed),"reapedChildOutcome":"terminal_unknown","reapedChildRecovery":"child_reaped_unowned"})
+def retain_primary_and_recover(root,outcome,terminal):
+    """Persist an unresolved primary while its helper still owns recovery."""
+    terminal.exit_reason=terminal.exit_reason or "terminal_unknown"
+    if not any(item.get("terminal")==terminal.label and item.get("exit")==terminal.exit_reason for item in outcome["terminals"]): outcome["terminals"].append({"terminal":terminal.label,"exit":terminal.exit_reason})
+    outcome["failureReason"]="native_harness_assertion_failed"
+    persist_primary_outcome(root,outcome)
+    outcome["recoveryObservation"]=terminal.recover_until_observed()
+    return True
 def main():
     OWNED_TERMINALS.clear()
     parser=argparse.ArgumentParser(); parser.add_argument("--root",required=True); parser.add_argument("--executable"); parser.add_argument("--source-commit"); parser.add_argument("--core-commit"); parser.add_argument("--recovery-self-test",action="store_true"); args=parser.parse_args()
@@ -401,14 +410,7 @@ def main():
         if unrelated(url,token)!=before: raise RuntimeError("unrelated state changed")
         write_json(os.path.join(args.root,"operation-audit.json"),{"operations":records,"coreAudit":audit_matches}); outcome.update({"outcome":"succeeded","actions":["install","config","start","stop","restart"],"adverseAudit":adverse,"reloadDenied":True,"cancellation":{"advertised":False,"supportedActionTested":False},"reconnect":{"completedOperationNoReplay":True,"pendingReconciliation":"blocked_core_1553_no_adapter"},"unrelatedService":{**before,"unchangedAfterFiveActions":True},"fixtureOperationCount":len(records)})
     except TerminalUnresolved as unresolved:
-        observed=unresolved.terminal
-        if not any(item.get("terminal")==observed.label and item.get("exit")==observed.exit_reason for item in outcome["terminals"]): outcome["terminals"].append({"terminal":observed.label,"exit":observed.exit_reason})
-        outcome["failureReason"]="native_harness_assertion_failed"
-        # This bounded primary receipt is intentionally written while this
-        # process still owns the PTY and immutable execution object.
-        persist_primary_outcome(args.root,outcome); primary_persisted=True
-        recovery=observed.recover_until_observed()
-        outcome["recoveryObservation"]=recovery
+        primary_persisted=retain_primary_and_recover(args.root,outcome,unresolved.terminal)
         raise
     except DarwinActivationFailure as failure:
         launch_fd=darwin_protected=failure.recovery
@@ -417,7 +419,9 @@ def main():
     except Exception:
         observed=term if term is not None else (OWNED_TERMINALS[-1] if OWNED_TERMINALS else None)
         if observed is not None and observed.exit_reason is not None and not any(item.get("terminal")==observed.label and item.get("exit")==observed.exit_reason for item in outcome["terminals"]): outcome["terminals"].append({"terminal":observed.label,"exit":observed.exit_reason})
-        outcome["failureReason"]="native_harness_assertion_failed"; raise
+        if observed is not None and observed.child.returncode is None: primary_persisted=retain_primary_and_recover(args.root,outcome,observed)
+        else: outcome["failureReason"]="native_harness_assertion_failed"
+        raise
     finally:
         # Cleanup is reported separately and cannot relabel a true child exit.
         live_child=any(owned.child.poll() is None and not owned.child.reaped_unowned for owned in OWNED_TERMINALS)

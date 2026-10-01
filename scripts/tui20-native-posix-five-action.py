@@ -27,10 +27,16 @@ def unrelated(url,token):
     return {"servicePresent":True,"id":item.get("id"),"enabled":item.get("enabled"),"runtimeState":runtime.get("state"),"running":runtime.get("running"),"availability":availability.get("available")}
 class BoundProcess:
     """A child launched from the already-verified executable descriptor."""
-    def __init__(self, pid): self.pid=pid; self.returncode=None
+    def __init__(self, pid): self.pid=pid; self.returncode=None; self.reaped_unowned=False
     def poll(self):
         if self.returncode is not None: return self.returncode
-        pid,status=os.waitpid(self.pid,os.WNOHANG)
+        if self.reaped_unowned: return None
+        try: pid,status=os.waitpid(self.pid,os.WNOHANG)
+        except ChildProcessError:
+            self.reaped_unowned=True; return None
+        except OSError as error:
+            if error.errno==getattr(os,"ECHILD",10): self.reaped_unowned=True; return None
+            raise
         if not pid: return None
         self.returncode=os.waitstatus_to_exitcode(status); return self.returncode
     def wait(self,timeout):
@@ -38,13 +44,23 @@ class BoundProcess:
         while time.monotonic()<deadline:
             result=self.poll()
             if result is not None: return result
+            if self.reaped_unowned: raise ChildReapedUnowned("owned child was reaped outside BoundProcess")
             time.sleep(.02)
         raise subprocess.TimeoutExpired("held executable",timeout)
+    def wait_until_observed(self):
+        """No second deadline: the owner stays alive until it observes its child."""
+        while True:
+            result=self.poll()
+            if result is not None: return result
+            if self.reaped_unowned: raise ChildReapedUnowned("owned child was reaped outside BoundProcess")
+            time.sleep(.02)
 def terminal_exit_reason(result):
     if result is None: return "terminal_unknown"
     if result < 0: return "terminal_signaled"
     return "terminal_exited_zero" if result==0 else "terminal_exit_code_1" if result==1 else "terminal_exit_code_2" if result==2 else "terminal_exited_nonzero"
-class TerminalUnresolved(RuntimeError): pass
+class ChildReapedUnowned(RuntimeError): pass
+class TerminalUnresolved(RuntimeError):
+    def __init__(self, terminal, reason): super().__init__(reason); self.terminal=terminal
 def fexecve_child(fd,argv,env,master,slave):
     pid=os.fork()
     if pid:
@@ -97,21 +113,41 @@ class Terminal:
             if all(value in self.text[start:] for value in need): return
             self.read()
             if self.child.poll() is not None: raise RuntimeError("terminal exited before expected state")
+            if self.child.reaped_unowned:
+                self.exit_reason="terminal_unknown"; self.recovery_state="child_reaped_unowned"
+                raise TerminalUnresolved(self,"owned terminal was reaped without an observable exit status")
         raise RuntimeError("missing terminal state")
     def close(self,expected=0):
-        if self.child.poll() is None: self.write("q")
+        current=self.child.poll()
+        if current is None and not self.child.reaped_unowned: self.write("q")
         try: result=self.child.wait(timeout=10)
+        except ChildReapedUnowned:
+            self.exit_reason="terminal_unknown"; self.recovery_state="child_reaped_unowned"
+            raise TerminalUnresolved(self,"owned terminal was reaped without an observable exit status")
         except subprocess.TimeoutExpired:
-            # The harness owns observation, not forced termination.  Keep the
-            # PTY and immutable execution object live for recovery finalization.
-            self.unresolved=True
+            # The helper stays alive as the recovery owner; do not close its
+            # PTY or execution object while an owned terminal remains live.
             self.exit_reason="terminal_unknown"
-            raise TerminalUnresolved("owned terminal exit unresolved")
+            self.recovery_state="live_child_unresolved"
+            raise TerminalUnresolved(self,"owned terminal exit unresolved")
         os.close(self.master)
         reason=terminal_exit_reason(result)
         self.exit_reason=reason
         if result!=expected: raise RuntimeError("unexpected terminal exit")
         return reason
+    def recover_until_observed(self):
+        """Keep this helper, its PTY, and its held launch object alive until exit."""
+        if self.child.reaped_unowned:
+            os.close(self.master)
+            return {"terminal":self.label,"outcome":"terminal_unknown","recovery":"child_reaped_unowned","observed":False}
+        try: result=self.child.wait_until_observed()
+        except ChildReapedUnowned:
+            self.exit_reason="terminal_unknown"; self.recovery_state="child_reaped_unowned"
+            os.close(self.master)
+            return {"terminal":self.label,"outcome":"terminal_unknown","recovery":"child_reaped_unowned","observed":False}
+        os.close(self.master)
+        self.exit_reason=terminal_exit_reason(result)
+        return {"terminal":self.label,"outcome":self.exit_reason,"recovery":"owned_exit_observed","observed":True}
 def sys_platform(): return sys.platform
 def sha256_fd(fd):
     digest=hashlib.sha256(); os.lseek(fd,0,os.SEEK_SET)
@@ -236,10 +272,11 @@ def cleanup_execution(launch_fd,darwin_protected,held,live_child=False):
         return result
     except OSError:
         return {"outcome":"failed","closedReason":"descriptor_close_failed","recoveryRetained":darwin_protected is not None}
-def finalize_native_outcome(root,outcome,launch_fd,darwin_protected,held,live_child=False,cleanup=cleanup_execution,writer=write_json):
+def finalize_native_outcome(root,outcome,launch_fd,darwin_protected,held,live_child=False,primary_persisted=False,recovery_observation=None,cleanup=cleanup_execution,writer=write_json):
     """Record primary state first; cleanup recording can never mask that state."""
-    persist_primary_outcome(root,outcome,writer)
+    if not primary_persisted: persist_primary_outcome(root,outcome,writer)
     cleanup_outcome=cleanup(launch_fd,darwin_protected,held,live_child)
+    if recovery_observation is not None: cleanup_outcome={**cleanup_outcome,"recoveryObservation":recovery_observation}
     try: persist_cleanup_outcome(root,cleanup_outcome,writer)
     except OSError: pass
     return cleanup_outcome
@@ -294,9 +331,31 @@ def action(term,key,name):
         if "Runtime API unavailable:" in term.text[start:]: term.write("r")
         term.read()
     raise RuntimeError("retained operation readback unavailable")
+def recovery_self_test(root):
+    """Real process proof: helper keeps the live PTY child until observed."""
+    os.makedirs(root,exist_ok=True)
+    master,slave=pty.openpty(); pid=os.fork()
+    if pid==0:
+        os.close(master); time.sleep(.2); os.close(slave); os._exit(0)
+    os.close(slave); live=BoundProcess(pid)
+    try: live.wait(.01); raise RuntimeError("controlled child exited before bounded observation")
+    except subprocess.TimeoutExpired: pass
+    if live.poll() is not None: raise RuntimeError("controlled child was not live at unresolved receipt")
+    write_json(os.path.join(root,"recovery-unresolved-receipt.json"),{"outcome":"failed","closedReason":"live_child_unresolved","recoveryRetained":True})
+    observed=live.wait_until_observed(); os.close(master)
+    reaped_pid=os.fork()
+    if reaped_pid==0: os._exit(0)
+    os.waitpid(reaped_pid,0); reaped=BoundProcess(reaped_pid)
+    if reaped.poll() is not None or not reaped.reaped_unowned: raise RuntimeError("controlled reaped child was not classified")
+    try: reaped.wait(.01)
+    except ChildReapedUnowned: pass
+    else: raise RuntimeError("controlled reaped child was treated as terminal")
+    write_json(os.path.join(root,"recovery-process-proof.json"),{"helperPID":os.getpid(),"childPID":pid,"childLiveAtUnresolvedReceipt":True,"ownedExitObserved":terminal_exit_reason(observed),"reapedChildOutcome":"terminal_unknown","reapedChildRecovery":"child_reaped_unowned"})
 def main():
     OWNED_TERMINALS.clear()
-    parser=argparse.ArgumentParser(); parser.add_argument("--root",required=True); parser.add_argument("--executable",required=True); parser.add_argument("--source-commit",required=True); parser.add_argument("--core-commit",required=True); args=parser.parse_args()
+    parser=argparse.ArgumentParser(); parser.add_argument("--root",required=True); parser.add_argument("--executable"); parser.add_argument("--source-commit"); parser.add_argument("--core-commit"); parser.add_argument("--recovery-self-test",action="store_true"); args=parser.parse_args()
+    if args.recovery_self_test: recovery_self_test(args.root); return
+    if not args.executable or not args.source_commit or not args.core_commit: raise RuntimeError("native executable and source identities are required")
     with open(os.path.join(args.root,"ready.json"),encoding="utf-8") as stream: ready=json.load(stream)
     paths={"coreReadback":True,"uniqueOwnedPaths":["workspaceRoot","instanceRegistryPath","hostPortRegistryPath"],"runtimeInstanceBound":True}
     if ready.get("coreCommit")!=args.core_commit or ready.get("runtimePathReceipt")!=paths: raise RuntimeError("Core fixture receipt invalid")
@@ -304,6 +363,7 @@ def main():
     if not token or not denied or not url: raise RuntimeError("in-memory credential handoff unavailable")
     env={key:os.environ[key] for key in ALLOWED_ENV if os.environ.get(key)}; env.update({"TERM":"xterm-256color","SERVICE_LASSO_API_TOKEN":token,"SERVICE_LASSO_DENIED_TOKEN":denied,"SERVICE_LASSO_INVALID_TOKEN":"tui20-invalid-token","SERVICE_LASSO_CONNECTIONS_CONFIG":os.path.join(args.root,"connections.json")})
     held,identity,held_inode=hold_candidate(args.executable,args.source_commit); launch_fd=None; darwin_protected=None; term=None; log=os.path.join(args.root,"native-terminal.txt"); outcome={"outcome":"failed","candidateIdentity":identity,"coreCommit":args.core_commit,"runtimePathReceipt":paths,"terminals":[]}
+    primary_persisted=False
     try:
         launch_fd,darwin_protected,binding=bound_execution(held,identity,args.root); outcome["heldExecutableBinding"]=binding
         before=unrelated(url,token); adverse=[]
@@ -340,6 +400,16 @@ def main():
         if len(records)!=5 or sorted(records,key=lambda item:item["operationId"])!=sorted(action_readbacks,key=lambda item:item["operationId"]) or len(set(operation_ids))!=5 or sorted(item["action"] for item in records)!=sorted(expected) or any(not item["operationId"] or item["cancellationSupported"] for item in records) or any(item["coreAuditCount"]!=1 for item in audit_matches): raise RuntimeError("durable action audit invalid")
         if unrelated(url,token)!=before: raise RuntimeError("unrelated state changed")
         write_json(os.path.join(args.root,"operation-audit.json"),{"operations":records,"coreAudit":audit_matches}); outcome.update({"outcome":"succeeded","actions":["install","config","start","stop","restart"],"adverseAudit":adverse,"reloadDenied":True,"cancellation":{"advertised":False,"supportedActionTested":False},"reconnect":{"completedOperationNoReplay":True,"pendingReconciliation":"blocked_core_1553_no_adapter"},"unrelatedService":{**before,"unchangedAfterFiveActions":True},"fixtureOperationCount":len(records)})
+    except TerminalUnresolved as unresolved:
+        observed=unresolved.terminal
+        if not any(item.get("terminal")==observed.label and item.get("exit")==observed.exit_reason for item in outcome["terminals"]): outcome["terminals"].append({"terminal":observed.label,"exit":observed.exit_reason})
+        outcome["failureReason"]="native_harness_assertion_failed"
+        # This bounded primary receipt is intentionally written while this
+        # process still owns the PTY and immutable execution object.
+        persist_primary_outcome(args.root,outcome); primary_persisted=True
+        recovery=observed.recover_until_observed()
+        outcome["recoveryObservation"]=recovery
+        raise
     except DarwinActivationFailure as failure:
         launch_fd=darwin_protected=failure.recovery
         outcome["heldExecutableBinding"]={"platform":"darwin","mechanism":"system-immutable-held-directory-execve","systemImmutableLeaf":True,"systemImmutableParent":False,"partialActivationRecovery":True}
@@ -350,6 +420,6 @@ def main():
         outcome["failureReason"]="native_harness_assertion_failed"; raise
     finally:
         # Cleanup is reported separately and cannot relabel a true child exit.
-        live_child=any(owned.child.poll() is None for owned in OWNED_TERMINALS)
-        finalize_native_outcome(args.root,outcome,launch_fd,darwin_protected,held,live_child)
+        live_child=any(owned.child.poll() is None and not owned.child.reaped_unowned for owned in OWNED_TERMINALS)
+        finalize_native_outcome(args.root,outcome,launch_fd,darwin_protected,held,live_child,primary_persisted,outcome.get("recoveryObservation"))
 if __name__=="__main__": main()

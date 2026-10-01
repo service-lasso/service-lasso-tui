@@ -8,7 +8,17 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 const arg = (name) => { const i = process.argv.indexOf(name); return i < 0 ? undefined : process.argv[i + 1]; };
 const root = arg("--root") ?? process.argv[2], executable = arg("--executable"), sourceCommit = arg("--source-commit"), coreCommit = arg("--core-commit") ?? "2633c07be25512d0a84f9bfa28de6be5edff35e8", python = arg("--python") ?? "python";
-if (!root || !executable || !sourceCommit) throw new Error("root, executable, and source commit are required");
+if (!root) throw new Error("root is required");
+const helperArgument = arg("--helper");
+const helper = helperArgument ? path.resolve(helperArgument) : path.join(path.dirname(fileURLToPath(import.meta.url)), "tui20-native-five-action.py");
+if (arg("--recovery-self-test")) {
+  await mkdir(root, { recursive: true });
+  const child = spawn(python, [helper, "--root", root, "--recovery-self-test"], { stdio: "inherit" });
+  const [code, signal] = await once(child, "exit");
+  await writeFile(path.join(root, "recovery-parent-proof.json"), JSON.stringify({ helperExitObserved: true, helperExit: Number.isInteger(code) ? code : null, helperSignal: signal ?? null, coreStopRequestedAfterHelperExit: true }), { encoding: "utf8", mode: 0o600 });
+  process.exitCode = code ?? 1;
+} else {
+if (!executable || !sourceCommit) throw new Error("executable and source commit are required");
 const core = path.join(root, "core-source"), servicesRoot = path.join(root, "services"), workspaceRoot = path.join(root, "workspace"), instanceRegistryPath = path.join(root, "registry", "instances.json"), hostPortRegistryPath = path.join(root, "registry", "ports.json");
 const { exportJWK, generateKeyPair, SignJWT } = await import(pathToFileURL(path.join(core, "node_modules", "jose", "dist", "webapi", "index.js")).href);
 const { startApiServer } = await import(pathToFileURL(path.join(core, "dist", "server", "index.js")).href);
@@ -41,9 +51,8 @@ const corePathReadback = async () => {
 };
 const runtimePathReceipt = await corePathReadback();
 await writeFile(path.join(root, "ready.json"), JSON.stringify({ coreCommit, runtimePathReceipt }), { encoding: "utf8", mode: 0o600 });
-const helperArgument = arg("--helper");
-const helper = helperArgument ? path.resolve(helperArgument) : path.join(path.dirname(fileURLToPath(import.meta.url)), "tui20-native-five-action.py");
 const child = spawn(python, [helper, "--root", root, "--executable", executable, "--source-commit", sourceCommit, "--core-commit", coreCommit], { stdio: "inherit", env: { ...process.env, SERVICE_LASSO_TUI20_TOKEN: token, SERVICE_LASSO_TUI20_DENIED_TOKEN: deniedToken, SERVICE_LASSO_TUI20_API_URL: server.url } });
 const [code, signal] = await once(child, "exit");
 await writeFile(path.join(root, "core-parent-exit.json"), JSON.stringify({ childExit: Number.isInteger(code) ? code : null, childSignal: signal ?? null, coreStopRequested: true }), { encoding: "utf8", mode: 0o600 });
 await server.stop(); await new Promise((resolve) => jwks.close(resolve)); process.exitCode = code ?? 1;
+}

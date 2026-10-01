@@ -158,6 +158,9 @@ def main():
 
         invalid = open_terminal(args.executable, "invalid", env); terminals.append(invalid)
         invalid_transcript = [""]
+        wait_for(invalid, ("Runtime identity:",), 30, invalid_transcript, transcript_path, "invalid-credential")
+        detail(invalid, invalid_transcript, transcript_path, "invalid-credential", "tui20-fixture")
+        invalid.write("i")
         wait_for(invalid, ("Runtime API unavailable:",), 30, invalid_transcript, transcript_path, "invalid-credential")
         close_terminal(invalid); terminals.remove(invalid)
 

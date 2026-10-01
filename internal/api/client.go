@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,7 +25,17 @@ type Client struct {
 	baseURL       string
 	http          *http.Client
 	operatorToken string
+	authMode      AuthMode
 }
+
+// AuthMode is explicit so an existing local-admin token is never silently
+// reinterpreted as an OAuth bearer credential.
+type AuthMode string
+
+const (
+	AuthModeLocalAdmin  AuthMode = "local-admin"
+	AuthModeOAuthBearer AuthMode = "oauth-bearer"
+)
 
 // ConfigurationErrorKind classifies a rejected local API-client configuration
 // without retaining the supplied URL or operator token.
@@ -36,6 +47,7 @@ const (
 	ConfigurationErrorUserinfo               ConfigurationErrorKind = "userinfo"
 	ConfigurationErrorQueryOrFragment        ConfigurationErrorKind = "query_or_fragment"
 	ConfigurationErrorInsecureTokenTransport ConfigurationErrorKind = "insecure_token_transport"
+	ConfigurationErrorRemoteProfileAdmission ConfigurationErrorKind = "remote_profile_admission"
 )
 
 // ConfigurationError reports only the closed validation class.
@@ -55,6 +67,8 @@ func (e *ConfigurationError) Error() string {
 		return "Service Lasso API URL must not contain a query or fragment"
 	case ConfigurationErrorInsecureTokenTransport:
 		return "operator token requires HTTPS for a non-loopback Service Lasso API URL"
+	case ConfigurationErrorRemoteProfileAdmission:
+		return "non-loopback Service Lasso API requires explicit oauth-bearer lifecycle scopes"
 	default:
 		return "invalid Service Lasso API configuration"
 	}
@@ -123,16 +137,74 @@ type HealthHistory struct {
 	Entries   int
 }
 
-// LifecycleResult is the durable result returned by Core after a lifecycle
-// request completes. The detailed state remains Core-owned.
-type LifecycleResult struct {
-	OK        bool   `json:"ok"`
-	Action    string `json:"action"`
-	ServiceID string `json:"serviceId"`
-	Message   string `json:"message"`
+type LifecycleAvailability struct {
+	Action               string
+	Available            bool
+	Reason               string
+	Permission           string
+	RequiresConfirmation bool
+}
+
+// LifecyclePreview contains the one immutable Core confirmation context. It is
+// intentionally transient: only its resulting operation ID can be persisted.
+type LifecyclePreview struct {
+	Action             string
+	ServiceID          string
+	ConfirmationID     string
+	ConfirmationPhrase string
+	Targets            []string
+	Effects            []string
+}
+
+// Operation contains the closed, bounded readback fields that are safe to
+// render. Core owns and redacts any durable detail omitted here.
+type Operation struct {
+	ID                    string
+	Action                string
+	Status                string
+	Phase                 string
+	Progress              int
+	Outcome               string
+	CancellationSupported bool
+	Ownership             string
 }
 
 func NewClient(baseURL string, client *http.Client, operatorToken string) (*Client, error) {
+	return NewClientWithAuth(baseURL, client, operatorToken, AuthModeLocalAdmin)
+}
+
+// NewClientWithAuth admits a non-loopback runtime only when its caller
+// explicitly declares the Core OAuth mode and both lifecycle scopes. The
+// declaration is a local configuration guard; Core validates the bearer token
+// and authorizes every request.
+func NewClientWithAuth(baseURL string, client *http.Client, operatorToken string, authMode AuthMode, scopes ...string) (*Client, error) {
+	parsed, err := parseBaseURL(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	if authMode == "" {
+		authMode = AuthModeLocalAdmin
+	}
+	if authMode != AuthModeLocalAdmin && authMode != AuthModeOAuthBearer {
+		return nil, &ConfigurationError{Kind: ConfigurationErrorInvalidURL}
+	}
+	if !isLoopbackHost(parsed.Hostname()) && (authMode != AuthModeOAuthBearer || !hasRequiredScopes(scopes)) {
+		return nil, &ConfigurationError{Kind: ConfigurationErrorRemoteProfileAdmission}
+	}
+	if !isLoopbackHost(parsed.Hostname()) && parsed.Scheme != "https" {
+		return nil, &ConfigurationError{Kind: ConfigurationErrorInsecureTokenTransport}
+	}
+	if client == nil {
+		client = &http.Client{Timeout: requestTimeout}
+	}
+	isolatedClient := *client
+	isolatedClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return &Client{baseURL: strings.TrimRight(parsed.String(), "/"), http: &isolatedClient, operatorToken: operatorToken, authMode: authMode}, nil
+}
+
+func parseBaseURL(baseURL string) (*url.URL, error) {
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return nil, &ConfigurationError{Kind: ConfigurationErrorInvalidURL}
@@ -146,17 +218,7 @@ func NewClient(baseURL string, client *http.Client, operatorToken string) (*Clie
 	if parsed.RawQuery != "" || parsed.Fragment != "" {
 		return nil, &ConfigurationError{Kind: ConfigurationErrorQueryOrFragment}
 	}
-	if operatorToken != "" && parsed.Scheme != "https" && !isLoopbackHost(parsed.Hostname()) {
-		return nil, &ConfigurationError{Kind: ConfigurationErrorInsecureTokenTransport}
-	}
-	if client == nil {
-		client = &http.Client{Timeout: requestTimeout}
-	}
-	isolatedClient := *client
-	isolatedClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
-		return http.ErrUseLastResponse
-	}
-	return &Client{baseURL: strings.TrimRight(parsed.String(), "/"), http: &isolatedClient, operatorToken: operatorToken}, nil
+	return parsed, nil
 }
 
 func isLoopbackHost(host string) bool {
@@ -259,28 +321,189 @@ func (c *Client) HealthHistory(ctx context.Context, serviceID string) (HealthHis
 	return HealthHistory{ServiceID: result.ServiceID, Entries: len(result.History.Transitions)}, err
 }
 
-// Lifecycle asks Core to perform one documented lifecycle action. Core remains
-// responsible for authorization, confirmation enforcement, auditing, and the
-// actual mutation. This client never retries a mutation automatically.
-func (c *Client) Lifecycle(ctx context.Context, serviceID, action string) (LifecycleResult, error) {
-	var result LifecycleResult
+func (c *Client) LifecycleAvailability(ctx context.Context, serviceID string) ([]LifecycleAvailability, error) {
 	if !serviceIDPattern.MatchString(serviceID) {
-		return result, fmt.Errorf("invalid service ID")
+		return nil, fmt.Errorf("invalid service ID")
 	}
-	allowed := map[string]bool{
-		"install": true, "config": true, "start": true, "stop": true, "restart": true, "reload": true,
+	var result struct {
+		Actions []struct {
+			Action               string  `json:"action"`
+			Available            bool    `json:"available"`
+			Reason               *string `json:"reason"`
+			Permission           string  `json:"permission"`
+			RequiresConfirmation bool    `json:"requiresConfirmation"`
+		} `json:"actions"`
 	}
-	if !allowed[action] {
-		return result, fmt.Errorf("unsupported lifecycle action %q", action)
+	if err := c.get(ctx, "/api/operator/lifecycle/services/"+url.PathEscape(serviceID)+"/availability", &result); err != nil {
+		return nil, err
 	}
-	body, err := json.Marshal(struct {
-		Confirm bool `json:"confirm"`
-	}{Confirm: true})
-	if err != nil {
-		return result, fmt.Errorf("encode lifecycle confirmation: %w", err)
+	actions := make([]LifecycleAvailability, 0, len(result.Actions))
+	for _, entry := range result.Actions {
+		if (!isDurableAction(entry.Action) && entry.Action != "reload") ||
+			(entry.Action == "reload" && entry.Available) ||
+			!safeIdentifier(entry.Permission, 96) {
+			return nil, fmt.Errorf("invalid lifecycle availability response")
+		}
+		reason := ""
+		if entry.Reason != nil {
+			if !safeIdentifier(*entry.Reason, 96) {
+				return nil, fmt.Errorf("invalid lifecycle availability response")
+			}
+			reason = *entry.Reason
+		}
+		actions = append(actions, LifecycleAvailability{Action: entry.Action, Available: entry.Available, Reason: reason, Permission: entry.Permission, RequiresConfirmation: entry.RequiresConfirmation})
 	}
-	path := "/api/services/" + url.PathEscape(serviceID) + "/" + action
-	return result, c.request(ctx, http.MethodPost, path, bytes.NewReader(body), &result)
+	return actions, nil
+}
+
+func (c *Client) PreviewLifecycle(ctx context.Context, serviceID, action string) (LifecyclePreview, error) {
+	if !serviceIDPattern.MatchString(serviceID) || !isDurableAction(action) {
+		return LifecyclePreview{}, fmt.Errorf("invalid lifecycle preview")
+	}
+	body, _ := json.Marshal(map[string]string{"action": action, "serviceId": serviceID})
+	var result struct {
+		Action    string `json:"action"`
+		Preflight struct {
+			Targets []string `json:"targets"`
+			Effects []string `json:"effects"`
+		} `json:"preflight"`
+		Confirmation struct {
+			ID                 string `json:"id"`
+			Status             string `json:"status"`
+			ConfirmationPhrase string `json:"confirmationPhrase"`
+		} `json:"confirmation"`
+	}
+	if err := c.request(ctx, http.MethodPost, "/api/operator/lifecycle/operations", bytes.NewReader(body), &result); err != nil {
+		return LifecyclePreview{}, err
+	}
+	expected := "service_" + action
+	if action == "config" {
+		expected = "service_configure"
+	}
+	if result.Action != expected || result.Confirmation.Status != "pending" || !safeOpaque(result.Confirmation.ID, "mcp-confirmation-", 80) || !safePhrase(result.Confirmation.ConfirmationPhrase) || !safeTargetEffects(result.Preflight.Targets, result.Preflight.Effects) {
+		return LifecyclePreview{}, fmt.Errorf("invalid lifecycle preview response")
+	}
+	return LifecyclePreview{Action: action, ServiceID: serviceID, ConfirmationID: result.Confirmation.ID, ConfirmationPhrase: result.Confirmation.ConfirmationPhrase, Targets: result.Preflight.Targets, Effects: result.Preflight.Effects}, nil
+}
+
+func (c *Client) SubmitLifecycle(ctx context.Context, preview LifecyclePreview, idempotencyKey string) (Operation, error) {
+	if !serviceIDPattern.MatchString(preview.ServiceID) || !isDurableAction(preview.Action) || !safeOpaque(preview.ConfirmationID, "mcp-confirmation-", 80) || !safePhrase(preview.ConfirmationPhrase) || !safeOpaque(idempotencyKey, "tui-", 80) {
+		return Operation{}, fmt.Errorf("invalid frozen lifecycle submission")
+	}
+	body, _ := json.Marshal(map[string]any{"action": preview.Action, "serviceId": preview.ServiceID, "execute": true, "idempotencyKey": idempotencyKey, "confirmationId": preview.ConfirmationID, "confirmationPhrase": preview.ConfirmationPhrase})
+	var result struct {
+		Accepted  bool            `json:"accepted"`
+		Operation json.RawMessage `json:"operation"`
+	}
+	if err := c.request(ctx, http.MethodPost, "/api/operator/lifecycle/operations", bytes.NewReader(body), &result); err != nil {
+		return Operation{}, err
+	}
+	if !result.Accepted {
+		return Operation{}, fmt.Errorf("invalid lifecycle submission response")
+	}
+	return parseOperation(result.Operation)
+}
+
+func (c *Client) Operation(ctx context.Context, operationID string) (Operation, error) {
+	if !safeOpaque(operationID, "mcp-operation-", 80) {
+		return Operation{}, fmt.Errorf("invalid operation ID")
+	}
+	var result struct {
+		Operation json.RawMessage `json:"operation"`
+	}
+	if err := c.get(ctx, "/api/operator/lifecycle/operations/"+url.PathEscape(operationID), &result); err != nil {
+		return Operation{}, err
+	}
+	return parseOperation(result.Operation)
+}
+
+func (c *Client) CancelOperation(ctx context.Context, operationID string) (Operation, error) {
+	if !safeOpaque(operationID, "mcp-operation-", 80) {
+		return Operation{}, fmt.Errorf("invalid operation ID")
+	}
+	var result struct {
+		Cancellation struct {
+			Operation json.RawMessage `json:"operation"`
+		} `json:"cancellation"`
+	}
+	if err := c.request(ctx, http.MethodPost, "/api/operator/lifecycle/operations/"+url.PathEscape(operationID)+"/cancel", bytes.NewBufferString("{}"), &result); err != nil {
+		return Operation{}, err
+	}
+	return parseOperation(result.Cancellation.Operation)
+}
+
+func NewIdempotencyKey() (string, error) {
+	var value [16]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		return "", fmt.Errorf("create idempotency key: %w", err)
+	}
+	return fmt.Sprintf("tui-%x", value), nil
+}
+
+func isDurableAction(value string) bool {
+	return value == "install" || value == "config" || value == "start" || value == "stop" || value == "restart"
+}
+func safeOpaque(value, prefix string, limit int) bool {
+	return strings.HasPrefix(value, prefix) && safeIdentifier(value, limit)
+}
+func safeIdentifier(value string, limit int) bool {
+	if value == "" || len(value) > limit {
+		return false
+	}
+	for _, r := range value {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == ':' || r == '.') {
+			return false
+		}
+	}
+	return true
+}
+func safePhrase(value string) bool {
+	return len(value) >= 10 && len(value) <= 200 && !strings.ContainsAny(value, "\r\n\x1b")
+}
+func safeTargetEffects(targets, effects []string) bool {
+	if len(targets) == 0 || len(targets) > 100 || len(effects) == 0 || len(effects) > 100 {
+		return false
+	}
+	for _, value := range targets {
+		if !serviceIDPattern.MatchString(value) {
+			return false
+		}
+	}
+	for _, effect := range effects {
+		// Core's preflight effects are operator-facing descriptions, not
+		// identifiers. Admit bounded printable ASCII so the detail screen can
+		// render the authoritative preview while still rejecting terminal
+		// controls and multi-line payloads.
+		if len(effect) == 0 || len(effect) > 240 {
+			return false
+		}
+		for _, character := range effect {
+			if character < 0x20 || character > 0x7e {
+				return false
+			}
+		}
+	}
+	return true
+}
+func parseOperation(raw json.RawMessage) (Operation, error) {
+	var value struct {
+		OperationID           string  `json:"operationId"`
+		Action                string  `json:"action"`
+		Status                string  `json:"status"`
+		Phase                 string  `json:"phase"`
+		Progress              int     `json:"progress"`
+		Outcome               *string `json:"outcome"`
+		CancellationSupported bool    `json:"cancellationSupported"`
+		Ownership             string  `json:"ownership"`
+	}
+	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil || !safeOpaque(value.OperationID, "mcp-operation-", 80) || !safeIdentifier(value.Action, 96) || !safeIdentifier(value.Status, 96) || !safeIdentifier(value.Phase, 96) || value.Progress < 0 || value.Progress > 100 || (value.Outcome != nil && !safeIdentifier(*value.Outcome, 96)) || (value.Ownership != "" && value.Ownership != "own" && value.Ownership != "other") {
+		return Operation{}, fmt.Errorf("invalid lifecycle operation response")
+	}
+	outcome := ""
+	if value.Outcome != nil {
+		outcome = *value.Outcome
+	}
+	return Operation{ID: value.OperationID, Action: value.Action, Status: value.Status, Phase: value.Phase, Progress: value.Progress, Outcome: outcome, CancellationSupported: value.CancellationSupported, Ownership: value.Ownership}, nil
 }
 
 func (c *Client) get(ctx context.Context, path string, destination any) error {
@@ -295,8 +518,10 @@ func (c *Client) request(ctx context.Context, method, path string, body io.Reade
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if c.operatorToken != "" {
+	if c.operatorToken != "" && c.authMode == AuthModeLocalAdmin {
 		req.Header.Set("x-service-lasso-admin-token", c.operatorToken)
+	} else if c.operatorToken != "" && c.authMode == AuthModeOAuthBearer {
+		req.Header.Set("Authorization", "Bearer "+c.operatorToken)
 	}
 	response, err := c.http.Do(req)
 	if err != nil {

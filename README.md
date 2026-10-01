@@ -10,13 +10,36 @@ go run ./cmd/service-lasso-tui --api http://127.0.0.1:17883
 ```
 
 Use `j`/`k` or the arrow keys to select a service, `Enter` for details, `r` to
-refresh, and `q` to quit. From a service detail, `i`, `c`, `s`, `x`, `R`, and
-`l` request install, config, start, stop, restart, and reload respectively.
-Every lifecycle request needs a visible `y` confirmation and is sent only once;
-Core performs authorization, confirmation enforcement, auditing, and execution.
+refresh, and `q` to quit. From a service detail, `i`, `c`, `s`, `x`, and `R`
+request install, config, start, stop, and restart. The TUI first asks Core for
+availability and a server-issued preview, then a visible `y` confirmation sends
+one frozen, idempotent request. It follows the durable operation readback
+without replaying after reconnect, refresh, navigation, or profile switching.
+`reload` is shown as unavailable because Core does not provide it through the
+durable operation contract. `z` asks Core to cancel only when that operation
+explicitly advertises cancellation support.
+
+The TUI retains a locally protected, metadata-only reconciliation record only
+when Core supplies a validated opaque actor/client/instance context for that
+accepted operation. The current client fails closed and does not persist one
+until Core #1553's reviewed contract is integrated; it never derives authority
+from a URL, profile, or credential.
+It never saves a credential, confirmation phrase, preview, request body, or
+idempotency key. A changed profile or actor binding leaves the operation
+unread and unreplayed.
 
 `SERVICE_LASSO_API_TOKEN` is sent only as Core's
-`x-service-lasso-admin-token` request header and is never rendered or logged.
+`x-service-lasso-admin-token` request header for the default explicit
+`local-admin` mode and is never rendered or logged. A remote durable-operation
+profile must explicitly set `"authMode":"oauth-bearer"` and declare
+`"scopes":["service-lasso:read","service-lasso:lifecycle:write"]`; its
+token is then sent as a bearer credential. Existing profiles never change auth
+mode implicitly. A non-loopback profile that omits either declaration, uses
+`local-admin`, or lacks a required scope is rejected before the TUI reads its
+credential environment variable or opens an HTTP connection. Omitted mode
+continues to select `local-admin` only for loopback URLs. These client checks
+do not validate OAuth credentials or permissions; Core does that for every
+request.
 Use a process environment or an operator-managed secret launcher; do not put a
 token in a command-line argument.
 
@@ -24,8 +47,10 @@ For more than one runtime, pass a metadata-only profile file with
 `--connections <file> --profile <name>`. Each profile has a `url` and
 `tokenEnv` field. The TUI reads the named environment variable when it connects;
 it never saves the credential in the profile file. Press `p` to switch between
-configured profiles. Switching clears the current dashboard context and ignores
-late results from the previous connection.
+configured profiles. Switching clears the current dashboard context, but keeps
+an accepted or submission-uncertain durable operation in memory so its opaque
+ID cannot be lost or resubmitted. Core context is required before that record
+can survive a process restart.
 
 The executable is an attached terminal operator tool. It is not a Core managed
 service and must not be autostarted by Core.

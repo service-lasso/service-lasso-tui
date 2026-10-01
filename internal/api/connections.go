@@ -12,8 +12,10 @@ import (
 // environment variable which holds the Core local-admin token; the token is
 // never written to the connection file or accepted as a command-line value.
 type ConnectionProfile struct {
-	URL      string `json:"url"`
-	TokenEnv string `json:"tokenEnv"`
+	URL      string   `json:"url"`
+	TokenEnv string   `json:"tokenEnv"`
+	AuthMode AuthMode `json:"authMode,omitempty"`
+	Scopes   []string `json:"scopes,omitempty"`
 }
 
 type connectionFile struct {
@@ -58,6 +60,9 @@ func ResolveConnections(options ConnectionOptions) (*ConnectionManager, *Client,
 		if len(config.Profiles) == 0 {
 			return nil, nil, fmt.Errorf("connection configuration has no profiles")
 		}
+		if err := validateLoadedProfiles(config.Profiles); err != nil {
+			return nil, nil, err
+		}
 		profiles, defaultProfile = config.Profiles, config.Default
 	}
 	selected := firstNonEmpty(options.Profile, env("SERVICE_LASSO_API_PROFILE"), defaultProfile)
@@ -74,7 +79,7 @@ func ResolveConnections(options ConnectionOptions) (*ConnectionManager, *Client,
 	}
 	apiURL := firstNonEmpty(options.APIURL, env("SERVICE_LASSO_API_URL"), profile.URL, "http://127.0.0.1:17883")
 	tokenEnv := firstNonEmpty(options.TokenEnv, env("SERVICE_LASSO_API_TOKEN_ENV"), profile.TokenEnv, "SERVICE_LASSO_API_TOKEN")
-	profiles[selected] = ConnectionProfile{URL: apiURL, TokenEnv: tokenEnv}
+	profiles[selected] = ConnectionProfile{URL: apiURL, TokenEnv: tokenEnv, AuthMode: profile.AuthMode, Scopes: profile.Scopes}
 	manager := &ConnectionManager{profiles: profiles, current: selected, env: env}
 	client, err := manager.Client(selected)
 	if err != nil {
@@ -108,6 +113,10 @@ func (m *ConnectionManager) Client(name string) (*Client, error) {
 	if !ok {
 		return nil, fmt.Errorf("unknown connection profile %q", name)
 	}
+	mode, err := validateProfileAdmission(profile)
+	if err != nil {
+		return nil, fmt.Errorf("connection profile %q is not admissible: %w", name, err)
+	}
 	if profile.TokenEnv == "" {
 		return nil, fmt.Errorf("connection profile %q has no credential environment reference", name)
 	}
@@ -115,7 +124,43 @@ func (m *ConnectionManager) Client(name string) (*Client, error) {
 	if token == "" {
 		return nil, fmt.Errorf("connection profile %q credential is unavailable", name)
 	}
-	return NewClient(profile.URL, nil, token)
+	return NewClientWithAuth(profile.URL, nil, token, mode, profile.Scopes...)
+}
+
+func validateLoadedProfiles(profiles map[string]ConnectionProfile) error {
+	for name, profile := range profiles {
+		// An incomplete profile may receive a loopback URL through normal
+		// resolution. Once it names a URL, admit it before any profile can be
+		// selected and before its credential reference is read.
+		if profile.URL == "" {
+			continue
+		}
+		if _, err := validateProfileAdmission(profile); err != nil {
+			return fmt.Errorf("connection profile %q is not admissible: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func validateProfileAdmission(profile ConnectionProfile) (AuthMode, error) {
+	mode := profile.AuthMode
+	if mode == "" {
+		mode = AuthModeLocalAdmin
+	}
+	if _, err := NewClientWithAuth(profile.URL, nil, "", mode, profile.Scopes...); err != nil {
+		return "", err
+	}
+	return mode, nil
+}
+
+func hasRequiredScopes(scopes []string) bool {
+	needed := map[string]bool{"service-lasso:read": false, "service-lasso:lifecycle:write": false}
+	for _, scope := range scopes {
+		if _, ok := needed[scope]; ok {
+			needed[scope] = true
+		}
+	}
+	return needed["service-lasso:read"] && needed["service-lasso:lifecycle:write"]
 }
 
 func (m *ConnectionManager) Switch(name string) (*Client, error) {

@@ -22,17 +22,38 @@ renders runtime paths, host identity, source identity, or generation IDs.
 
 ## TUI-LIFECYCLE
 
-For Core APIs that are documented and tested, the client invokes
-`POST /api/services/:serviceId/{install|config|start|stop|restart|reload}`.
-It presents an explicit local confirmation before a request and renders the
-runtime's returned action result. A rejected request must create no retry.
+Issue #20 consumes Core `develop` `55848ec178b5fb05826192c8a2db576eaa8848dc`'s
+durable lifecycle HTTP contract. For the selected service it first reads
+`GET /api/operator/lifecycle/services/:id/availability`, then asks Core for a
+non-mutating preview at `POST /api/operator/lifecycle/operations`. The preview
+is the source of the target, effects, and server-issued confirmation context.
+Only `install`, `config`, `start`, `stop`, and `restart` may be submitted; Core
+currently reports `reload` unavailable and the TUI must never substitute the
+older synchronous endpoint.
+
+After a visible keyboard confirmation, the TUI submits exactly one frozen
+request with a fresh opaque idempotency key and the Core confirmation context.
+It reads `GET /api/operator/lifecycle/operations/:operationId` until Core
+reports a terminal result. Refresh, reconnect, navigation, and connection
+switching never replay a mutation. The TUI persists only an opaque operation
+ID plus a Core-issued validated opaque actor/client/instance context needed for
+later readback; it never persists credentials, confirmation phrases, previews,
+request bodies, idempotency keys, URL-derived identifiers, or token hashes.
+Until Core #1553's reviewed context contract is integrated, persistence fails
+closed while in-process accepted and uncertain operations remain retained and
+cannot be resubmitted. A context mismatch or an uncertain result is rendered
+as reconciliation-required rather than submitted again.
 
 ## TUI-KEYBOARD
 
 Arrow keys and `j`/`k` navigate; Enter opens a detail; Escape returns; `r`
 refreshes; `?` shows contextual help; `/` filters locally; `n` narrows the
 layout; and resize preserves the current view. Lifecycle shortcuts are visible
-in the detail screen and require `y` to confirm or Escape to cancel.
+in the detail screen and require `y` to confirm the Core preview or Escape to
+cancel. While confirmation is shown, only `y` and Escape are accepted;
+refresh, navigation, profile switching, search, layout, and quit input cannot
+alter the frozen context. Availability, preview, accepted, running, terminal,
+unknown-after-crash, denied, and unavailable states remain distinct.
 
 `TUI-ACCEPTANCE-001`: Direct Windows read acceptance builds the current TUI
 binary and runs it through a real ConPTY against an exact pinned Core `develop`
@@ -50,10 +71,30 @@ which prevents the exact clean-Core precondition from being truthfully met.
 
 ## TUI-OPERATIONS
 
-The Core action-run API is available but exposes server-side completed action
-runs rather than a stable asynchronous operation polling contract. The client
-may show its returned result for lifecycle work but cannot claim long-running
-operation progress or cancellation until Core publishes suitable contracts.
+Core's durable operation contract supplies server-authoritative accepted,
+progress, terminal, and recovery readback. Cancellation is displayed and sent
+to `POST /api/operator/lifecycle/operations/:operationId/cancel` only when the
+readback explicitly advertises `cancellationSupported: true`; no cancellation
+request is sent for an unsupported action. Update/update-cancellation remains a
+Core #1538 dependency; removal and source-safe admission are separate
+dependencies.
+
+The local-admin profile remains explicit and sends its token only as
+`x-service-lasso-admin-token`; an existing token is never silently converted
+to a bearer token. A non-loopback durable-operation profile must explicitly
+declare guarded `oauth-bearer` mode and the required read/lifecycle scopes.
+The client rejects every non-loopback profile that omits that declaration,
+uses `local-admin`, or lacks either required scope before reading its named
+credential or creating an HTTP request. This admission applies while loading
+configured profiles, resolving flag/environment overrides, selecting a
+profile, and constructing a client from a literal profile. Omitted auth mode
+continues to mean `local-admin` only for a loopback URL. A valid remote profile
+uses HTTPS and sends only `Authorization: Bearer`; it never sends the
+local-admin header. These local guards do not validate OAuth tokens or grant
+authority: Core remains the server-side authority for both.
+Core remains authoritative for loopback authentication, OAuth validation,
+scope enforcement, permission profiles, confirmation, idempotency, execution,
+auditing, and recovery.
 The dashboard may read authenticated `GET /api/operator/inbox` and
 `GET /api/services/:serviceId/health/history`; it displays a bounded inbox
 summary (title, severity, state, timestamp) and health transition count only.

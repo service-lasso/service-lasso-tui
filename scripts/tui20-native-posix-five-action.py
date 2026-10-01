@@ -46,19 +46,29 @@ def fexecve_child(fd,argv,env,master,slave):
         libc.fexecve(fd,argp,envp)
         failure=ctypes.get_errno(); os.write(2,("held fexecve failed: "+os.strerror(failure)+"\n").encode())
     finally: os._exit(127)
+def darwin_execve_child(launch,argv,env,master,slave):
+    """Execute the protected leaf only after resolving it through the held directory."""
+    pid=os.fork()
+    if pid:
+        os.close(slave); return BoundProcess(pid)
+    try:
+        os.close(master); os.dup2(slave,0); os.dup2(slave,1); os.dup2(slave,2)
+        if slave>2: os.close(slave)
+        os.fchdir(launch["directoryFD"])
+        named=os.lstat(launch["leaf"])
+        if (named.st_dev,named.st_ino)!=launch["leafIdentity"] or named.st_flags&launch["systemImmutable"]==0:
+            raise RuntimeError("Darwin protected executable binding changed")
+        os.execve("./"+launch["leaf"],argv,env)
+    except Exception:
+        os.write(2,b"held Darwin execve failed\n")
+    finally: os._exit(127)
 class Terminal:
     def __init__(self, held, executable, profile, env, log):
         self.master,self.slave=pty.openpty(); self.log=log
         args=[executable,"--profile",profile]
         if sys_platform()=="linux": self.child=fexecve_child(held,args,env,self.master,self.slave)
         elif sys_platform()=="darwin":
-            # Darwin exposes its per-process descriptor namespace through fdescfs.
-            # Opening /dev/fd/N duplicates the held descriptor, so exec resolves the
-            # same vnode rather than a replacement at the original pathname.
-            launch="/dev/fd/"+str(held)
-            if not os.path.exists(launch): raise RuntimeError("Darwin held-descriptor execution unavailable")
-            self.child=subprocess.Popen([executable,"--profile",profile],executable=launch,cwd=os.path.dirname(executable),env=env,stdin=self.slave,stdout=self.slave,stderr=self.slave,close_fds=True,pass_fds=(held,))
-            os.close(self.slave)
+            self.child=darwin_execve_child(held,args,env,self.master,self.slave)
         else: raise RuntimeError("native held-executable launch unsupported on this platform")
         self.text=""
     def write(self,value): os.write(self.master,value.encode())
@@ -124,12 +134,13 @@ def linux_sealed_execution(held,identity):
     except Exception:
         os.close(sealed); raise
 def darwin_system_immutable_execution(held,identity,root):
-    """Use the Darwin system immutable flag; owner flags are intentionally rejected."""
+    """Bind execve to a system-immutable leaf reached from its held parent."""
     if not hasattr(os.stat_result,"st_flags"): raise RuntimeError("Darwin system immutable flag readback unavailable")
-    protected=os.path.join(root,".tui20-system-immutable-exec")
-    if os.path.lexists(protected): raise RuntimeError("Darwin protected executable path already exists")
-    output=None
+    directory=os.path.join(root,".tui20-system-immutable-exec-dir")
+    protected=os.path.join(directory,"launch")
+    if os.path.lexists(directory): raise RuntimeError("Darwin protected executable directory already exists")
     try:
+        os.mkdir(directory,0o700)
         with open(protected,"xb") as out:
             os.lseek(held,0,os.SEEK_SET)
             while True:
@@ -138,32 +149,42 @@ def darwin_system_immutable_execution(held,identity,root):
                 out.write(chunk)
         os.chmod(protected,0o700)
         protected_fd=os.open(protected,os.O_RDONLY)
+        directory_fd=os.open(directory,os.O_RDONLY|getattr(os,"O_DIRECTORY",0))
         if sha256_fd(protected_fd)!=identity["binarySHA256"]: raise RuntimeError("Darwin protected executable digest mismatch")
-        result=subprocess.run(["sudo","-n","/usr/bin/chflags","schg",protected],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
-        if result.returncode!=0: raise RuntimeError("Darwin system immutable activation unavailable")
+        for target in (protected,directory):
+            result=subprocess.run(["sudo","-n","/usr/bin/chflags","schg",target],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
+            if result.returncode!=0: raise RuntimeError("Darwin system immutable activation unavailable")
         system_immutable=getattr(stat,"SF_IMMUTABLE",0x00020000)
-        if not os.stat(protected).st_flags&system_immutable: raise RuntimeError("Darwin system immutable readback failed")
+        if not os.stat(protected).st_flags&system_immutable or not os.stat(directory).st_flags&system_immutable: raise RuntimeError("Darwin system immutable readback failed")
         try: os.open(protected,os.O_RDWR)
         except OSError: pass
         else: raise RuntimeError("Darwin system immutable executable accepted an in-place write")
-        return protected_fd,protected,{"platform":"darwin","mechanism":"system-immutable-fdescfs","systemImmutable":True,"inPlaceWriteDenied":True}
+        leaf=os.fstat(protected_fd)
+        return {"leafFD":protected_fd,"directoryFD":directory_fd,"leaf":"launch","leafIdentity":(leaf.st_dev,leaf.st_ino),"systemImmutable":system_immutable,"path":protected,"directory":directory},{"platform":"darwin","mechanism":"system-immutable-held-directory-execve","systemImmutableLeaf":True,"systemImmutableParent":True,"inPlaceWriteDenied":True}
     except Exception:
         if 'protected_fd' in locals(): os.close(protected_fd)
+        if 'directory_fd' in locals(): os.close(directory_fd)
+        if os.path.lexists(protected): subprocess.run(["sudo","-n","/usr/bin/chflags","noschg",protected],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
+        if os.path.lexists(directory): subprocess.run(["sudo","-n","/usr/bin/chflags","noschg",directory],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
         if os.path.lexists(protected):
-            subprocess.run(["sudo","-n","/usr/bin/chflags","noschg",protected],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
             try: os.unlink(protected)
             except OSError: pass
+        if os.path.lexists(directory):
+            try: os.rmdir(directory)
+            except OSError: pass
         raise
-def release_darwin_system_immutable_execution(protected_fd,protected):
-    os.close(protected_fd)
-    result=subprocess.run(["sudo","-n","/usr/bin/chflags","noschg",protected],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
+def release_darwin_system_immutable_execution(launch):
+    result=subprocess.run(["sudo","-n","/usr/bin/chflags","noschg",launch["path"]],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
     if result.returncode!=0: raise RuntimeError("Darwin protected executable release unavailable")
-    os.unlink(protected)
+    result=subprocess.run(["sudo","-n","/usr/bin/chflags","noschg",launch["directory"]],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
+    if result.returncode!=0: raise RuntimeError("Darwin protected directory release unavailable")
+    os.close(launch["leafFD"]); os.close(launch["directoryFD"])
+    os.unlink(launch["path"]); os.rmdir(launch["directory"])
 def bound_execution(held,identity,root):
     if sys_platform()=="linux":
         fd,binding=linux_sealed_execution(held,identity); return fd,None,binding
     if sys_platform()=="darwin":
-        fd,path,binding=darwin_system_immutable_execution(held,identity,root); return fd,path,binding
+        launch,binding=darwin_system_immutable_execution(held,identity,root); return launch,launch,binding
     raise RuntimeError("native immutable execution unavailable on this platform")
 def bound_replacement_probe(launch_fd,held,executable,identity,profile,env,log):
     """Prove pathname replacement and mutable source bytes cannot alter the sealed launch."""
@@ -257,7 +278,7 @@ def main():
         write_json(os.path.join(args.root,"operation-audit.json"),{"operations":records,"coreAudit":audit_matches}); outcome.update({"outcome":"succeeded","actions":["install","config","start","stop","restart"],"adverseAudit":adverse,"reloadDenied":True,"cancellation":{"advertised":False,"supportedActionTested":False},"reconnect":{"completedOperationNoReplay":True,"pendingReconciliation":"blocked_core_1553_no_adapter"},"unrelatedService":{**before,"unchangedAfterFiveActions":True},"fixtureOperationCount":len(records)})
     except Exception: outcome["failureReason"]="native_harness_assertion_failed"; raise
     finally:
-        if darwin_protected is not None: release_darwin_system_immutable_execution(launch_fd,darwin_protected)
+        if darwin_protected is not None: release_darwin_system_immutable_execution(darwin_protected)
         elif launch_fd is not None: os.close(launch_fd)
         os.close(held); write_json(os.path.join(args.root,"native-exit-receipt.json"),outcome)
 if __name__=="__main__": main()

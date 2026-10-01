@@ -111,12 +111,13 @@ workflow on TUI PR #22. It obtains clean detached Core
 `2633c07be25512d0a84f9bfa28de6be5edff35e8`, runs `npm ci` and `npm run build`,
 and starts that actual Core source only after setting three distinct owned
 workspace/instance-registry/host-port-registry paths. Each native host builds a
-clean VCS-stamped TUI binary, keeps its verified descriptor open, and drives it
-through a POSIX PTY from that descriptor (`fexecve` on Linux and Darwin's
-`/dev/fd` descriptor namespace on macOS). Before acceptance actions, the
-harness replaces the executable pathname by rename, different-content, and
-symlink attacks; each held-descriptor launch must still reach the expected
-missing-credential boundary. The retained receipt contract includes binary
+clean VCS-stamped TUI binary, acquires a no-follow verified descriptor, and
+drives it through a POSIX PTY only from a platform-enforced immutable execution
+object (`fexecve` on a sealed Linux `memfd` and Darwin's `/dev/fd` descriptor
+namespace on a system-immutable object). Before acceptance actions, the
+harness replaces the executable pathname by rename and symlink attacks and
+mutates the original inode in place; each immutable-object launch must still
+reach the expected missing-credential boundary. The retained receipt contract includes binary
 digest, source-tree heads, Core path
 materialization readback, true terminal exits, five accepted operations,
 adverse zero-operation/direct-audit counts, exactly one matching Core terminal

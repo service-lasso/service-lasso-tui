@@ -95,8 +95,13 @@ def sha256_fd(fd):
 def hold_candidate(executable,commit):
     info=os.lstat(executable)
     if os.name=="nt" or not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode) or len(commit)!=40: raise RuntimeError("candidate executable invalid")
-    fd=os.open(executable,os.O_RDONLY)
-    return fd,{"sourceCommit":commit,"binarySHA256":sha256_fd(fd)},(info.st_dev,info.st_ino)
+    fd=os.open(executable,os.O_RDONLY|getattr(os,"O_NOFOLLOW",0))
+    try:
+        opened=os.fstat(fd)
+        if not stat.S_ISREG(opened.st_mode) or (opened.st_dev,opened.st_ino)!=(info.st_dev,info.st_ino): raise RuntimeError("candidate executable changed during acquisition")
+        return fd,{"sourceCommit":commit,"binarySHA256":sha256_fd(fd)},(info.st_dev,info.st_ino)
+    except Exception:
+        os.close(fd); raise
 def linux_sealed_execution(held,identity):
     """Copy verified bytes into a kernel-sealed anonymous executable object."""
     required=("MFD_ALLOW_SEALING","F_ADD_SEALS","F_GET_SEALS","F_SEAL_WRITE","F_SEAL_GROW","F_SEAL_SHRINK","F_SEAL_SEAL")

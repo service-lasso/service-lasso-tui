@@ -106,8 +106,19 @@ and rerun.
 Windows direct lifecycle acceptance is therefore **partial and blocked**:
 source tests and the earlier bounded fixture exercise remain useful, while a
 successful secrecy-safe, same-handle, true-exit receipt remains required.
-Linux and macOS real-Core native journeys are also still unexecuted; hosted
-builds and cross-compilation are not replacements for those host journeys.
+Linux and macOS real-Core native journeys now have an executable native-host
+workflow on TUI PR #22. It obtains clean detached Core
+`2633c07be25512d0a84f9bfa28de6be5edff35e8`, runs `npm ci` and `npm run build`,
+and starts that actual Core source only after setting three distinct owned
+workspace/instance-registry/host-port-registry paths. Each native host builds a
+clean VCS-stamped TUI binary and drives it through a POSIX PTY. The retained
+receipt contract includes binary digest, source-tree heads, Core path
+materialization readback, true terminal exits, five accepted operations,
+adverse zero-operation/direct-audit counts, no-replay reconnect, and named
+unrelated-service comparison. Core #1553 remains fail-closed for persistent
+reconciliation. Until the exact-head Linux and macOS jobs complete and their
+receipts are read back, this is an executable path and remains **Blocked**, not
+native acceptance; hosted builds and cross-compilation are not replacements.
 
 ## Remaining boundary
 

@@ -133,6 +133,8 @@ jobs:
           export SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$attempt/registry/ports.json"
           git -C "$attempt/core-source" init -q
           git -C "$attempt/core-source" remote add origin https://github.com/service-lasso/service-lasso.git
+          git -C "$attempt/core-source" fetch --no-tags origin develop
+          git -C "$attempt/core-source" merge-base --is-ancestor "$CORE_COMMIT" origin/develop
           git -C "$attempt/core-source" fetch --depth=1 origin "$CORE_COMMIT"
           git -C "$attempt/core-source" checkout --detach -q FETCH_HEAD
           test "$(git -C "$attempt/core-source" rev-parse HEAD)" = "$CORE_COMMIT"

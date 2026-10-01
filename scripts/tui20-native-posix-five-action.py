@@ -2,6 +2,7 @@
 import argparse, ctypes, fcntl, hashlib, json, os, pty, select, stat, subprocess, sys, time, urllib.request
 
 ALLOWED_ENV=("HOME","LANG","LC_ALL","PATH","SHELL","TERM","TMPDIR","USER")
+OWNED_TERMINALS=[]
 def write_json(path,value):
     with open(path,"w",encoding="utf-8",newline="") as out:
         json.dump(value,out,separators=(",",":")); out.flush(); os.fsync(out.fileno())
@@ -39,7 +40,11 @@ class BoundProcess:
             if result is not None: return result
             time.sleep(.02)
         raise subprocess.TimeoutExpired("held executable",timeout)
-    def kill(self): os.kill(self.pid,9)
+def terminal_exit_reason(result):
+    if result is None: return "terminal_unknown"
+    if result < 0: return "terminal_signaled"
+    return "terminal_exited_zero" if result==0 else "terminal_exit_code_1" if result==1 else "terminal_exit_code_2" if result==2 else "terminal_exited_nonzero"
+class TerminalUnresolved(RuntimeError): pass
 def fexecve_child(fd,argv,env,master,slave):
     pid=os.fork()
     if pid:
@@ -77,7 +82,7 @@ class Terminal:
         elif sys_platform()=="darwin":
             self.child=darwin_execve_child(held,args,env,self.master,self.slave)
         else: raise RuntimeError("native held-executable launch unsupported on this platform")
-        self.text=""
+        self.text=""; self.label=profile; self.exit_reason=None; OWNED_TERMINALS.append(self)
     def write(self,value): os.write(self.master,value.encode())
     def read(self):
         ready,_,_=select.select([self.master],[],[],.1)
@@ -96,10 +101,17 @@ class Terminal:
     def close(self,expected=0):
         if self.child.poll() is None: self.write("q")
         try: result=self.child.wait(timeout=10)
-        except subprocess.TimeoutExpired: self.child.kill(); self.child.wait(); raise RuntimeError("terminal exit was not observed")
+        except subprocess.TimeoutExpired:
+            # The harness owns observation, not forced termination.  Keep the
+            # PTY and immutable execution object live for recovery finalization.
+            self.unresolved=True
+            self.exit_reason="terminal_unknown"
+            raise TerminalUnresolved("owned terminal exit unresolved")
         os.close(self.master)
+        reason=terminal_exit_reason(result)
+        self.exit_reason=reason
         if result!=expected: raise RuntimeError("unexpected terminal exit")
-        return "terminal_exited_zero" if result==0 else "terminal_exit_code_2" if result==2 else "terminal_exited_nonzero"
+        return reason
 def sys_platform(): return sys.platform
 def sha256_fd(fd):
     digest=hashlib.sha256(); os.lseek(fd,0,os.SEEK_SET)
@@ -140,12 +152,15 @@ def linux_sealed_execution(held,identity):
         return sealed,{"platform":"linux","mechanism":"memfd-fexecve-seals","seals":["write","grow","shrink","seal"],"inPlaceWriteDenied":True}
     except Exception:
         os.close(sealed); raise
+class DarwinActivationFailure(RuntimeError):
+    def __init__(self,recovery): super().__init__("Darwin system immutable activation unavailable"); self.recovery=recovery
 def darwin_system_immutable_execution(held,identity,root):
     """Bind execve to a system-immutable leaf reached from its held parent."""
     if not hasattr(os.stat_result,"st_flags"): raise RuntimeError("Darwin system immutable flag readback unavailable")
     directory=os.path.join(root,".tui20-system-immutable-exec-dir")
     protected=os.path.join(directory,"launch")
     if os.path.lexists(directory): raise RuntimeError("Darwin protected executable directory already exists")
+    protected_writer=None; protected_fd=None; directory_fd=None; leaf_activation=False
     try:
         os.mkdir(directory,0o700)
         with open(protected,"xb") as out:
@@ -164,6 +179,9 @@ def darwin_system_immutable_execution(held,identity,root):
         result=subprocess.run(["sudo","-n","/usr/bin/chflags","schg",protected],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
         if result.returncode!=0: raise RuntimeError("Darwin leaf system immutable activation unavailable")
         if not os.fstat(protected_fd).st_flags&system_immutable: raise RuntimeError("Darwin leaf system immutable readback failed")
+        leaf=os.fstat(protected_fd)
+        recovery={"leafFD":protected_fd,"directoryFD":directory_fd,"leaf":"launch","leafIdentity":(leaf.st_dev,leaf.st_ino),"systemImmutable":system_immutable,"path":protected,"directory":directory}
+        leaf_activation=True
         try: os.open(protected,os.O_RDWR)
         except OSError: pass
         else: raise RuntimeError("Darwin system immutable executable accepted an in-place write")
@@ -174,13 +192,16 @@ def darwin_system_immutable_execution(held,identity,root):
         result=subprocess.run(["sudo","-n","/usr/bin/chflags","schg",directory],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
         if result.returncode!=0: raise RuntimeError("Darwin parent system immutable activation unavailable")
         if not os.fstat(directory_fd).st_flags&system_immutable: raise RuntimeError("Darwin parent system immutable readback failed")
-        leaf=os.fstat(protected_fd)
         os.close(protected_writer); protected_writer=None
-        return {"leafFD":protected_fd,"directoryFD":directory_fd,"leaf":"launch","leafIdentity":(leaf.st_dev,leaf.st_ino),"systemImmutable":system_immutable,"path":protected,"directory":directory},{"platform":"darwin","mechanism":"system-immutable-held-directory-execve","systemImmutableLeaf":True,"systemImmutableParent":True,"inPlaceWriteDenied":True,"existingWriterDenied":True,"immutableLeafDigestVerified":True}
+        return recovery,{"platform":"darwin","mechanism":"system-immutable-held-directory-execve","systemImmutableLeaf":True,"systemImmutableParent":True,"inPlaceWriteDenied":True,"existingWriterDenied":True,"immutableLeafDigestVerified":True}
     except Exception:
         if locals().get('protected_writer') is not None: os.close(protected_writer)
-        if 'protected_fd' in locals(): os.close(protected_fd)
-        if 'directory_fd' in locals(): os.close(directory_fd)
+        if leaf_activation:
+            # Do not attempt suppressed pathname rollback here.  The held
+            # descriptor is carried to primary-before-cleanup finalization.
+            raise DarwinActivationFailure(recovery)
+        if protected_fd is not None: os.close(protected_fd)
+        if directory_fd is not None: os.close(directory_fd)
         if os.path.lexists(protected): subprocess.run(["sudo","-n","/usr/bin/chflags","noschg",protected],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
         if os.path.lexists(directory): subprocess.run(["sudo","-n","/usr/bin/chflags","noschg",directory],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
         if os.path.lexists(protected):
@@ -204,8 +225,9 @@ def release_darwin_system_immutable_execution(launch):
     except OSError:
         return {"outcome":"failed","closedReason":"protected_artifact_removal_failed","recoveryRetained":True}
     return {"outcome":"succeeded","closedReason":"released_and_removed","recoveryRetained":False}
-def cleanup_execution(launch_fd,darwin_protected,held):
+def cleanup_execution(launch_fd,darwin_protected,held,live_child=False):
     try:
+        if live_child: return {"outcome":"failed","closedReason":"live_child_unresolved","recoveryRetained":True}
         if darwin_protected is not None: result=release_darwin_system_immutable_execution(darwin_protected)
         elif launch_fd is not None:
             os.close(launch_fd); result={"outcome":"succeeded","closedReason":"sealed_descriptor_closed","recoveryRetained":False}
@@ -214,10 +236,10 @@ def cleanup_execution(launch_fd,darwin_protected,held):
         return result
     except OSError:
         return {"outcome":"failed","closedReason":"descriptor_close_failed","recoveryRetained":darwin_protected is not None}
-def finalize_native_outcome(root,outcome,launch_fd,darwin_protected,held,cleanup=cleanup_execution,writer=write_json):
+def finalize_native_outcome(root,outcome,launch_fd,darwin_protected,held,live_child=False,cleanup=cleanup_execution,writer=write_json):
     """Record primary state first; cleanup recording can never mask that state."""
     persist_primary_outcome(root,outcome,writer)
-    cleanup_outcome=cleanup(launch_fd,darwin_protected,held)
+    cleanup_outcome=cleanup(launch_fd,darwin_protected,held,live_child)
     try: persist_cleanup_outcome(root,cleanup_outcome,writer)
     except OSError: pass
     return cleanup_outcome
@@ -273,6 +295,7 @@ def action(term,key,name):
         term.read()
     raise RuntimeError("retained operation readback unavailable")
 def main():
+    OWNED_TERMINALS.clear()
     parser=argparse.ArgumentParser(); parser.add_argument("--root",required=True); parser.add_argument("--executable",required=True); parser.add_argument("--source-commit",required=True); parser.add_argument("--core-commit",required=True); args=parser.parse_args()
     with open(os.path.join(args.root,"ready.json"),encoding="utf-8") as stream: ready=json.load(stream)
     paths={"coreReadback":True,"uniqueOwnedPaths":["workspaceRoot","instanceRegistryPath","hostPortRegistryPath"],"runtimeInstanceBound":True}
@@ -280,7 +303,7 @@ def main():
     token=os.environ.get("SERVICE_LASSO_TUI20_TOKEN"); denied=os.environ.get("SERVICE_LASSO_TUI20_DENIED_TOKEN"); url=os.environ.get("SERVICE_LASSO_TUI20_API_URL")
     if not token or not denied or not url: raise RuntimeError("in-memory credential handoff unavailable")
     env={key:os.environ[key] for key in ALLOWED_ENV if os.environ.get(key)}; env.update({"TERM":"xterm-256color","SERVICE_LASSO_API_TOKEN":token,"SERVICE_LASSO_DENIED_TOKEN":denied,"SERVICE_LASSO_INVALID_TOKEN":"tui20-invalid-token","SERVICE_LASSO_CONNECTIONS_CONFIG":os.path.join(args.root,"connections.json")})
-    held,identity,held_inode=hold_candidate(args.executable,args.source_commit); launch_fd=None; darwin_protected=None; log=os.path.join(args.root,"native-terminal.txt"); outcome={"outcome":"failed","candidateIdentity":identity,"coreCommit":args.core_commit,"runtimePathReceipt":paths,"terminals":[]}
+    held,identity,held_inode=hold_candidate(args.executable,args.source_commit); launch_fd=None; darwin_protected=None; term=None; log=os.path.join(args.root,"native-terminal.txt"); outcome={"outcome":"failed","candidateIdentity":identity,"coreCommit":args.core_commit,"runtimePathReceipt":paths,"terminals":[]}
     try:
         launch_fd,darwin_protected,binding=bound_execution(held,identity,args.root); outcome["heldExecutableBinding"]=binding
         before=unrelated(url,token); adverse=[]
@@ -317,8 +340,16 @@ def main():
         if len(records)!=5 or sorted(records,key=lambda item:item["operationId"])!=sorted(action_readbacks,key=lambda item:item["operationId"]) or len(set(operation_ids))!=5 or sorted(item["action"] for item in records)!=sorted(expected) or any(not item["operationId"] or item["cancellationSupported"] for item in records) or any(item["coreAuditCount"]!=1 for item in audit_matches): raise RuntimeError("durable action audit invalid")
         if unrelated(url,token)!=before: raise RuntimeError("unrelated state changed")
         write_json(os.path.join(args.root,"operation-audit.json"),{"operations":records,"coreAudit":audit_matches}); outcome.update({"outcome":"succeeded","actions":["install","config","start","stop","restart"],"adverseAudit":adverse,"reloadDenied":True,"cancellation":{"advertised":False,"supportedActionTested":False},"reconnect":{"completedOperationNoReplay":True,"pendingReconciliation":"blocked_core_1553_no_adapter"},"unrelatedService":{**before,"unchangedAfterFiveActions":True},"fixtureOperationCount":len(records)})
-    except Exception: outcome["failureReason"]="native_harness_assertion_failed"; raise
+    except DarwinActivationFailure as failure:
+        launch_fd=darwin_protected=failure.recovery
+        outcome["heldExecutableBinding"]={"platform":"darwin","mechanism":"system-immutable-held-directory-execve","systemImmutableLeaf":True,"systemImmutableParent":False,"partialActivationRecovery":True}
+        outcome["failureReason"]="native_harness_assertion_failed"; raise
+    except Exception:
+        observed=term if term is not None else (OWNED_TERMINALS[-1] if OWNED_TERMINALS else None)
+        if observed is not None and observed.exit_reason is not None and not any(item.get("terminal")==observed.label and item.get("exit")==observed.exit_reason for item in outcome["terminals"]): outcome["terminals"].append({"terminal":observed.label,"exit":observed.exit_reason})
+        outcome["failureReason"]="native_harness_assertion_failed"; raise
     finally:
         # Cleanup is reported separately and cannot relabel a true child exit.
-        finalize_native_outcome(args.root,outcome,launch_fd,darwin_protected,held)
+        live_child=any(owned.child.poll() is None for owned in OWNED_TERMINALS)
+        finalize_native_outcome(args.root,outcome,launch_fd,darwin_protected,held,live_child)
 if __name__=="__main__": main()

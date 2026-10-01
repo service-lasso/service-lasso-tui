@@ -53,6 +53,9 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         ast.parse(source)
         self.assertIn("pty.openpty()", source)
         self.assertIn('"terminal_exited_zero"', source)
+        self.assertIn('terminal_signaled', source)
+        self.assertIn('live_child_unresolved', source)
+        self.assertNotIn('self.child.kill()', source)
         self.assertIn('os.open(executable,os.O_RDONLY|getattr(os,"O_NOFOLLOW",0))', source)
         self.assertIn('libc.fexecve', source)
         self.assertIn('os.fchdir(launch["directoryFD"])', source)
@@ -117,6 +120,74 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         actual = harness["finalize_native_outcome"]("controlled-root", primary, None, object(), -1, cleanup=cleanup, writer=record)
         self.assertEqual(actual["recoveryRetained"], True)
         self.assertEqual(writes[0], ("native-exit-receipt.json", primary))
+
+    def test_negative_owned_child_status_is_signaled_not_nonzero(self):
+        harness = load_posix_harness()
+        self.assertEqual(harness["terminal_exit_reason"](-9), "terminal_signaled")
+
+    def test_live_child_retains_execution_object_after_primary_receipt(self):
+        harness = load_posix_harness()
+        writes = []
+        primary = {"outcome": "failed", "terminals": [{"exit": "terminal_unknown"}]}
+        def record(path, value): writes.append((pathlib.Path(path).name, value))
+        actual = harness["finalize_native_outcome"]("controlled-root", primary, object(), object(), -1, live_child=True, writer=record)
+        self.assertEqual(actual, {"outcome":"failed","closedReason":"live_child_unresolved","recoveryRetained":True})
+        self.assertEqual(writes, [("native-exit-receipt.json", primary), ("native-cleanup-receipt.json", actual)])
+
+    def test_partial_darwin_activation_is_carried_to_closed_cleanup(self):
+        harness = load_posix_harness()
+        writes = []
+        primary = {"outcome": "failed", "heldExecutableBinding": {"partialActivationRecovery": True}}
+        recovery = object()
+        def record(path, value): writes.append((pathlib.Path(path).name, value))
+        def rollback(launch_fd, darwin_protected, held, live_child):
+            self.assertIs(launch_fd, recovery)
+            self.assertIs(darwin_protected, recovery)
+            self.assertFalse(live_child)
+            return {"outcome":"failed","closedReason":"parent_release_failed","recoveryRetained":True}
+        actual = harness["finalize_native_outcome"]("controlled-root", primary, recovery, recovery, -1, cleanup=rollback, writer=record)
+        self.assertTrue(actual["recoveryRetained"])
+        self.assertEqual(writes, [("native-exit-receipt.json", primary), ("native-cleanup-receipt.json", actual)])
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX directory descriptors")
+    def test_controlled_darwin_leaf_activation_parent_failure_and_rollback_failure_retains_recovery(self):
+        harness = load_posix_harness()
+        module_os, module_subprocess, module_stat = harness["os"], harness["subprocess"], harness["stat"]
+        actual_open, actual_fstat = module_os.open, module_os.fstat
+        state = {"leafActive": False}
+        with tempfile.TemporaryDirectory() as root:
+            candidate_path = pathlib.Path(root, "candidate")
+            candidate_path.write_bytes(b"trusted native executable bytes")
+            held = actual_open(str(candidate_path), module_os.O_RDONLY)
+            identity = {"binarySHA256": harness["sha256_fd"](held)}
+            def run(command, **_kwargs):
+                action, target = command[-2:]
+                if action == "schg" and target.endswith("launch"):
+                    state["leafActive"] = True
+                    return types.SimpleNamespace(returncode=0)
+                return types.SimpleNamespace(returncode=1)
+            def open_protected(path, flags, *args):
+                if state["leafActive"] and path.endswith("launch") and flags & module_os.O_RDWR:
+                    raise OSError("controlled immutable denial")
+                return actual_open(path, flags, *args)
+            def fstat_immutable(fd):
+                value = actual_fstat(fd)
+                return types.SimpleNamespace(st_dev=value.st_dev, st_ino=value.st_ino, st_flags=getattr(module_stat, "SF_IMMUTABLE", 0x00020000))
+            def pwrite_denied(fd, data, offset):
+                if state["leafActive"]:
+                    raise OSError("controlled immutable denial")
+                return len(data)
+            with patch.object(module_os, "stat_result", types.SimpleNamespace(st_flags=1)), patch.object(module_os, "open", open_protected), patch.object(module_os, "fstat", fstat_immutable), patch.object(module_os, "pwrite", pwrite_denied, create=True), patch.object(module_subprocess, "run", run):
+                with self.assertRaises(harness["DarwinActivationFailure"]) as raised:
+                    harness["darwin_system_immutable_execution"](held, identity, root)
+                recovery = raised.exception.recovery
+                primary = {"outcome":"failed", "heldExecutableBinding":{"partialActivationRecovery":True}}
+                writes = []
+                actual = harness["finalize_native_outcome"](root, primary, recovery, recovery, held, writer=lambda path, value: writes.append((pathlib.Path(path).name, value)))
+            self.assertEqual(actual, {"outcome":"failed","closedReason":"leaf_release_failed","recoveryRetained":True})
+            self.assertEqual(writes, [("native-exit-receipt.json", primary), ("native-cleanup-receipt.json", actual)])
+            module_os.close(recovery["leafFD"])
+            module_os.close(recovery["directoryFD"])
 
 
 if __name__ == "__main__":

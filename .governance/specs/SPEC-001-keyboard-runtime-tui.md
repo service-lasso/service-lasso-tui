@@ -98,9 +98,15 @@ uses Darwin's pathname `execve` on that relative leaf; it does not execute
 helper. User immutable flags, chmod, ACLs, descriptor retention, and a
 same-user promise are insufficient. The metadata-only primary receipt records
 only the mechanism, flag readback, denied in-place-write probe, and existing
-digest identity before teardown. A separate closed cleanup receipt records its
-outcome and whether recovery material remains; it cannot replace the primary
-child outcome. Each native run also mutates the
+digest identity before teardown. If leaf activation succeeds but parent
+activation or readback fails, its held cleanup descriptor is carried into the
+primary-before-cleanup finalization; any unproven rollback retains recovery
+material and records only that closed result. A separate closed cleanup receipt
+records its outcome and whether recovery material remains; it cannot replace
+the primary child outcome. A bounded `q` observation never kills an owned
+child: an unresolved live child retains its PTY and execution object for
+recovery, while an observed negative wait status is `terminal_signaled`.
+Each native run also mutates the
 source inode in place after the immutable execution object exists and proves
 the launch still reaches the verified object; it restores the source byte
 before proceeding. If a platform cannot establish and read back that mechanism,

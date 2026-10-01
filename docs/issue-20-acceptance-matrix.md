@@ -113,8 +113,9 @@ and starts that actual Core source only after setting three distinct owned
 workspace/instance-registry/host-port-registry paths. Each native host builds a
 clean VCS-stamped TUI binary, acquires a no-follow verified descriptor, and
 drives it through a POSIX PTY only from a platform-enforced immutable execution
-object (`fexecve` on a sealed Linux `memfd` and Darwin's `/dev/fd` descriptor
-namespace on a system-immutable object). Before acceptance actions, the
+object (`fexecve` on a sealed Linux `memfd` and Darwin relative-pathname
+`execve` after `fchdir` through a held directory descriptor on a
+system-immutable object). Before acceptance actions, the
 harness replaces the executable pathname by rename and symlink attacks and
 mutates the original inode in place; each immutable-object launch must still
 reach the expected missing-credential boundary. The retained receipt contract includes binary
@@ -147,7 +148,13 @@ Darwin system flag must deny both a new writable open and the pre-existing
 writable descriptor. The primary metadata-only exit receipt is fsync-persisted
 before immutable-object teardown; a separate closed cleanup receipt records
 cleanup outcome and recovery retention without replacing the primary child
-outcome. A missing seal/flag readback, denied-write probe, or native-host
+outcome. If leaf activation succeeds but parent activation/readback fails, the
+held cleanup descriptor reaches primary-before-cleanup finalization; rollback
+is attempted there and any unproven rollback truthfully retains recovery
+material without recording a filesystem path. A bounded `q` observation never
+force-kills its owned child or tears down its execution object while that child
+is live; an observed negative wait status is recorded as `terminal_signaled`.
+A missing seal/flag readback, denied-write probe, or native-host
 receipt is **Blocked**.
 
 The mechanisms are constrained by their native operating systems, rather than

@@ -14,10 +14,12 @@ let acceptanceStage = "setup";
 
 function parseArgs(argv) {
   const marker = argv.indexOf("--core-root");
-  if (marker < 0 || !argv[marker + 1] || argv.length !== 2) {
+  const shaMarker = argv.indexOf("--core-sha");
+  const hasSHAOverride = shaMarker >= 0;
+  if (marker < 0 || !argv[marker + 1] || argv.length !== (hasSHAOverride ? 4 : 2) || (hasSHAOverride && (!argv[shaMarker + 1] || !/^[a-f0-9]{40}$/u.test(argv[shaMarker + 1])))) {
     throw new Error("usage");
   }
-  return { coreRoot: path.resolve(argv[marker + 1]) };
+  return { coreRoot: path.resolve(argv[marker + 1]), coreSHA: hasSHAOverride ? argv[shaMarker + 1] : pinnedCoreDevelop };
 }
 
 async function run(command, args, options = {}) {
@@ -127,7 +129,7 @@ async function main() {
     console.log(JSON.stringify({ ok: true, classification: "not_applicable", platform: process.platform }));
     return;
   }
-  const { coreRoot } = parseArgs(process.argv.slice(2));
+  const { coreRoot, coreSHA } = parseArgs(process.argv.slice(2));
   acceptanceStage = "architecture";
   const helper = path.join(repoRoot, "scripts", "verify-real-core-conpty.py");
   const hostArchitecture = await getWindowsHostArchitecture();
@@ -137,8 +139,8 @@ async function main() {
   await stat(path.join(coreRoot, "package.json"));
   acceptanceStage = "core-head";
   const { stdout: coreHead } = await run("git", ["-C", coreRoot, "rev-parse", "HEAD"]);
-  if (coreHead.trim() !== pinnedCoreDevelop) {
-    throw new Error("Core source is not the pinned develop revision.");
+  if (coreHead.trim() !== coreSHA) {
+    throw new Error("Core source does not match the requested exact revision.");
   }
   acceptanceStage = "core-clean";
   const { stdout: coreDirty } = await run("git", ["-C", coreRoot, "status", "--porcelain"]);
@@ -171,7 +173,7 @@ async function main() {
     });
     acceptanceStage = "connected";
     const connected = parseProbe((await run("python", [helper, "--executable", executable, "--mode", "connected", "--api-url", apiServer.url])).stdout, "connected");
-    console.log(JSON.stringify({ ok: true, evidence: "direct-real-core-conpty", coreDevelop: pinnedCoreDevelop, platform: "win32-amd64", architecture: { host: normalizedArchitecture(hostArchitecture), node: process.arch, helper: helperArchitecture }, unavailable: unavailable.mode, connectedDashboard: "rendered", navigation: connected.navigation, exit: connected.exit }));
+    console.log(JSON.stringify({ ok: true, evidence: "direct-real-core-conpty", coreDevelop: coreSHA, platform: "win32-amd64", architecture: { host: normalizedArchitecture(hostArchitecture), node: process.arch, helper: helperArchitecture }, unavailable: unavailable.mode, connectedDashboard: "rendered", navigation: connected.navigation, exit: connected.exit }));
   } finally {
     try {
       await apiServer?.stop();

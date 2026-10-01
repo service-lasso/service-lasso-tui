@@ -3,7 +3,7 @@
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
 const arg = (name) => { const i = process.argv.indexOf(name); return i < 0 ? undefined : process.argv[i + 1]; };
@@ -27,8 +27,22 @@ const [token, deniedToken] = await Promise.all([sign("tui20-native-client", "ser
 const server = await startApiServer({ port: 0, servicesRoot, workspaceRoot, mcpHttpIdentity: { env: { SERVICE_LASSO_MCP_MODE: "guarded", SERVICE_LASSO_MCP_OAUTH_ISSUER: issuer, SERVICE_LASSO_MCP_OAUTH_JWKS_URI: `http://127.0.0.1:${address.port}/jwks`, SERVICE_LASSO_MCP_RESOURCE_URI: "https://tui20-native-fixture.invalid/api/mcp", SERVICE_LASSO_MCP_OAUTH_AUDIENCE: audience } } });
 const profiles = { defaultProfile: "native", profiles: {} }; for (const [name, tokenEnv] of [["native", "SERVICE_LASSO_API_TOKEN"], ["denied", "SERVICE_LASSO_DENIED_TOKEN"], ["invalid", "SERVICE_LASSO_INVALID_TOKEN"], ["missing", "SERVICE_LASSO_MISSING_TOKEN"]]) profiles.profiles[name] = { tokenEnv, url: server.url, authMode: "oauth-bearer", scopes: ["service-lasso:read", "service-lasso:lifecycle:write"] };
 await writeFile(path.join(root, "connections.json"), JSON.stringify(profiles), { encoding: "utf8", mode: 0o600 });
-const runtimePathReceipt = { configuredBeforeFirstInvocation: true, uniqueOwnedPaths: ["workspaceRoot", "instanceRegistryPath", "hostPortRegistryPath"] };
+// Read Core-owned materialization after startup.  This is deliberately a
+// readback, rather than a declaration made by the harness before Core runs.
+const corePathReadback = async () => {
+  const [instanceRegistry, portRegistry, runtimeInstance] = await Promise.all([
+    readFile(instanceRegistryPath, "utf8"), readFile(hostPortRegistryPath, "utf8"),
+    readFile(path.join(workspaceRoot, ".service-lasso", "runtime-instance.json"), "utf8"),
+  ]);
+  const instance = JSON.parse(runtimeInstance).instance;
+  if (!instance?.instanceId || !JSON.parse(instanceRegistry).instances?.length || !JSON.parse(portRegistry).allocations?.length) throw new Error("Core runtime-path readback unavailable");
+  await Promise.all([stat(workspaceRoot), stat(instanceRegistryPath), stat(hostPortRegistryPath)]);
+  return { coreReadback: true, uniqueOwnedPaths: ["workspaceRoot", "instanceRegistryPath", "hostPortRegistryPath"], runtimeInstanceBound: true };
+};
+const runtimePathReceipt = await corePathReadback();
 await writeFile(path.join(root, "ready.json"), JSON.stringify({ coreCommit, runtimePathReceipt }), { encoding: "utf8", mode: 0o600 });
 const helper = path.join(path.dirname(fileURLToPath(import.meta.url)), "tui20-native-five-action.py");
 const child = spawn(python, [helper, "--root", root, "--executable", executable, "--source-commit", sourceCommit, "--core-commit", coreCommit], { stdio: "inherit", env: { ...process.env, SERVICE_LASSO_TUI20_TOKEN: token, SERVICE_LASSO_TUI20_DENIED_TOKEN: deniedToken, SERVICE_LASSO_TUI20_API_URL: server.url } });
-const [code] = await once(child, "exit"); await server.stop(); await new Promise((resolve) => jwks.close(resolve)); process.exitCode = code ?? 1;
+const [code, signal] = await once(child, "exit");
+await writeFile(path.join(root, "core-parent-exit.json"), JSON.stringify({ childExit: Number.isInteger(code) ? code : null, childSignal: signal ?? null, coreStopRequested: true }), { encoding: "utf8", mode: 0o600 });
+await server.stop(); await new Promise((resolve) => jwks.close(resolve)); process.exitCode = code ?? 1;

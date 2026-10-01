@@ -15,7 +15,11 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertIn('terminal_exited_zero', source)
         self.assertIn('CreateFileW', source)
         self.assertIn('"adverseAudit"', source)
+        self.assertIn('"coreDeniedAuditDelta"', source)
         self.assertIn('"unrelatedService"', source)
+        self.assertIn('"runtimeState"', source)
+        self.assertIn('expected_denials', source)
+        self.assertIn('retained operation readback unavailable', source)
         self.assertNotIn('private-token.json', source)
 
     def test_core_fixture_defines_only_owned_profiles_and_services(self):
@@ -27,6 +31,7 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertNotIn('private-token.json', source)
         self.assertIn('SERVICE_LASSO_TUI20_TOKEN', source)
         self.assertIn('runtimePathReceipt', source)
+        self.assertIn('corePathReadback', source)
 
 
 if __name__ == "__main__":

@@ -16,7 +16,8 @@
 - [ ] Retain a secrecy-safe exact-source Core lifecycle acceptance for Issue #20
   with same-handle binary identity, true per-terminal exits, direct adverse
   Core-audit counts, and before/after unrelated-service state. The prior
-  retained native fixture remains partial evidence; pending reconciliation is
+retained native fixture remains partial evidence and its restart readback
+failure has a causal Core-audit/registry diagnosis; pending reconciliation is
   separately blocked on Core #1553 and Linux/macOS native journeys remain open.
 - [x] Issue #7 verified Core `develop` GET routes for capability/setup metadata,
   authenticated runtime identity, inbox list, and service health history. The

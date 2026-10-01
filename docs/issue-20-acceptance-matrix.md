@@ -79,12 +79,12 @@ claim.
 The current harness repair keeps generated bearer credentials in the owned
 Core parent and inherited child memory only. It retains no credential file,
 holds and hashes the executable through every ConPTY launch, records a closed
-exit classification per terminal, receives a closed pre-invocation receipt for
-the three distinct owned Core paths (`SERVICE_LASSO_WORKSPACE_ROOT`,
+exit classification per terminal, reads back Core's materialized instance and
+both registries after startup for the three distinct owned paths (`SERVICE_LASSO_WORKSPACE_ROOT`,
 `SERVICE_LASSO_INSTANCE_REGISTRY_PATH`, and
-`SERVICE_LASSO_HOST_PORT_REGISTRY_PATH`), compares opaque before/after runtime
-and lifecycle snapshots for `tui20-unrelated`, and records a direct Core
-operation count before and after each adverse case. It records completed
+`SERVICE_LASSO_HOST_PORT_REGISTRY_PATH`), compares named safe lifecycle fields
+before and after for `tui20-unrelated`, and records direct Core audit-event
+counts plus operation counts for each adverse case. It records completed
 operation reconnect separately from pending reconciliation, which remains
 blocked on Core #1553. The current fixture does not advertise cancellation, so
 it does not fabricate an advertised-true cancellation result.
@@ -92,7 +92,13 @@ it does not fabricate an advertised-true cancellation result.
 A fresh owned rerun with the product-identical clean `6f6dfd9` executable
 (`a5fd433c78f479391fa6d426ac6087a1ebed01caf9144771fafb675eccbf9400`) retained
 its failed transcript when the Core readback became unavailable while awaiting
-the restart result. That run is not an acceptance receipt. The later harness
+the restart result. The retained Core audit later records that the restart
+operation reached its terminal success, while the TUI had already shown an
+unavailable readback and the parent stopped Core only after the child exited;
+there is no Core stderr artifact or still-running owned PID. The repaired
+harness reconnects only to read that retained operation and records a closed
+failure category if that readback cannot complete. The failed run remains not
+an acceptance receipt. The later harness
 head changes no Go product source, but this must continue to be stated as a
 `6f6dfd9` binary claim until a clean exact-head binary is independently built
 and rerun.

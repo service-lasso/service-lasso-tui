@@ -126,6 +126,28 @@ reconciliation. Until the exact-head Linux and macOS jobs complete and their
 receipts are read back, this is an executable path and remains **Blocked**, not
 native acceptance; hosted builds and cross-compilation are not replacements.
 
+### Executable-byte binding
+
+The receipt must show that the exact bytes launched by the PTY are
+platform-enforced immutable. Linux uses a verified `memfd` with kernel readback
+of `F_SEAL_WRITE`, `F_SEAL_GROW`, `F_SEAL_SHRINK`, and `F_SEAL_SEAL`, then
+launches that anonymous object with `fexecve`. macOS requires a copied verified
+object with the OS-reported `SF_IMMUTABLE` system flag and executes its retained
+descriptor through fdescfs; the runner must be able to set and later clear that
+system flag through non-interactive privilege. A user immutable flag, POSIX
+permissions, an ACL/DACL, a hash re-run, or an open read descriptor is not
+equivalent. The harness performs an adversarial in-place mutation of the source
+inode after Linux sealing and requires the sealed launch to succeed, while the
+Darwin system flag must deny an in-place writable open. A missing seal/flag
+readback, denied-write probe, or native-host receipt is **Blocked**.
+
+The mechanisms are constrained by their native operating systems, rather than
+by advisory process behavior: Linux documents sealing for `memfd_create` and
+its `F_SEAL_WRITE` restriction in [memfd_create(2)](https://man7.org/linux/man-pages/man2/memfd_create.2.html),
+and `fexecve(3)` documents descriptor-selected execution. Apple documents that
+the owner may clear `UF_IMMUTABLE`, while only the superuser can set or clear
+`SF_IMMUTABLE`, in [chflags(2)](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/chflags.2.html).
+
 ## Remaining boundary
 
 A separate reviewed Core #1553 context adapter is required before persistent

@@ -1,5 +1,9 @@
 import ast
+import os
 import pathlib
+import runpy
+import sys
+import tempfile
 import unittest
 
 
@@ -42,7 +46,11 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertIn('libc.fexecve', source)
         self.assertIn('"/dev/fd/"+str(held)', source)
         self.assertIn('"reparse"', source)
-        self.assertIn('"content-substitution"', source)
+        self.assertIn('"inplace-content-mutation"', source)
+        self.assertIn('linux_sealed_execution', source)
+        self.assertIn('darwin_system_immutable_execution', source)
+        self.assertIn('F_SEAL_WRITE', source)
+        self.assertIn('schg', source)
         self.assertIn('"adverseAudit"', source)
         self.assertIn('len(set(operation_ids))!=5', source)
         self.assertIn('"mcp.operation.succeeded"', source)
@@ -51,6 +59,24 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertIn('"unrelatedService"', source)
         self.assertIn('"blocked_core_1553_no_adapter"', source)
         self.assertNotIn("private-token.json", source)
+
+    @unittest.skipUnless(sys.platform == "linux", "requires Linux memfd seals")
+    def test_linux_kernel_seal_rejects_an_in_place_write(self):
+        harness = runpy.run_path(str(pathlib.Path(__file__).with_name("tui20-native-posix-five-action.py")))
+        with tempfile.NamedTemporaryFile() as candidate:
+            candidate.write(b"trusted native executable bytes")
+            candidate.flush()
+            held, identity, _ = harness["hold_candidate"](candidate.name, "a" * 40)
+            sealed = None
+            try:
+                sealed, receipt = harness["linux_sealed_execution"](held, identity)
+                self.assertEqual(receipt["mechanism"], "memfd-fexecve-seals")
+                with self.assertRaises(OSError):
+                    os.pwrite(sealed, b"X", 0)
+            finally:
+                if sealed is not None:
+                    os.close(sealed)
+                os.close(held)
 
 
 if __name__ == "__main__":

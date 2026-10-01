@@ -1,5 +1,5 @@
 """Native Linux/macOS PTY evidence for Issue 20; credentials remain process-memory only."""
-import argparse, ctypes, hashlib, json, os, pty, select, stat, subprocess, time, urllib.request
+import argparse, ctypes, fcntl, hashlib, json, os, pty, select, stat, subprocess, sys, time, urllib.request
 
 ALLOWED_ENV=("HOME","LANG","LC_ALL","PATH","SHELL","TERM","TMPDIR","USER")
 def write_json(path,value):
@@ -83,25 +83,91 @@ class Terminal:
         os.close(self.master)
         if result!=expected: raise RuntimeError("unexpected terminal exit")
         return "terminal_exited_zero" if result==0 else "terminal_exit_code_2" if result==2 else "terminal_exited_nonzero"
-def sys_platform(): return os.uname().sysname.lower()
-def hold_candidate(executable,commit):
-    info=os.lstat(executable)
-    if os.name=="nt" or not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode) or len(commit)!=40: raise RuntimeError("candidate executable invalid")
-    fd=os.open(executable,os.O_RDONLY); digest=hashlib.sha256()
+def sys_platform(): return sys.platform
+def sha256_fd(fd):
+    digest=hashlib.sha256(); os.lseek(fd,0,os.SEEK_SET)
     while True:
         data=os.read(fd,1024*1024)
         if not data: break
         digest.update(data)
     os.lseek(fd,0,os.SEEK_SET)
-    return fd,{"sourceCommit":commit,"binarySHA256":digest.hexdigest()},(info.st_dev,info.st_ino)
-def bound_replacement_probe(held,executable,identity,profile,env,log):
-    """Prove each pathname attack still launches the held candidate bytes."""
+    return digest.hexdigest()
+def hold_candidate(executable,commit):
+    info=os.lstat(executable)
+    if os.name=="nt" or not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode) or len(commit)!=40: raise RuntimeError("candidate executable invalid")
+    fd=os.open(executable,os.O_RDONLY)
+    return fd,{"sourceCommit":commit,"binarySHA256":sha256_fd(fd)},(info.st_dev,info.st_ino)
+def linux_sealed_execution(held,identity):
+    """Copy verified bytes into a kernel-sealed anonymous executable object."""
+    required=("MFD_ALLOW_SEALING","F_ADD_SEALS","F_GET_SEALS","F_SEAL_WRITE","F_SEAL_GROW","F_SEAL_SHRINK","F_SEAL_SEAL")
+    if not hasattr(os,"memfd_create") or any(not hasattr(fcntl if name.startswith("F_") else os,name) for name in required): raise RuntimeError("Linux sealed execution unavailable")
+    sealed=os.memfd_create("tui20-native-exec",os.MFD_ALLOW_SEALING)
+    try:
+        os.lseek(held,0,os.SEEK_SET)
+        while True:
+            chunk=os.read(held,1024*1024)
+            if not chunk: break
+            os.write(sealed,chunk)
+        if sha256_fd(sealed)!=identity["binarySHA256"]: raise RuntimeError("sealed executable digest mismatch")
+        seals=fcntl.F_SEAL_WRITE|fcntl.F_SEAL_GROW|fcntl.F_SEAL_SHRINK|fcntl.F_SEAL_SEAL
+        fcntl.fcntl(sealed,fcntl.F_ADD_SEALS,seals)
+        if fcntl.fcntl(sealed,fcntl.F_GET_SEALS)&seals!=seals: raise RuntimeError("sealed executable immutability unavailable")
+        try: os.pwrite(sealed,b"X",0)
+        except OSError: pass
+        else: raise RuntimeError("sealed executable accepted an in-place write")
+        return sealed,{"platform":"linux","mechanism":"memfd-fexecve-seals","seals":["write","grow","shrink","seal"],"inPlaceWriteDenied":True}
+    except Exception:
+        os.close(sealed); raise
+def darwin_system_immutable_execution(held,identity,root):
+    """Use the Darwin system immutable flag; owner flags are intentionally rejected."""
+    if not hasattr(os.stat_result,"st_flags"): raise RuntimeError("Darwin system immutable flag readback unavailable")
+    protected=os.path.join(root,".tui20-system-immutable-exec")
+    if os.path.lexists(protected): raise RuntimeError("Darwin protected executable path already exists")
+    output=None
+    try:
+        with open(protected,"xb") as out:
+            os.lseek(held,0,os.SEEK_SET)
+            while True:
+                chunk=os.read(held,1024*1024)
+                if not chunk: break
+                out.write(chunk)
+        os.chmod(protected,0o700)
+        protected_fd=os.open(protected,os.O_RDONLY)
+        if sha256_fd(protected_fd)!=identity["binarySHA256"]: raise RuntimeError("Darwin protected executable digest mismatch")
+        result=subprocess.run(["sudo","-n","/usr/bin/chflags","schg",protected],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
+        if result.returncode!=0: raise RuntimeError("Darwin system immutable activation unavailable")
+        system_immutable=getattr(stat,"SF_IMMUTABLE",0x00020000)
+        if not os.stat(protected).st_flags&system_immutable: raise RuntimeError("Darwin system immutable readback failed")
+        try: os.open(protected,os.O_RDWR)
+        except OSError: pass
+        else: raise RuntimeError("Darwin system immutable executable accepted an in-place write")
+        return protected_fd,protected,{"platform":"darwin","mechanism":"system-immutable-fdescfs","systemImmutable":True,"inPlaceWriteDenied":True}
+    except Exception:
+        if 'protected_fd' in locals(): os.close(protected_fd)
+        if os.path.lexists(protected):
+            subprocess.run(["sudo","-n","/usr/bin/chflags","noschg",protected],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
+            try: os.unlink(protected)
+            except OSError: pass
+        raise
+def release_darwin_system_immutable_execution(protected_fd,protected):
+    os.close(protected_fd)
+    result=subprocess.run(["sudo","-n","/usr/bin/chflags","noschg",protected],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False)
+    if result.returncode!=0: raise RuntimeError("Darwin protected executable release unavailable")
+    os.unlink(protected)
+def bound_execution(held,identity,root):
+    if sys_platform()=="linux":
+        fd,binding=linux_sealed_execution(held,identity); return fd,None,binding
+    if sys_platform()=="darwin":
+        fd,path,binding=darwin_system_immutable_execution(held,identity,root); return fd,path,binding
+    raise RuntimeError("native immutable execution unavailable on this platform")
+def bound_replacement_probe(launch_fd,held,executable,identity,profile,env,log):
+    """Prove pathname replacement and mutable source bytes cannot alter the sealed launch."""
     directory=os.path.dirname(executable); original=os.path.join(directory,".tui20-held-original"); replacement=os.path.join(directory,".tui20-untrusted-replacement")
     if os.path.exists(original) or os.path.lexists(replacement): raise RuntimeError("bound-launch probe paths already exist")
     os.link(executable,original)
     results=[]
     try:
-        for name,reparse in (("rename",False),("content-substitution",False),("reparse",True)):
+        for name,reparse in (("rename",False),("reparse",True)):
             with open(replacement,"wb") as stream: stream.write(b"untrusted replacement must never execute\n")
             os.chmod(replacement,0o700)
             if reparse:
@@ -110,9 +176,21 @@ def bound_replacement_probe(held,executable,identity,profile,env,log):
             named=os.lstat(executable)
             held_stat=os.fstat(held)
             if (held_stat.st_dev,held_stat.st_ino)!=(identity[0],identity[1]) or (not reparse and (named.st_dev,named.st_ino)==identity): raise RuntimeError("held executable binding changed")
-            term=Terminal(held,executable,profile,env,log); term.wait(('connection profile "missing" credential is unavailable',),30); exit_value=term.close(2)
+            term=Terminal(launch_fd,executable,profile,env,log); term.wait(('connection profile "missing" credential is unavailable',),30); exit_value=term.close(2)
             results.append({"attack":name,"heldCandidateLaunch":True,"terminalExit":exit_value})
             os.replace(original,executable); os.link(executable,original)
+        modifier=os.open(executable,os.O_RDWR)
+        try:
+            original_byte=os.pread(modifier,1,0)
+            if len(original_byte)!=1: raise RuntimeError("source candidate mutation probe unavailable")
+            os.pwrite(modifier,bytes([original_byte[0]^0x01]),0); os.fsync(modifier)
+            if sha256_fd(held)==identity["binarySHA256"]: raise RuntimeError("source candidate mutation probe did not alter held inode")
+            term=Terminal(launch_fd,executable,profile,env,log); term.wait(('connection profile "missing" credential is unavailable',),30); exit_value=term.close(2)
+            results.append({"attack":"inplace-content-mutation","heldCandidateLaunch":True,"terminalExit":exit_value,"sourceDigestChanged":True})
+        finally:
+            if 'original_byte' in locals(): os.pwrite(modifier,original_byte,0); os.fsync(modifier)
+            os.close(modifier)
+        if sha256_fd(held)!=identity["binarySHA256"]: raise RuntimeError("source candidate mutation restoration failed")
     finally:
         if os.path.lexists(replacement): os.unlink(replacement)
         if os.path.lexists(original): os.replace(original,executable)
@@ -135,20 +213,21 @@ def main():
     token=os.environ.get("SERVICE_LASSO_TUI20_TOKEN"); denied=os.environ.get("SERVICE_LASSO_TUI20_DENIED_TOKEN"); url=os.environ.get("SERVICE_LASSO_TUI20_API_URL")
     if not token or not denied or not url: raise RuntimeError("in-memory credential handoff unavailable")
     env={key:os.environ[key] for key in ALLOWED_ENV if os.environ.get(key)}; env.update({"TERM":"xterm-256color","SERVICE_LASSO_API_TOKEN":token,"SERVICE_LASSO_DENIED_TOKEN":denied,"SERVICE_LASSO_INVALID_TOKEN":"tui20-invalid-token","SERVICE_LASSO_CONNECTIONS_CONFIG":os.path.join(args.root,"connections.json")})
-    held,identity,held_inode=hold_candidate(args.executable,args.source_commit); log=os.path.join(args.root,"native-terminal.txt"); outcome={"outcome":"failed","candidateIdentity":identity,"coreCommit":args.core_commit,"runtimePathReceipt":paths,"terminals":[]}
+    held,identity,held_inode=hold_candidate(args.executable,args.source_commit); launch_fd=None; darwin_protected=None; log=os.path.join(args.root,"native-terminal.txt"); outcome={"outcome":"failed","candidateIdentity":identity,"coreCommit":args.core_commit,"runtimePathReceipt":paths,"terminals":[]}
     try:
+        launch_fd,darwin_protected,binding=bound_execution(held,identity,args.root); outcome["heldExecutableBinding"]=binding
         before=unrelated(url,token); adverse=[]
         for profile,label,expected,audit_expected in (("missing","missing-credential",2,0),("invalid","invalid-credential",0,0),("denied","scope-denied",0,5)):
             count=len(operations(url,token)); audit=audit_count(url,token)
             if profile=="missing":
-                outcome["heldExecutableBinding"]={"platform":sys_platform(),"mechanism":"fexecve" if sys_platform()=="linux" else "darwin-fdescfs","replacementProbe":bound_replacement_probe(held,args.executable,held_inode,profile,env,log)}
-                term=Terminal(held,args.executable,profile,env,log); term.wait(('connection profile "missing" credential is unavailable',),30)
+                outcome["heldExecutableBinding"]["replacementProbe"]=bound_replacement_probe(launch_fd,held,args.executable,held_inode,profile,env,log)
+                term=Terminal(launch_fd,args.executable,profile,env,log); term.wait(('connection profile "missing" credential is unavailable',),30)
             else:
-                term=Terminal(held,args.executable,profile,env,log); term.wait(("Runtime identity:",),30); detail(term); term.write("i"); term.wait(("Runtime API unavailable:",),30)
+                term=Terminal(launch_fd,args.executable,profile,env,log); term.wait(("Runtime identity:",),30); detail(term); term.write("i"); term.wait(("Runtime API unavailable:",),30)
             outcome["terminals"].append({"terminal":label,"exit":term.close(expected)})
             after=len(operations(url,token)); audit_after=audit_count(url,token); adverse.append({"case":label,"beforeOperationCount":count,"afterOperationCount":after,"noOperation":after==count,"coreDeniedAuditBefore":audit,"coreDeniedAuditAfter":audit_after,"coreDeniedAuditDelta":audit_after-audit})
             if after!=count or audit_after-audit!=audit_expected: raise RuntimeError("adverse lifecycle receipt invalid")
-        term=Terminal(held,args.executable,"native",env,log); term.wait(("Runtime identity:",),30); detail(term)
+        term=Terminal(launch_fd,args.executable,"native",env,log); term.wait(("Runtime identity:",),30); detail(term)
         action_readbacks=[]; known_ids={record.get("operationId") for record in operations(url,token)}
         expected_by_ui={"install":"service_install","config":"service_configure","start":"service_start","stop":"service_stop","restart":"service_restart"}
         for key,name in (("i","install"),("c","config"),("s","start"),("x","stop"),("R","restart")):
@@ -159,7 +238,7 @@ def main():
         before_reload=operations(url,token); term.write("l"); term.wait(("reload is unavailable",),15)
         if operations(url,token)!=before_reload or "z cancel" in term.text: raise RuntimeError("reload or cancellation contract changed")
         outcome["terminals"].append({"terminal":"allowed","exit":term.close()})
-        term=Terminal(held,args.executable,"native",env,log); term.wait(("Runtime identity:",),30); detail(term); outcome["terminals"].append({"terminal":"reconnect","exit":term.close()})
+        term=Terminal(launch_fd,args.executable,"native",env,log); term.wait(("Runtime identity:",),30); detail(term); outcome["terminals"].append({"terminal":"reconnect","exit":term.close()})
         records=[{key:record.get(key) for key in ("operationId","action","targetIds","status","outcome","cancellationSupported")} for record in operations(url,token) if record.get("targetIds")==["tui20-fixture"]]
         expected=["service_restart","service_stop","service_start","service_configure","service_install"]
         operation_ids=[item["operationId"] for item in records]
@@ -172,5 +251,8 @@ def main():
         if unrelated(url,token)!=before: raise RuntimeError("unrelated state changed")
         write_json(os.path.join(args.root,"operation-audit.json"),{"operations":records,"coreAudit":audit_matches}); outcome.update({"outcome":"succeeded","actions":["install","config","start","stop","restart"],"adverseAudit":adverse,"reloadDenied":True,"cancellation":{"advertised":False,"supportedActionTested":False},"reconnect":{"completedOperationNoReplay":True,"pendingReconciliation":"blocked_core_1553_no_adapter"},"unrelatedService":{**before,"unchangedAfterFiveActions":True},"fixtureOperationCount":len(records)})
     except Exception: outcome["failureReason"]="native_harness_assertion_failed"; raise
-    finally: os.close(held); write_json(os.path.join(args.root,"native-exit-receipt.json"),outcome)
+    finally:
+        if darwin_protected is not None: release_darwin_system_immutable_execution(launch_fd,darwin_protected)
+        elif launch_fd is not None: os.close(launch_fd)
+        os.close(held); write_json(os.path.join(args.root,"native-exit-receipt.json"),outcome)
 if __name__=="__main__": main()

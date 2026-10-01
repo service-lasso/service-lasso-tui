@@ -80,6 +80,21 @@ profile or credential, or claim pending reconciliation while Core #1553 lacks
 its reviewed adapter. Hosted runner availability remains direct native evidence
 only when the complete workflow succeeds; any unavailable or failed receipt is
 classified Blocked.
+The executable bytes used by the PTY must be a platform-enforced immutable
+object, not merely a readable descriptor. On Linux, the harness copies the
+verified descriptor bytes into a `memfd`, verifies the copy digest, applies
+the write, grow, shrink, and seal seals, verifies those seals, and executes
+only that sealed object with `fexecve`. On macOS, it copies the verified bytes
+to an owned staging object and requires the OS-reported `SF_IMMUTABLE` system
+flag before descriptor-based execution; activation and later removal require a
+non-interactive privileged helper. User immutable flags, chmod, ACLs,
+descriptor retention, and a same-user promise are insufficient. The retained
+receipt records only the mechanism, seal/flag readback, denied in-place-write
+probe, and the existing digest identity. Each native run also mutates the
+source inode in place after the immutable execution object exists and proves
+the launch still reaches the verified object; it restores the source byte
+before proceeding. If a platform cannot establish and read back that mechanism,
+the lifecycle result is Blocked.
 It labels the result `win32-amd64` only after the Windows host, Node process,
 and Python/ConPTY helper report AMD64. This remains local direct-only evidence:
 bounded Windows CI dependency installation changes the pinned Core checkout,

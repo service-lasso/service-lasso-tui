@@ -13,10 +13,11 @@
   #1553's reviewed server-issued validated opaque actor/client/instance context
   contract. The TUI must not derive binding authority from profile, URL, or
   credential material.
-- [x] Retain exact-source Core lifecycle acceptance for Issue #20 (authenticated
-  allow/deny, preview, one submission, readback/reconnect, cancellation, and
-  unrelated-service preservation) separately from fixtures, source CI, package
-  qualification, release, and GA.
+- [ ] Retain a secrecy-safe exact-source Core lifecycle acceptance for Issue #20
+  with same-handle binary identity, true per-terminal exits, direct adverse
+  Core-audit counts, and before/after unrelated-service state. The prior
+  retained native fixture remains partial evidence; pending reconciliation is
+  separately blocked on Core #1553 and Linux/macOS native journeys remain open.
 - [x] Issue #7 verified Core `develop` GET routes for capability/setup metadata,
   authenticated runtime identity, inbox list, and service health history. The
   TUI consumes only bounded display fields and no inbox detail or mutation.

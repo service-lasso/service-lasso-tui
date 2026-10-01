@@ -1,216 +1,120 @@
-import argparse
-import hashlib
-import json
-import os
-import select
-import time
-import urllib.request
-
+"""Windows ConPTY lifecycle evidence with memory-only bearer credentials."""
+import argparse, ctypes, hashlib, json, os, select, stat, time, urllib.request
+from ctypes import wintypes
 from winpty.enums import Backend
 from winpty.ptyprocess import PtyProcess
 
-
-def write_json(path, value):
-    with open(path, "w", encoding="utf-8", newline="") as handle:
-        json.dump(value, handle, separators=(",", ":"))
-
-
-def append_terminal(path, label, chunk):
-    with open(path, "a", encoding="utf-8", newline="") as handle:
-        handle.write("\n--- " + label + " ---\n")
-        handle.write(chunk)
-
-
-def read_chunk(process, transcript_path, label):
+ALLOWED_ENV=("APPDATA","COMSPEC","LOCALAPPDATA","PATHEXT","PATH","SYSTEMROOT","TEMP","TMP","USERPROFILE","WINDIR")
+def write_json(path,value):
+    with open(path,"w",encoding="utf-8",newline="") as f: json.dump(value,f,separators=(",",":"))
+def append_terminal(path,label,chunk):
+    with open(path,"a",encoding="utf-8",newline="") as f: f.write("\n--- "+label+" ---\n"+chunk)
+def hold_candidate(executable,source):
+    if len(source)!=40: raise RuntimeError("candidate source identity invalid")
+    executable=os.path.abspath(executable); meta=os.lstat(executable)
+    if not stat.S_ISREG(meta.st_mode) or os.name!="nt": raise RuntimeError("candidate executable invalid")
+    k=ctypes.WinDLL("kernel32",use_last_error=True); k.CreateFileW.argtypes=[wintypes.LPCWSTR,wintypes.DWORD,wintypes.DWORD,wintypes.LPVOID,wintypes.DWORD,wintypes.DWORD,wintypes.HANDLE]; k.CreateFileW.restype=wintypes.HANDLE
+    handle=k.CreateFileW(executable,0x80000000,0x00000001,None,3,0x80,None)
+    if handle==wintypes.HANDLE(-1).value: raise OSError(ctypes.get_last_error(),"candidate handle acquisition failed")
+    import msvcrt
+    f=os.fdopen(msvcrt.open_osfhandle(handle,os.O_RDONLY),"rb"); digest=hashlib.sha256()
     try:
-        chunk = process.read()
-    except EOFError:
-        return False
-    append_terminal(transcript_path, label, chunk)
-    return chunk
-
-
-def wait_for(process, expected, timeout, transcript, transcript_path, label, from_index=0):
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if all(item in transcript[0][from_index:] for item in expected):
-            return
-        readable, _, _ = select.select([process], [], [], 0.1)
-        if readable:
-            chunk = read_chunk(process, transcript_path, label)
-            if not chunk:
-                break
-            transcript[0] += chunk
-    raise RuntimeError("missing terminal state: " + ", ".join(expected))
-
-
-def environment(tokens, connections):
-    allowed = ("APPDATA", "COMSPEC", "LOCALAPPDATA", "PATHEXT", "PATH", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE", "WINDIR")
-    env = {key: os.environ[key] for key in allowed if os.environ.get(key)}
-    env.update({
-        "TERM": "xterm-256color",
-        "SERVICE_LASSO_API_TOKEN": tokens["token"],
-        "SERVICE_LASSO_DENIED_TOKEN": tokens["deniedToken"],
-        "SERVICE_LASSO_INVALID_TOKEN": "tui20-invalid-token",
-        "SERVICE_LASSO_CONNECTIONS_CONFIG": connections,
-    })
-    return env
-
-
-def open_terminal(executable, profile, env):
-    return PtyProcess.spawn([executable, "--profile", profile], cwd=os.path.dirname(executable), env=env, dimensions=(44, 150), backend=Backend.ConPTY)
-
-
-def detail(process, transcript, transcript_path, label, service_id):
-    process.write("/")
-    process.write(service_id)
-    process.write("\r")
-    wait_for(process, (service_id,), 20, transcript, transcript_path, label)
-    process.write("\r")
-    wait_for(process, ("Lifecycle:", service_id), 20, transcript, transcript_path, label)
-
-
-def action(process, transcript, transcript_path, key, name):
-    start = len(transcript[0])
-    process.write(key)
-    wait_for(process, ("Core preview: " + name, "Confirm " + name), 45, transcript, transcript_path, "allowed", start)
-    frozen_before = transcript[0]
-    process.write("rj?q")
-    time.sleep(0.3)
-    if "Confirm " + name not in transcript[0] or "Core preview: " + name not in transcript[0]:
-        raise RuntimeError("confirmation changed by blocked input")
-    process.write("y")
-    process.write("r")
-    wait_for(process, ("Core operation", "succeeded."), 90, transcript, transcript_path, "allowed", start)
-    if transcript[0].count("Core operation") < frozen_before.count("Core operation") + 1:
-        raise RuntimeError("operation result was not rendered")
-
-
-def close_terminal(process):
-    if not process.isalive():
-        return
-    process.write("q")
-    deadline = time.monotonic() + 10
-    while process.isalive() and time.monotonic() < deadline:
-        time.sleep(0.1)
-    if process.isalive():
-        raise RuntimeError("terminal did not exit")
-
-
-def operation_records(api_url, token):
-    request = urllib.request.Request(api_url + "/api/operator/lifecycle/operations", headers={"Authorization": "Bearer " + token})
-    with urllib.request.urlopen(request, timeout=15) as response:
-        return json.load(response)["operations"]
-
-
-def fixture_audit(records):
-    return [{
-        "operationId": record.get("operationId"),
-        "action": record.get("action"),
-        "targetIds": record.get("targetIds"),
-        "status": record.get("status"),
-        "outcome": record.get("outcome"),
-        "cancellationSupported": record.get("cancellationSupported"),
-    } for record in records if record.get("targetIds") == ["tui20-fixture"]]
-
-
-def assert_five_records(records):
-    audit = fixture_audit(records)
-    expected = ["service_restart", "service_stop", "service_start", "service_configure", "service_install"]
-    if len(audit) != 5 or sorted(record["action"] for record in audit) != sorted(expected):
-        raise RuntimeError("expected exactly one durable record for each fixture action")
-    if any(not record["operationId"] for record in audit):
-        raise RuntimeError("operation audit omitted an operation ID")
-    if any(record["cancellationSupported"] for record in audit):
-        raise RuntimeError("fixture unexpectedly advertised cancellation")
-    if any(record.get("targetIds") == ["tui20-unrelated"] for record in records):
-        raise RuntimeError("unrelated fixture was targeted")
-    return audit
-
-
+        while True:
+            chunk=f.read(1024*1024)
+            if not chunk: break
+            digest.update(chunk)
+        return executable,f,{"sourceCommit":source,"binarySHA256":digest.hexdigest()}
+    except Exception: f.close(); raise
+def terminal_exit(process):
+    try:
+        if process.isalive(): return None
+        signal_status,exit_status=getattr(process,"signalstatus",None),getattr(process,"exitstatus",None)
+    except Exception: return "terminal_unknown"
+    if isinstance(signal_status,int) and not isinstance(signal_status,bool) and signal_status!=0: return "terminal_signaled"
+    if signal_status not in (None,0): return "terminal_unknown"
+    if isinstance(exit_status,int) and not isinstance(exit_status,bool):
+        return "terminal_exited_zero" if exit_status==0 else "terminal_exit_code_1" if exit_status==1 else "terminal_exit_code_2" if exit_status==2 else "terminal_exited_nonzero"
+    return "terminal_unknown"
+def drain(process,transcript,path,label):
+    try: chunk=process.read()
+    except EOFError: return None
+    append_terminal(path,label,chunk); transcript[0]+=chunk; return chunk
+def wait_for(process,expected,timeout,transcript,path,label,start=0):
+    end=time.monotonic()+timeout
+    while time.monotonic()<end:
+        if all(x in transcript[0][start:] for x in expected): return
+        readable,_,_=select.select([process],[],[],.1)
+        if readable and drain(process,transcript,path,label) is None:
+            reason=terminal_exit(process)
+            if reason is not None: raise RuntimeError("terminal exited before expected state: "+reason)
+            time.sleep(.05)
+    raise RuntimeError("missing terminal state")
+def close_terminal(process,transcript,path,label,expected="terminal_exited_zero"):
+    if process.isalive(): process.write("q")
+    end=time.monotonic()+10
+    while time.monotonic()<end:
+        readable,_,_=select.select([process],[],[],.1)
+        if readable: drain(process,transcript,path,label)
+        reason=terminal_exit(process)
+        if reason is not None:
+            if reason!=expected: raise RuntimeError("unexpected terminal exit: "+reason)
+            return reason
+    raise RuntimeError("terminal exit was not observed")
+def request_json(url,token,path):
+    req=urllib.request.Request(url+path,headers={"Authorization":"Bearer "+token})
+    with urllib.request.urlopen(req,timeout=15) as response: return json.load(response)
+def records(url,token): return request_json(url,token,"/api/operator/lifecycle/operations")["operations"]
+def stable_hash(value): return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+def unrelated_snapshot(url,token):
+    result=request_json(url,token,"/api/services"); entries=result.get("services",result) if isinstance(result,dict) else result
+    service=next((x for x in entries if isinstance(x,dict) and x.get("id")=="tui20-unrelated"),None)
+    availability=request_json(url,token,"/api/operator/lifecycle/services/tui20-unrelated/availability")
+    if service is None: raise RuntimeError("unrelated service missing")
+    return {"servicePresent":True,"runtimeSHA256":stable_hash(service),"lifecycleSHA256":stable_hash(availability)}
+def detail(p,t,path,label):
+    p.write("/"); p.write("tui20-fixture"); p.write("\r"); wait_for(p,("tui20-fixture",),20,t,path,label); p.write("\r"); wait_for(p,("Lifecycle:","tui20-fixture"),20,t,path,label)
+def action(p,t,path,key,name):
+    start=len(t[0]); p.write(key); wait_for(p,("Core preview: "+name,"Confirm "+name),45,t,path,"allowed",start); frozen=t[0]; p.write("rj?q"); time.sleep(.3)
+    if "Confirm "+name not in t[0] or "Core preview: "+name not in t[0]: raise RuntimeError("confirmation changed by blocked input")
+    p.write("y"); p.write("r"); wait_for(p,("Core operation","succeeded."),90,t,path,"allowed",start)
+    if t[0].count("Core operation")<frozen.count("Core operation")+1: raise RuntimeError("operation result was not rendered")
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--root", required=True)
-    parser.add_argument("--executable", required=True)
-    parser.add_argument("--source-commit", required=True)
-    parser.add_argument("--core-commit", required=True)
-    args = parser.parse_args()
-    transcript_path = os.path.join(args.root, "native-terminal.txt")
-    receipt_path = os.path.join(args.root, "native-exit-receipt.json")
-    with open(os.path.join(args.root, "private-token.json"), encoding="utf-8") as handle:
-        tokens = json.load(handle)
-    with open(os.path.join(args.root, "connections.json"), encoding="utf-8") as handle:
-        api_url = json.load(handle)["profiles"]["native"]["url"]
-    with open(os.path.join(args.root, "ready.json"), encoding="utf-8") as handle:
-        ready = json.load(handle)
-    if ready.get("coreCommit") != args.core_commit:
-        raise RuntimeError("Core source identity did not match the requested commit")
-    with open(args.executable, "rb") as handle:
-        binary_sha256 = hashlib.sha256(handle.read()).hexdigest()
-    env = environment(tokens, os.path.join(args.root, "connections.json"))
-    outcome = {"outcome": "failed", "sourceCommit": args.source_commit, "coreCommit": args.core_commit, "binarySHA256": binary_sha256}
-    terminals = []
+    parser=argparse.ArgumentParser(); parser.add_argument("--root",required=True); parser.add_argument("--executable",required=True); parser.add_argument("--source-commit",required=True); parser.add_argument("--core-commit",required=True); args=parser.parse_args()
+    with open(os.path.join(args.root,"ready.json"),encoding="utf-8") as f: ready=json.load(f)
+    paths={"configuredBeforeFirstInvocation":True,"uniqueOwnedPaths":["workspaceRoot","instanceRegistryPath","hostPortRegistryPath"]}
+    if ready.get("coreCommit")!=args.core_commit or ready.get("runtimePathReceipt")!=paths: raise RuntimeError("Core fixture receipt invalid")
+    token=os.environ.get("SERVICE_LASSO_TUI20_TOKEN"); denied=os.environ.get("SERVICE_LASSO_TUI20_DENIED_TOKEN"); url=os.environ.get("SERVICE_LASSO_TUI20_API_URL")
+    if not token or not denied or not url: raise RuntimeError("owned in-memory credential handoff unavailable")
+    with open(os.path.join(args.root,"connections.json"),encoding="utf-8") as f: connections=json.load(f)
+    env={key:os.environ[key] for key in ALLOWED_ENV if os.environ.get(key)}; env.update({"TERM":"xterm-256color","SERVICE_LASSO_API_TOKEN":token,"SERVICE_LASSO_DENIED_TOKEN":denied,"SERVICE_LASSO_INVALID_TOKEN":"tui20-invalid-token","SERVICE_LASSO_CONNECTIONS_CONFIG":os.path.join(args.root,"connections.json")})
+    executable,held,identity=hold_candidate(args.executable,args.source_commit); transcript_path=os.path.join(args.root,"native-terminal.txt"); outcome={"outcome":"failed","candidateIdentity":identity,"coreCommit":args.core_commit,"runtimePathReceipt":paths,"terminals":[]}; open_processes=[]
+    def launch(profile,label):
+        p=PtyProcess.spawn([executable,"--profile",profile],cwd=os.path.dirname(executable),env=env,dimensions=(44,150),backend=Backend.ConPTY); open_processes.append(p); return p,[""]
+    def finish(p,t,label,expected="terminal_exited_zero"):
+        outcome["terminals"].append({"terminal":label,"exit":close_terminal(p,t,transcript_path,label,expected)}); open_processes.remove(p)
     try:
-        missing = open_terminal(args.executable, "missing", env); terminals.append(missing)
-        missing_transcript = [""]
-        wait_for(missing, ('connection profile "missing" credential is unavailable',), 30, missing_transcript, transcript_path, "missing-credential")
-        close_terminal(missing); terminals.remove(missing)
-
-        invalid = open_terminal(args.executable, "invalid", env); terminals.append(invalid)
-        invalid_transcript = [""]
-        wait_for(invalid, ("Runtime identity:",), 30, invalid_transcript, transcript_path, "invalid-credential")
-        detail(invalid, invalid_transcript, transcript_path, "invalid-credential", "tui20-fixture")
-        invalid.write("i")
-        wait_for(invalid, ("Runtime API unavailable:",), 30, invalid_transcript, transcript_path, "invalid-credential")
-        close_terminal(invalid); terminals.remove(invalid)
-
-        denied = open_terminal(args.executable, "denied", env); terminals.append(denied)
-        denied_transcript = [""]
-        wait_for(denied, ("Runtime identity:",), 30, denied_transcript, transcript_path, "denied")
-        detail(denied, denied_transcript, transcript_path, "denied", "tui20-fixture")
-        denied.write("i")
-        wait_for(denied, ("Runtime API unavailable:",), 30, denied_transcript, transcript_path, "denied")
-        close_terminal(denied); terminals.remove(denied)
-
-        full = open_terminal(args.executable, "native", env); terminals.append(full)
-        transcript = [""]
-        wait_for(full, ("Runtime identity:",), 30, transcript, transcript_path, "allowed")
-        detail(full, transcript, transcript_path, "allowed", "tui20-fixture")
-        for key, name in (("i", "install"), ("c", "config"), ("s", "start"), ("x", "stop"), ("R", "restart")):
-            action(full, transcript, transcript_path, key, name)
-        records_before_reload = operation_records(api_url, tokens["token"])
-        full.write("l")
-        wait_for(full, ("reload is unavailable",), 15, transcript, transcript_path, "allowed")
-        records_after_reload = operation_records(api_url, tokens["token"])
-        if len(records_after_reload) != len(records_before_reload):
-            raise RuntimeError("unavailable reload created an operation")
-        if "z cancel" in transcript[0]:
-            raise RuntimeError("cancellation was advertised despite Core readback")
-        full.write("r")
-        wait_for(full, ("Lifecycle:",), 20, transcript, transcript_path, "allowed")
-        close_terminal(full); terminals.remove(full)
-
-        reconnect = open_terminal(args.executable, "native", env); terminals.append(reconnect)
-        reconnect_transcript = [""]
-        wait_for(reconnect, ("Runtime identity:",), 30, reconnect_transcript, transcript_path, "reconnect")
-        detail(reconnect, reconnect_transcript, transcript_path, "reconnect", "tui20-fixture")
-        close_terminal(reconnect); terminals.remove(reconnect)
-
-        records_after_reconnect = operation_records(api_url, tokens["token"])
-        audit = assert_five_records(records_after_reconnect)
-        if len(records_after_reconnect) != len(records_after_reload):
-            raise RuntimeError("reconnect replayed an operation")
-        write_json(os.path.join(args.root, "operation-audit.json"), {"operations": audit})
-        outcome.update({"outcome": "succeeded", "actions": ["install", "config", "start", "stop", "restart"], "denial": "permission_denied", "missingCredential": True, "invalidCredential": True, "reloadDenied": True, "cancelAdvertised": False, "reconnectNoReplay": True, "fixtureOperationCount": len(audit), "unrelatedTargetPresent": False})
-    except Exception as error:
-        outcome["error"] = str(error)
-        raise
+        before_unrelated=unrelated_snapshot(url,token); adverse=[]
+        p,t=launch("missing","missing-credential"); before=len(records(url,token)); wait_for(p,('connection profile "missing" credential is unavailable',),30,t,transcript_path,"missing-credential"); finish(p,t,"missing-credential","terminal_exit_code_2"); after=len(records(url,token)); adverse.append({"case":"missing-credential","beforeOperationCount":before,"afterOperationCount":after,"noOperation":after==before})
+        for profile,label in (("invalid","invalid-credential"),("denied","scope-denied")):
+            p,t=launch(profile,label); before=len(records(url,token)); wait_for(p,("Runtime identity:",),30,t,transcript_path,label); detail(p,t,transcript_path,label); p.write("i"); wait_for(p,("Runtime API unavailable:",),30,t,transcript_path,label); finish(p,t,label); after=len(records(url,token)); adverse.append({"case":label,"beforeOperationCount":before,"afterOperationCount":after,"noOperation":after==before})
+        if not all(x["noOperation"] for x in adverse): raise RuntimeError("adverse lifecycle case created an operation")
+        p,t=launch("native","allowed"); wait_for(p,("Runtime identity:",),30,t,transcript_path,"allowed"); detail(p,t,transcript_path,"allowed")
+        for key,name in (("i","install"),("c","config"),("s","start"),("x","stop"),("R","restart")): action(p,t,transcript_path,key,name)
+        before_reload=records(url,token); p.write("l"); wait_for(p,("reload is unavailable",),15,t,transcript_path,"allowed")
+        if len(records(url,token))!=len(before_reload) or "z cancel" in t[0]: raise RuntimeError("reload or cancellation contract changed")
+        p.write("r"); wait_for(p,("Lifecycle:",),20,t,transcript_path,"allowed"); finish(p,t,"allowed")
+        p,t=launch("native","reconnect"); wait_for(p,("Runtime identity:",),30,t,transcript_path,"reconnect"); detail(p,t,transcript_path,"reconnect"); finish(p,t,"reconnect")
+        all_records=records(url,token); audit=[{key:r.get(key) for key in ("operationId","action","targetIds","status","outcome","cancellationSupported")} for r in all_records if r.get("targetIds")==["tui20-fixture"]]
+        expected=["service_restart","service_stop","service_start","service_configure","service_install"]
+        if len(audit)!=5 or sorted(x["action"] for x in audit)!=sorted(expected) or any(not x["operationId"] or x["cancellationSupported"] for x in audit) or len(all_records)!=len(before_reload): raise RuntimeError("durable action audit invalid")
+        after_unrelated=unrelated_snapshot(url,token)
+        if after_unrelated!=before_unrelated: raise RuntimeError("unrelated runtime or lifecycle state changed")
+        write_json(os.path.join(args.root,"operation-audit.json"),{"operations":audit}); outcome.update({"outcome":"succeeded","actions":["install","config","start","stop","restart"],"adverseAudit":adverse,"reloadDenied":True,"cancellation":{"advertised":False,"supportedActionTested":False},"reconnect":{"completedOperationNoReplay":True,"pendingReconciliation":"blocked_core_1553_no_adapter"},"unrelatedService":{**before_unrelated,"unchangedAfterFiveActions":True},"fixtureOperationCount":len(audit)})
     finally:
-        for terminal in terminals:
-            if terminal.isalive():
-                terminal.close(force=True)
-        write_json(receipt_path, outcome)
-
-
-if __name__ == "__main__":
-    main()
+        for p in open_processes:
+            try:
+                if p.isalive(): p.close(force=True)
+                outcome["terminals"].append({"terminal":"aborted","exit":terminal_exit(p) or "terminal_unknown"})
+            except Exception: outcome["terminals"].append({"terminal":"aborted","exit":"terminal_unknown"})
+        held.close(); write_json(os.path.join(args.root,"native-exit-receipt.json"),outcome)
+if __name__=="__main__": main()

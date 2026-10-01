@@ -66,29 +66,42 @@ The ConPTY helper now forwards only the token and connection-profile file that
 the explicitly selected TUI profile requires; it neither writes credentials
 nor relaxes profile admission.
 
-## Completed native Windows acceptance
+## Native Windows evidence repair status
 
-On 2026-10-02, an owned Windows ConPTY experiment retained at
+The earlier retained experiment at
 `D:\projects\service-lasso\_verification\tui20-native-five-action-20261002-020000`
-compiled the detached, clean TUI source `6f6dfd9cd47523de4fe250f56c6c8a796b8f8936`
-with `GOWORK=off`, `-mod=readonly`, and `-buildvcs=true`. The built binary
-SHA-256 was `a5fd433c78f479391fa6d426ac6087a1ebed01caf9144771fafb675eccbf9400`;
-its embedded build information reports that same revision and
-`vcs.modified=false`. It drove Core `93d9d343a058d296069c017d17f4f8d1fc1505ea`
-through a fresh loopback API, fresh workspace/instance/port registries, an
-owned JWKS, and only the documented guarded OAuth fixture profiles.
+remains preserved as failed receipt evidence. Its bearer fixture was protected
+to the owning user without reading it, but it had previously been retained
+under permissive access and its harness did not hold the executable or retain
+per-terminal true-exit results. It cannot support a complete native acceptance
+claim.
 
-The retained `native-exit-receipt.json`, `operation-audit.json`, and durable
-`native-terminal.txt` prove one keyboard-confirmed install, config, start,
-stop, and restart. All five operation IDs reached `succeeded`, each has only
-`tui20-fixture` in `targetIds`, and none advertised cancellation. The same
-journey retained missing-credential admission, invalid-credential lifecycle
-denial, scoped permission denial, the closed `reload is unavailable` denial
-with no extra operation, and a terminal reconnect whose subsequent audit count
-remained five. `tui20-unrelated` was never targeted. This is direct native
-Windows/Core evidence for Issue #20's bounded lifecycle acceptance. It is not
-cross-platform, release, deployment, package, persistent-reconciliation, or
-GA evidence.
+The current harness repair keeps generated bearer credentials in the owned
+Core parent and inherited child memory only. It retains no credential file,
+holds and hashes the executable through every ConPTY launch, records a closed
+exit classification per terminal, receives a closed pre-invocation receipt for
+the three distinct owned Core paths (`SERVICE_LASSO_WORKSPACE_ROOT`,
+`SERVICE_LASSO_INSTANCE_REGISTRY_PATH`, and
+`SERVICE_LASSO_HOST_PORT_REGISTRY_PATH`), compares opaque before/after runtime
+and lifecycle snapshots for `tui20-unrelated`, and records a direct Core
+operation count before and after each adverse case. It records completed
+operation reconnect separately from pending reconciliation, which remains
+blocked on Core #1553. The current fixture does not advertise cancellation, so
+it does not fabricate an advertised-true cancellation result.
+
+A fresh owned rerun with the product-identical clean `6f6dfd9` executable
+(`a5fd433c78f479391fa6d426ac6087a1ebed01caf9144771fafb675eccbf9400`) retained
+its failed transcript when the Core readback became unavailable while awaiting
+the restart result. That run is not an acceptance receipt. The later harness
+head changes no Go product source, but this must continue to be stated as a
+`6f6dfd9` binary claim until a clean exact-head binary is independently built
+and rerun.
+
+Windows direct lifecycle acceptance is therefore **partial and blocked**:
+source tests and the earlier bounded fixture exercise remain useful, while a
+successful secrecy-safe, same-handle, true-exit receipt remains required.
+Linux and macOS real-Core native journeys are also still unexecuted; hosted
+builds and cross-compilation are not replacements for those host journeys.
 
 ## Remaining boundary
 

@@ -9,7 +9,7 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         ast.parse(source)
         self.assertIn('("reload is unavailable",)', source)
         self.assertIn('append_terminal(transcript_path, label, chunk)', source)
-        self.assertIn('"operationId": record.get("operationId")', source)
+        self.assertIn('"targetIds": record.get("targetIds")', source)
         self.assertIn('"reconnectNoReplay": True', source)
         self.assertIn('connection profile "missing" credential is unavailable', source)
         self.assertIn('detail(invalid, invalid_transcript', source)

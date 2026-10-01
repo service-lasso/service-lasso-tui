@@ -107,11 +107,11 @@ def fixture_audit(records):
     return [{
         "operationId": record.get("operationId"),
         "action": record.get("action"),
-        "targets": record.get("targets"),
+        "targetIds": record.get("targetIds"),
         "status": record.get("status"),
         "outcome": record.get("outcome"),
         "cancellationSupported": record.get("cancellationSupported"),
-    } for record in records if record.get("targets") == ["tui20-fixture"]]
+    } for record in records if record.get("targetIds") == ["tui20-fixture"]]
 
 
 def assert_five_records(records):
@@ -123,7 +123,7 @@ def assert_five_records(records):
         raise RuntimeError("operation audit omitted an operation ID")
     if any(record["cancellationSupported"] for record in audit):
         raise RuntimeError("fixture unexpectedly advertised cancellation")
-    if any(record.get("targets") == ["tui20-unrelated"] for record in records):
+    if any(record.get("targetIds") == ["tui20-unrelated"] for record in records):
         raise RuntimeError("unrelated fixture was targeted")
     return audit
 

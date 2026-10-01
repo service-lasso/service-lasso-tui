@@ -42,7 +42,7 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         ast.parse(source)
         self.assertIn("pty.openpty()", source)
         self.assertIn('"terminal_exited_zero"', source)
-        self.assertIn('os.open(executable,os.O_RDONLY)', source)
+        self.assertIn('os.open(executable,os.O_RDONLY|getattr(os,"O_NOFOLLOW",0))', source)
         self.assertIn('libc.fexecve', source)
         self.assertIn('"/dev/fd/"+str(held)', source)
         self.assertIn('"reparse"', source)

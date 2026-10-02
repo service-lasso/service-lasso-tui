@@ -133,6 +133,12 @@ test("actual workflow custody producer preserves literals and consumes every rea
     try { await directory.sync(); } finally { await directory.close(); }
   };
   let invocation = 0;
+  // t.diagnostic may be buffered until test completion. Write a TAP comment to
+  // the existing stdout channel and await its write callback before spawning.
+  // This is caller-stream completion, not a provider delivery acknowledgement.
+  const emitDiagnostic = value => new Promise((resolve, reject) => {
+    process.stdout.write(`# ${JSON.stringify(value)}\n`, error => error ? reject(new Error("safe diagnostic output failed")) : resolve());
+  });
   const invokeProducer = async (selectedPhase, selectedProducer, timeout) => {
     const name = String(++invocation);
     const explicitProducer = selectedProducer.replace(" bash -euo pipefail <<'TUI20_PHASE'", ` ${quote(parser)} -euo pipefail <<'TUI20_PHASE'`);
@@ -150,7 +156,7 @@ test("actual workflow custody producer preserves literals and consumes every rea
       platform: process.platform, parser: { sha256: digest(parserBytes), size: parserBytes.length, version: parserVersionNumber, versionSHA256: digest(Buffer.from(parserVersion)) },
       node: { version: /^v[0-9]+\.[0-9]+\.[0-9]+$/.test(process.version) ? process.version : "unclassified", imageSHA256: digest(await readFile(process.execPath)), sourceSHA256: digest(await readFile(fileURLToPath(import.meta.url))) },
       workflowSHA256: digest(await readFile(path.join(scripts, "../.github/workflows/ci.yml"))), callerSourceSHA256: digest(callerSource), producerSourceSHA256: digest(Buffer.from(selectedProducer)), fedSourceSHA256: digest(fedSource), fedSourceSize: fedSource.length };
-    t.diagnostic(JSON.stringify({ ...safeBinding, stage: "before-invocation", result: "pending" }));
+    await emitDiagnostic({ ...safeBinding, stage: "before-invocation", result: "pending" });
     // Private exact bytes/environment are fsynced BEFORE parsing can fail.
     // None of these files is a public receipt or an uploaded artifact.
     try {
@@ -159,7 +165,7 @@ test("actual workflow custody producer preserves literals and consumes every rea
       await persist(`${name}-fed.source`, fedSource);
       await persist(`${name}-binding.json`, JSON.stringify({ classification: "owner-private-parser-diagnostic", platform: process.platform, parser: { path: parser, sha256: digest(parserBytes), size: parserBytes.length, version: parserVersion }, caller: { path: process.execPath, version: process.version, sha256: digest(await readFile(process.execPath)), sourceSHA256: digest(await readFile(fileURLToPath(import.meta.url))) }, workflowSHA256: digest(await readFile(path.join(scripts, "../.github/workflows/ci.yml"))), extraction: "LF normalization; env-i through pre-Core git init; remove ten-space YAML prefix; append closing delimiter", cwd: source, argv: args, innerArgv: ["-euo", "pipefail"], environment, freshEnvironment, callerSourceSHA256: digest(callerSource), fedSourceSHA256: digest(fedSource), fedSourceSize: fedSource.length }));
     } catch {
-      t.diagnostic(JSON.stringify({ ...safeBinding, stage: "private-preflight-persistence", result: "failed", invocationReached: false }));
+      try { await emitDiagnostic({ ...safeBinding, stage: "private-preflight-persistence", result: "failed", invocationReached: false }); } catch { /* no invocation occurred */ }
       throw new Error("private parser diagnostic preflight persistence failed");
     }
     const result = spawnSync(parser, args, { cwd: source, env: environment, encoding: "utf8", ...(timeout === undefined ? {} : { timeout }) });
@@ -172,9 +178,10 @@ test("actual workflow custody producer preserves literals and consumes every rea
     try { parserReadback = digest(await readFile(parser)) === safeBinding.parser.sha256 ? "matched" : "changed"; }
     catch { result.diagnosticFailures.push({ sink: "parser-image-readback", code: "readback_failed" }); }
     if (parserReadback === "changed") result.diagnosticFailures.push({ sink: "parser-image-readback", code: "image_changed" });
-    t.diagnostic(JSON.stringify({ ...safeBinding, stage: "after-invocation", invocationReached: true,
+    try { await emitDiagnostic({ ...safeBinding, stage: "after-invocation", invocationReached: true,
       result: result.error ? "spawn_failed" : result.signal ? "signaled" : result.status === 0 ? "exited_zero" : Number.isInteger(result.status) ? "exited_nonzero" : "exit_unknown",
-      exitStatus: Number.isInteger(result.status) ? result.status : null, parserImageReadback: parserReadback, diagnosticFailures: result.diagnosticFailures }));
+      exitStatus: Number.isInteger(result.status) ? result.status : null, parserImageReadback: parserReadback, diagnosticFailures: result.diagnosticFailures }); }
+    catch { result.diagnosticFailures.push({ sink: "safe-output", code: "output_failed" }); }
     return result;
   };
   // Execute the complete actual pre-fetch producer, including fresh env,

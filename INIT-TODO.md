@@ -64,3 +64,14 @@ failure has a causal Core-audit/registry diagnosis; pending reconciliation is
   the provider controls.
 
 Issue #18 source repair binds actual Git tag refs and recursively resolved annotated objects to the exact candidate SHA. Orphan, malformed, cyclic and mismatched tags deny all writes. The publisher retains validated provider policy and re-reads identical policy immediately before every create, asset upload and publish mutation; changed or unavailable policy denies further writes. Source-only implementation and regressions remain UNEXECUTED pending entire independent SOURCE GO and new complete-input ROOT admission. Full native five-action/keyboard/error/cancel and three-OS same-byte Core acceptance remain pending.
+
+Issue #20 final9f entire-review findings require two coherent source repairs:
+record OS-observed Bash producer and Python writer PID/PPID/birth/image tuples,
+with the live parent directly observing and binding its actual writer child;
+and retain mandatory external-owner finalization outcome for the durable
+observer to combine with its actual held Core child shutdown/wait/absence.
+Missing, malformed or crashed ownership receipts fail closed. Actual producer
+and controller-to-observer-to-external-owner regressions are required.
+All prior five producer repairs and Issue #18 nine-mutation/six-held-asset
+publisher safeguards remain required. Source and regressions stay UNEXECUTED
+until fresh ENTIRE independent SOURCE GO and NEW complete-input ROOT admission.

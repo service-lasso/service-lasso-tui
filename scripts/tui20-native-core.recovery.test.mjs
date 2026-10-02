@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -19,6 +19,7 @@ test("native owner architecture is shared by Linux and Darwin and requires real 
   assert.match(owner, /Every post-start preflight stays inside this owner boundary/);
   assert.match(owner, /owner-preflight-cleanup\.json/);
   assert.match(owner, /owner-finalization-failure-proof\.json/);
+  assert.match(owner, /external-owner-finalization\.json/);
   assert.match(owner, /select\.select\(\[runtime\.stdout\],\[\],\[\],10\)/);
   assert.match(owner, /owner-runtime-recovery\.json/);
   assert.match(owner, /OwnedRuntimeAcquisitionFailure/);
@@ -77,4 +78,88 @@ test("runtime establishes each owned Core path before the first Core import", as
     assert.match(stdout, /"event":"ready"/);
     assert.deepEqual(JSON.parse(await readFile(observed, "utf8")), { workspace: path.join(root, "workspace"), instances: path.join(root, "registry", "instances.json"), ports: path.join(root, "registry", "ports.json") });
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("actual controller observer external-owner finalization retains failure and directly observes runtime closure", { skip: !["linux", "darwin"].includes(process.platform) }, async t => {
+  const root = await mkdtemp(path.join(tmpdir(), "tui20-external-finalization-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const put = async (relative, content) => {
+    const target = path.join(root, "core-source", relative);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, content);
+  };
+  // Core imports are explicit fixtures. Controller, durable observer, runtime
+  // child and external owner are the actual production entry points. Preflight
+  // fails before candidate activation; this does not claim native acceptance.
+  await put("package.json", '{"type":"module"}');
+  await put("node_modules/jose/package.json", '{"type":"module"}');
+  await put("node_modules/jose/dist/webapi/index.js", `
+    export const generateKeyPair = async () => ({ privateKey:{}, publicKey:{} });
+    export const exportJWK = async () => ({});
+    export class SignJWT { setProtectedHeader(){return this;} setIssuer(){return this;} setAudience(){return this;} setSubject(){return this;} setIssuedAt(){return this;} setExpirationTime(){return this;} async sign(){return "fixture";} }
+  `);
+  await put("dist/server/index.js", `
+    import { mkdir, writeFile } from "node:fs/promises";
+    import path from "node:path";
+    export const startApiServer = async ({workspaceRoot}) => {
+      await mkdir(workspaceRoot+"/.service-lasso",{recursive:true});
+      await mkdir(path.dirname(process.env.SERVICE_LASSO_INSTANCE_REGISTRY_PATH),{recursive:true});
+      await writeFile(process.env.SERVICE_LASSO_INSTANCE_REGISTRY_PATH,JSON.stringify({instances:[{}]}));
+      await writeFile(process.env.SERVICE_LASSO_HOST_PORT_REGISTRY_PATH,JSON.stringify({allocations:[{}]}));
+      await writeFile(workspaceRoot+"/.service-lasso/runtime-instance.json",JSON.stringify({instance:{instanceId:"fixture"}}));
+      return {url:"http://127.0.0.1:1",stop:async()=>{await writeFile(workspaceRoot+"/actual-stop.json","closed");}};
+    };
+  `);
+  await put("tests/test-helpers.js", 'export const writeExecutableFixtureService = async () => {};');
+  const binary = path.join(root, "candidate-fixture");
+  await writeFile(binary, "preflight never activates this fixture executable\n");
+  const child = spawn(process.execPath, [path.join(scripts,"tui20-native-core.mjs"),"--root",root,"--executable",binary,"--source-commit","a".repeat(40),"--core-commit","b".repeat(40),"--python","python3","--invalid-ready-receipt","true","--inject-finalization-cleanup-failure","true"], {stdio:["ignore","pipe","pipe"]});
+  let stderr=""; child.stderr.on("data",bytes=>{stderr+=bytes;}); child.stdout.resume();
+  const [code,signal] = await new Promise((resolve,reject)=>{child.once("exit",(...values)=>resolve(values));child.once("error",reject);});
+  assert.equal(signal,null);
+  assert.equal(code,1,"preflight failure must remain failed even after observed cleanup");
+  const read = async name => JSON.parse(await readFile(path.join(root,name),"utf8"));
+  const outcome=await read("external-owner-finalization.json"), proof=await read("owner-finalization-failure-proof.json"), closed=await read("owner-private-closed.json"), initial=await read("owner-private-initial.json"), witness=await read("owner-private-witness.json"), projection=await read("native-public-projection.json");
+  assert.equal(outcome.primaryOutcome,"failed");
+  assert.equal(outcome.finalizationFailure,"injected_cleanup_failure");
+  assert.equal(proof.finalizationFailure,outcome.finalizationFailure);
+  assert.equal(proof.ownerPID,witness.recoveryOwnerPID);
+  assert.equal(proof.ownerBirth.platform,process.platform);
+  assert.equal(proof.runtimePID,initial.runtimePID);
+  assert.deepEqual(proof.runtimeBirth,initial.runtimeBirth);
+  assert.equal(proof.observerPID,initial.observerPID);
+  assert.equal(proof.ownerDrivenRuntimeShutdown,true);
+  assert.equal(proof.actualExitObserved,true);
+  assert.equal(proof.runtimeChildExit,"terminal_exited_zero");
+  assert.equal(proof.runtimeChildStillLiveAfterClose,false);
+  assert.equal(proof.retainedOwnedRuntime,false);
+  assert.equal(closed.reason,"owner_finalization_failed");
+  assert.equal(closed.runtimeStdoutClosed,true);
+  assert.equal(closed.runtimeStderrClosed,true);
+  assert.equal(projection.result,"failed");
+  assert.equal(projection.actionsPassed,false);
+  assert.equal(projection.ownedRuntimeClosed,true);
+  assert.equal(await readFile(path.join(root,"workspace/actual-stop.json"),"utf8"),"closed");
+  for (const pid of [proof.ownerPID,proof.runtimePID,proof.observerPID]) assert.throws(()=>process.kill(pid,0),{code:"ESRCH"},"actual production children must be absent after parent wait");
+  // Negative owner fixtures exercise the actual controller/observer/runtime
+  // edge. They never substitute for the actual-owner positive path above.
+  for (const [name,body] of [["missing","sys.exit(0)"],["malformed","json.dump({},open(os.path.join(root,'external-owner-finalization.json'),'w')); sys.exit(0)"],["crashed","os.kill(os.getpid(),signal.SIGKILL)"]]) {
+    const phase=path.join(root,name);
+    await mkdir(phase);
+    await cp(path.join(root,"core-source"),path.join(phase,"core-source"),{recursive:true});
+    const helper=path.join(phase,"negative-owner.py");
+    await writeFile(helper,`import json,os,signal,sys\nroot=sys.argv[sys.argv.index('--root')+1]\nsys.stdin.readline()\n${body}\n`);
+    const failed=spawn(process.execPath,[path.join(scripts,"tui20-native-core.mjs"),"--root",phase,"--executable",binary,"--source-commit","a".repeat(40),"--core-commit","b".repeat(40),"--python","python3","--helper",helper],{stdio:["ignore","pipe","pipe"]});
+    failed.stdout.resume(); failed.stderr.resume();
+    const [failureCode,failureSignal]=await new Promise((resolve,reject)=>{failed.once("exit",(...values)=>resolve(values));failed.once("error",reject);});
+    assert.equal(failureSignal,null);
+    assert.equal(failureCode,1,name);
+    const failureProjection=JSON.parse(await readFile(path.join(phase,"native-public-projection.json"),"utf8"));
+    const failureClosure=JSON.parse(await readFile(path.join(phase,"owner-private-closed.json"),"utf8"));
+    assert.notEqual(failureProjection.result,"succeeded",name);
+    assert.equal(failureProjection.actionsPassed,false,name);
+    assert.equal(failureClosure.actualExitObserved,true,name);
+    assert.equal(failureClosure.runtimeChildStillLiveAfterClose,false,name);
+    await assert.rejects(()=>readFile(path.join(phase,"owner-finalization-failure-proof.json")),{code:"ENOENT"},name);
+  }
 });

@@ -49,6 +49,19 @@ test("actual workflow custody producer preserves literals and consumes every rea
   run("bash", ["-euo", "pipefail", "-c", `phase=${quote(phase)}\n${producer}TUI20_PHASE\n`], source, { ...process.env, CI_SOURCE_SHA: commit, CORE_COMMIT: commit });
   const privateInput = JSON.parse(await readFile(path.join(phase, "private-input-custody.json"), "utf8"));
   const input = JSON.parse(await readFile(path.join(phase, "input-custody.json"), "utf8"));
+  const { producer: parent, writer, writerObservedByProducer } = privateInput.process;
+  assert.deepEqual(writer, writerObservedByProducer, "actual live Bash parent must observe the same Python writer PID/birth/image");
+  assert.equal(writer.ppid, parent.pid);
+  assert.notEqual(writer.pid, parent.pid);
+  for (const identity of [parent, writer]) {
+    assert.ok(Number.isSafeInteger(identity.pid) && identity.pid > 0);
+    assert.ok(Number.isSafeInteger(identity.ppid) && identity.ppid > 0);
+    assert.ok(identity.birth.length > 0);
+    assert.ok(path.isAbsolute(identity.image));
+  }
+  assert.equal(await realpath(writer.image), await realpath(privateInput.tools.python3.path));
+  assert.equal(await realpath(parent.image), await realpath(privateInput.tools.bash.path));
+  assert.notEqual(writer.image, parent.image, "Python identity cannot reuse Bash executable");
   assert.equal(input.source.tuiTree, tree);
   assert.equal(input.source.tuiDirtyHash, digest(Buffer.alloc(0)));
   assert.equal(input.source.tuiInventoryHash, digest(Buffer.from(`${digest(await readFile(path.join(source, "fixture.txt")))}  fixture.txt\n`)));

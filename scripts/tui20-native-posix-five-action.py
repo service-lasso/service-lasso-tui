@@ -465,6 +465,7 @@ def main():
     if args.adverse_controller_crash and not args.controller_pid: raise RuntimeError("adverse controller proof requires controller identity")
     paths={"coreReadback":True,"uniqueOwnedPaths":["workspaceRoot","instanceRegistryPath","hostPortRegistryPath"],"runtimeInstanceBound":True}
     runtime=None; held=None; launch_fd=None; darwin_protected=None; term=None; primary_persisted=False; finalization_failure=None
+    with open(args.executable,"rb") as source_binary: binary_sha256=hashlib.file_digest(source_binary,"sha256").hexdigest()
     outcome={"outcome":"failed","coreCommit":args.core_commit,"runtimePathReceipt":paths,"terminals":[]}
     try:
         # Every post-start preflight stays inside this owner boundary. A bad
@@ -571,6 +572,11 @@ def main():
             finalization_failure="injected_cleanup_failure" if args.inject_finalization_cleanup_failure else "finalization_failure"
             outcome["finalizationFailure"]=finalization_failure
         finally:
+            if args.external_runtime:
+                # This is the owner's outcome only. Core belongs to the durable
+                # observer; no owner declaration can attest its shutdown.
+                handoff=locals().get("runtime_handoff",{})
+                write_json(os.path.join(args.root,"external-owner-finalization.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"runtimePID":handoff.get("_runtimePID"),"runtimeBirth":handoff.get("_runtimeBirth"),"sourceCommit":args.source_commit,"binarySHA256":binary_sha256,"finalizationFailure":finalization_failure,"liveTuiChildRetained":live_child,"primaryOutcome":outcome["outcome"]})
             # This is deliberately nested: a persistence or cleanup failure must
             # never strand the real owner child once no TUI child remains live.
             if runtime is not None and not live_child:

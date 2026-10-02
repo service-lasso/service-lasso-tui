@@ -46,7 +46,7 @@ def close_runtime(runtime):
     try: runtime.stdin.write("close\n"); runtime.stdin.flush()
     except Exception: requested=False
     runtime.wait(); close_streams(runtime)
-    return {"runtimeChildExit":"terminal_exited_zero" if runtime.returncode==0 else "terminal_signaled" if runtime.returncode and runtime.returncode<0 else "terminal_exited_nonzero","shutdownRequested":requested,"actualExitObserved":True,"runtimeStdoutClosed":True,"runtimeStderrClosed":True}
+    return {"runtimeChildExit":"terminal_exited_zero" if runtime.returncode==0 else "terminal_signaled" if runtime.returncode and runtime.returncode<0 else "terminal_exited_nonzero","shutdownRequested":requested,"actualExitObserved":True,"runtimeChildStillLiveAfterClose":child_alive(runtime.pid,runtime.tui20_birth),"runtimeStdoutClosed":True,"runtimeStderrClosed":True}
 
 def start_runtime(args):
     command=[args.node,args.runtime_script,"--root",args.root,"--core-commit",args.core_commit]
@@ -54,6 +54,7 @@ def start_runtime(args):
     if args.runtime_ready_mode: command += ["--ready-mode",args.runtime_ready_mode]
     if args.shutdown_pipe_failure: command.append("--shutdown-pipe-failure")
     runtime=subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    runtime.tui20_birth=process_birth(runtime.pid)
     ready_stream,_,_=select.select([runtime.stdout],[],[],10)
     if not ready_stream:
         birth=process_birth(runtime.pid); result=close_runtime(runtime)
@@ -96,12 +97,19 @@ def main():
     write_private(args.root,"witness",{"observerPID":os.getpid(),"recoveryOwnerPID":owner.pid,"recoveryOwnerBirth":owner_birth,"runtimePID":runtime.pid,"runtimeBirth":runtime_birth,"sourceCommit":args.source_commit,"binarySHA256":binary_sha256,"ownerStarted":True})
     owner.stdin.write(json.dumps(ready,separators=(",",":"))+"\n"); owner.stdin.close()
     status=owner.wait(); close_streams(owner)
-    live_path=os.path.join(args.root,"external-owner-live.json"); live=None
-    if os.path.exists(live_path):
-        with open(live_path,encoding="utf-8") as stream: live=json.load(stream)
+    live_path=os.path.join(args.root,"external-owner-live.json"); live=None; custody_failure=None; finalization=None
+    try:
+        if os.path.exists(live_path):
+            with open(live_path,encoding="utf-8") as stream: live=json.load(stream)
+            if not isinstance(live,dict): live=None; raise RuntimeError("owner live custody invalid")
+        with open(os.path.join(args.root,"external-owner-finalization.json"),encoding="utf-8") as stream: finalization=json.load(stream)
+        expected={"externalOwnerPID":owner.pid,"ownerBirth":owner_birth,"runtimePID":runtime.pid,"runtimeBirth":runtime_birth,"sourceCommit":args.source_commit,"binarySHA256":binary_sha256}
+        if set(finalization)!=set(expected)|{"finalizationFailure","liveTuiChildRetained","primaryOutcome"} or any(finalization.get(key)!=value for key,value in expected.items()) or finalization["liveTuiChildRetained"] is not False or finalization["finalizationFailure"] not in (None,"injected_cleanup_failure","finalization_failure") or finalization["primaryOutcome"] not in ("succeeded","failed","unresolved"): raise RuntimeError("owner finalization custody invalid")
+    except Exception:
+        custody_failure="owner_finalization_receipt_invalid_or_missing"
     private_tuple={"observerPID":os.getpid(),"observerBirth":process_birth(os.getpid()),"recoveryOwnerPID":owner.pid,"ownerBirth":owner_birth,"runtimePID":runtime.pid,"runtimeBirth":runtime_birth,"sourceCommit":args.source_commit,"binarySHA256":binary_sha256}
     if live is not None:
-        if live.get("externalOwnerPID")!=owner.pid or live.get("coreRuntimePID")!=runtime.pid or live.get("sourceCommit")!=args.source_commit or live.get("binarySHA256")!=binary_sha256 or live.get("ownerBirth")!=owner_birth or live.get("runtimeBirth")!=runtime_birth: raise RuntimeError("owner/runtime/TUI custody tuple mismatch")
+        if live.get("externalOwnerPID")!=owner.pid or live.get("coreRuntimePID")!=runtime.pid or live.get("sourceCommit")!=args.source_commit or live.get("binarySHA256")!=binary_sha256 or live.get("ownerBirth")!=owner_birth or live.get("runtimeBirth")!=runtime_birth: custody_failure="owner_runtime_tui_custody_mismatch"
         private_tuple.update({"tuiChildPID":live.get("tuiChildPID"),"tuiChildBirth":live.get("tuiChildBirth"),"ownerPhase":live.get("phase")})
     close={**private_tuple,"recoveryOwnerActualExit":status if status>=0 else None,"recoveryOwnerActualSignal":-status if status<0 else None,"actualWaitObserved":True,"ownerStdoutClosed":True,"ownerStderrClosed":True}
     write_private(args.root,"owner-closed",close)
@@ -121,11 +129,25 @@ def main():
         write_public(args.root,args.source_commit,binary_sha256,"unresolved",False,result["actualExitObserved"])
         raise SystemExit(1)
     result=close_runtime(runtime)
+    if custody_failure is not None or result["runtimeChildExit"]!="terminal_exited_zero" or result["runtimeChildStillLiveAfterClose"]:
+        write_private(args.root,"closed",{**private_tuple,"reason":custody_failure or "runtime_close_failed",**result})
+        write_public(args.root,args.source_commit,binary_sha256,"failed",False,result["actualExitObserved"] and not result["runtimeChildStillLiveAfterClose"])
+        raise SystemExit(1)
+    if finalization["finalizationFailure"] is not None:
+        proof={"outcome":"failed","finalizationFailure":finalization["finalizationFailure"],"ownerDrivenRuntimeShutdown":result["shutdownRequested"],"runtimeChildExit":result["runtimeChildExit"],"retainedOwnedRuntime":False,"runtimeChildStillLiveAfterClose":result["runtimeChildStillLiveAfterClose"],"actualExitObserved":result["actualExitObserved"],"observerPID":os.getpid(),"runtimePID":runtime.pid,"runtimeBirth":runtime_birth,"ownerPID":owner.pid,"ownerBirth":owner_birth,"sourceCommit":args.source_commit,"binarySHA256":binary_sha256}
+        write_json(os.path.join(args.root,"owner-finalization-failure-proof.json"),proof)
+        write_private(args.root,"closed",{**private_tuple,"reason":"owner_finalization_failed",**result})
+        write_public(args.root,args.source_commit,binary_sha256,"failed",False,True)
+        if status != 0 or not args.inject_finalization_cleanup_failure or finalization["finalizationFailure"]!="injected_cleanup_failure" or finalization["primaryOutcome"]!="succeeded" or not result["shutdownRequested"]: raise SystemExit(1)
+        return
     if status != 0:
         write_private(args.root,"closed",{**private_tuple,"reason":"owner_reported_failure",**result})
         write_public(args.root,args.source_commit,binary_sha256,"failed",False,result["actualExitObserved"])
         raise SystemExit(status)
-    if live is not None and live.get("phase")!="normal_q_exit": raise RuntimeError("normal owner exit lacks a natural TUI terminal phase")
+    if live is None or live.get("phase")!="normal_q_exit" or finalization["primaryOutcome"]!="succeeded":
+        write_private(args.root,"closed",{**private_tuple,"reason":"owner_natural_terminal_receipt_missing",**result})
+        write_public(args.root,args.source_commit,binary_sha256,"failed",False,True)
+        raise SystemExit(1)
     write_private(args.root,"closed",{**private_tuple,"reason":"owner_normal_terminal",**result})
     write_public(args.root,args.source_commit,binary_sha256,"succeeded",True,result["actualExitObserved"])
 

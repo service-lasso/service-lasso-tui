@@ -330,3 +330,14 @@ constructor outcome and candidate identity so it proves both paths used the
 same binary. A direct assertion failure is a bounded build-domain suspect; it
 does not rerun, replace the failed candidate, or relabel a generic failure as
 the typed API boundary.
+
+Issue #20 final9f entire-review findings require two coherent source repairs:
+record OS-observed Bash producer and Python writer PID/PPID/birth/image tuples,
+with the live parent directly observing and binding its actual writer child;
+and retain mandatory external-owner finalization outcome for the durable
+observer to combine with its actual held Core child shutdown/wait/absence.
+Missing, malformed or crashed ownership receipts fail closed. Actual producer
+and controller-to-observer-to-external-owner regressions are required.
+All prior five producer repairs and Issue #18 nine-mutation/six-held-asset
+publisher safeguards remain required. Source and regressions stay UNEXECUTED
+until fresh ENTIRE independent SOURCE GO and NEW complete-input ROOT admission.

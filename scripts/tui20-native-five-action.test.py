@@ -86,6 +86,7 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertIn('OwnedRuntimeAcquisitionFailure', source)
         self.assertNotIn('runtime.kill()', source)
         self.assertIn('owner-finalization-failure-proof.json', source)
+        self.assertIn('external-owner-finalization.json', source)
         self.assertIn('select.select([runtime.stdout],[],[],10)', source)
         self.assertIn('owner-runtime-recovery.json', source)
         self.assertIn('runtime.wait()', source)

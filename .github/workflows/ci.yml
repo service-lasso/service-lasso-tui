@@ -160,8 +160,21 @@ jobs:
           tool_record() { tool="$1"; tool_path="$(command -v "$tool")"; printf "%s\\t%s\\t%s\\t%s\\n" "$tool" "$tool_path" "$(sha256sum "$tool_path" | cut -d " " -f1)" "$(wc -c < "$tool_path")"; }
           compiler_path="$(go env GOTOOLDIR)/compile"
           tool_records="$(for tool in bash dirname mkdir env git sha256sum cut xargs awk wc uname ps readlink node npm go python3; do tool_record "$tool"; done; printf "go-compile\\t%s\\t%s\\t%s\\n" "$compiler_path" "$(sha256sum "$compiler_path" | cut -d " " -f1)" "$(wc -c < "$compiler_path")")"
-          TUI20_PRIVATE_CUSTODY="$phase/private-input-custody.json" TUI20_PUBLIC_CUSTODY="$phase/input-custody.json" TUI20_PHASE="$phase" TUI20_WORKSPACE="$workspace" TUI20_INSTANCES="$instances" TUI20_PORTS="$ports" TUI20_TUI_COMMIT="$CI_SOURCE_SHA" TUI20_TUI_TREE="$source_tree" TUI20_TUI_DIRTY="$source_dirty" TUI20_TUI_INVENTORY="$source_inventory" TUI20_CORE_COMMIT="$CORE_COMMIT" TUI20_BIRTH="$birth" TUI20_IMAGE="$(readlink -f /proc/$$/exe 2>/dev/null || command -v bash)" TUI20_TOOL_RECORDS="$tool_records" TUI20_LITERAL_COMMANDS='mkdir -p; git rev-parse HEAD^{tree}; git status --porcelain; git ls-files -z; go env GOTOOLDIR; git -C $phase/core-source init -q; git -C $phase/core-source remote add origin; git -C $phase/core-source fetch --no-tags origin develop; git -C $phase/core-source merge-base --is-ancestor $CORE_COMMIT origin/develop; git -C $phase/core-source fetch --depth=1 origin $CORE_COMMIT; git -C $phase/core-source checkout --detach -q FETCH_HEAD; npm ci; npm run build; go build -mod=readonly -buildvcs=true -trimpath' python3 - <<'PY'
-          import json, os
+          python3 -c 'import os,sys; os.mkfifo(sys.argv[1],0o600); os.mkfifo(sys.argv[2],0o600)' "$phase/writer-observation.fifo" "$phase/writer-ready.fifo"
+          TUI20_PRIVATE_CUSTODY="$phase/private-input-custody.json" TUI20_PUBLIC_CUSTODY="$phase/input-custody.json" TUI20_PHASE="$phase" TUI20_WORKSPACE="$workspace" TUI20_INSTANCES="$instances" TUI20_PORTS="$ports" TUI20_TUI_COMMIT="$CI_SOURCE_SHA" TUI20_TUI_TREE="$source_tree" TUI20_TUI_DIRTY="$source_dirty" TUI20_TUI_INVENTORY="$source_inventory" TUI20_CORE_COMMIT="$CORE_COMMIT" TUI20_PRODUCER_PID="$$" TUI20_BIRTH="$birth" TUI20_IMAGE="$(readlink -f /proc/$$/exe 2>/dev/null || ps -o comm= -p $$ | xargs)" TUI20_TOOL_RECORDS="$tool_records" TUI20_LITERAL_COMMANDS='mkdir -p; git rev-parse HEAD^{tree}; git status --porcelain; git ls-files -z; go env GOTOOLDIR; git -C $phase/core-source init -q; git -C $phase/core-source remote add origin; git -C $phase/core-source fetch --no-tags origin develop; git -C $phase/core-source merge-base --is-ancestor $CORE_COMMIT origin/develop; git -C $phase/core-source fetch --depth=1 origin $CORE_COMMIT; git -C $phase/core-source checkout --detach -q FETCH_HEAD; npm ci; npm run build; go build -mod=readonly -buildvcs=true -trimpath' python3 - <<'PY' &
+          import json, os, subprocess
+          def observed(pid):
+              if os.uname().sysname == 'Linux':
+                  with open('/proc/%d/stat' % pid) as stream: fields=stream.read().rsplit(') ',1)[1].split()
+                  return {'pid':pid,'ppid':int(fields[1]),'birth':fields[19],'image':os.readlink('/proc/%d/exe' % pid)}
+              def ps(field): return ' '.join(subprocess.check_output(['ps','-o',field+'=','-p',str(pid)],text=True).split())
+              return {'pid':pid,'ppid':int(ps('ppid')),'birth':ps('lstart'),'image':ps('comm')}
+          writer=observed(os.getpid()); producer=observed(os.getppid())
+          with open(os.path.join(os.environ['TUI20_PHASE'],'writer-ready.fifo'),'w') as stream: stream.write(str(os.getpid())+'\n')
+          with open(os.path.join(os.environ['TUI20_PHASE'],'writer-observation.fifo')) as stream:
+              pid,ppid,birth,image=stream.read().rstrip('\n').split('\t')
+          parent_observation={'pid':int(pid),'ppid':int(ppid),'birth':birth,'image':image}
+          if writer != parent_observation or producer['pid'] != int(os.environ['TUI20_PRODUCER_PID']) or producer['birth'] != os.environ['TUI20_BIRTH'] or producer['image'] != os.environ['TUI20_IMAGE']: raise RuntimeError('actual producer/writer identity mismatch')
           def write_fsync(path, value):
               data=json.dumps(value,separators=(",",":"),sort_keys=True).encode("utf-8")
               fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
@@ -174,11 +187,22 @@ jobs:
           for line in os.environ["TUI20_TOOL_RECORDS"].splitlines():
               name,path,digest,size=line.split("\t")
               tools[name]={"path":path,"sha256":digest,"size":int(size)}
-          private={"schemaVersion":1,"classification":"owner-private-custody","phase":os.environ["TUI20_PHASE"],"source":{"tuiCommit":os.environ["TUI20_TUI_COMMIT"],"tuiTree":os.environ["TUI20_TUI_TREE"],"tuiDirtyHash":os.environ["TUI20_TUI_DIRTY"],"tuiInventoryHash":os.environ["TUI20_TUI_INVENTORY"]},"core":{"requestedCommit":os.environ["TUI20_CORE_COMMIT"]},"ownedPaths":{"workspaceRoot":os.environ["TUI20_WORKSPACE"],"instanceRegistryPath":os.environ["TUI20_INSTANCES"],"hostPortRegistryPath":os.environ["TUI20_PORTS"],"allParentsNonLink":True,"registriesInitiallyAbsent":True},"process":{"os":os.uname().sysname,"pid":os.getpid(),"ppid":os.getppid(),"birth":os.environ["TUI20_BIRTH"],"image":os.environ["TUI20_IMAGE"]},"tools":tools,"literalCommands":os.environ["TUI20_LITERAL_COMMANDS"].split("; ")}
+          private={"schemaVersion":1,"classification":"owner-private-custody","phase":os.environ["TUI20_PHASE"],"source":{"tuiCommit":os.environ["TUI20_TUI_COMMIT"],"tuiTree":os.environ["TUI20_TUI_TREE"],"tuiDirtyHash":os.environ["TUI20_TUI_DIRTY"],"tuiInventoryHash":os.environ["TUI20_TUI_INVENTORY"]},"core":{"requestedCommit":os.environ["TUI20_CORE_COMMIT"]},"ownedPaths":{"workspaceRoot":os.environ["TUI20_WORKSPACE"],"instanceRegistryPath":os.environ["TUI20_INSTANCES"],"hostPortRegistryPath":os.environ["TUI20_PORTS"],"allParentsNonLink":True,"registriesInitiallyAbsent":True},"process":{"os":os.uname().sysname,"producer":producer,"writer":writer,"writerObservedByProducer":parent_observation},"tools":tools,"literalCommands":os.environ["TUI20_LITERAL_COMMANDS"].split("; ")}
           public={"schemaVersion":1,"kind":"tui20-native-input-custody","source":{"tuiCommit":private["source"]["tuiCommit"],"tuiTree":private["source"]["tuiTree"],"tuiDirtyHash":private["source"]["tuiDirtyHash"],"tuiInventoryHash":private["source"]["tuiInventoryHash"]},"core":{"requestedCommit":private["core"]["requestedCommit"]},"ownership":{"threeDistinctPaths":True,"allParentsNonLink":True,"registriesInitiallyAbsent":True},"verification":{"freshEnvironment":True,"requiredToolsVerified":sorted(tools)}}
           write_fsync(os.environ["TUI20_PRIVATE_CUSTODY"],private)
           write_fsync(os.environ["TUI20_PUBLIC_CUSTODY"],public)
           PY
+          writer_pid=$!
+          read -r writer_ready < "$phase/writer-ready.fifo"
+          test "$writer_ready" = "$writer_pid"
+          case "$(uname -s)" in
+            Linux) writer_birth="$(awk '{print $22}' /proc/$writer_pid/stat)"; writer_image="$(readlink -f /proc/$writer_pid/exe)" ;;
+            Darwin) writer_birth="$(ps -o lstart= -p "$writer_pid" | xargs)"; writer_image="$(ps -o comm= -p "$writer_pid" | xargs)" ;;
+          esac
+          writer_ppid="$(ps -o ppid= -p "$writer_pid" | xargs)"
+          test "$writer_ppid" = "$$"
+          printf '%s\t%s\t%s\t%s\n' "$writer_pid" "$writer_ppid" "$writer_birth" "$writer_image" > "$phase/writer-observation.fifo"
+          wait "$writer_pid"
           git -C "$phase/core-source" init -q
           git -C "$phase/core-source" remote add origin https://github.com/service-lasso/service-lasso.git
           git -C "$phase/core-source" fetch --no-tags origin develop
@@ -266,7 +290,7 @@ jobs:
           phase="$RUNNER_TEMP/tui20-native-${{ matrix.name }}-$CI_SOURCE_SHA/finalization-failure"
           binary="$phase/service-lasso-tui"
           SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json" node scripts/tui20-native-core.mjs --root "$phase" --executable "$binary" --source-commit "$CI_SOURCE_SHA" --core-commit "$CORE_COMMIT" --helper scripts/tui20-native-posix-five-action.py --inject-finalization-cleanup-failure true
-          node -e 'const fs=require("fs"); const root=process.argv[1]; const proof=JSON.parse(fs.readFileSync(root+"/owner-finalization-failure-proof.json","utf8")); if (proof.finalizationFailure!=="injected_cleanup_failure" || !proof.ownerDrivenRuntimeShutdown || proof.runtimeChildExit!=="terminal_exited_zero" || proof.retainedOwnedRuntime || proof.runtimeChildStillLiveAfterClose) process.exit(1);' "$phase"
+          node -e 'const fs=require("fs"); const root=process.argv[1]; const proof=JSON.parse(fs.readFileSync(root+"/owner-finalization-failure-proof.json","utf8")); const owner=JSON.parse(fs.readFileSync(root+"/external-owner-finalization.json","utf8")); const witness=JSON.parse(fs.readFileSync(root+"/owner-private-witness.json","utf8")); const closed=JSON.parse(fs.readFileSync(root+"/owner-private-owner-closed.json","utf8")); if (proof.finalizationFailure!=="injected_cleanup_failure" || owner.finalizationFailure!==proof.finalizationFailure || owner.primaryOutcome!=="succeeded" || proof.ownerPID!==witness.recoveryOwnerPID || proof.runtimePID!==witness.runtimePID || proof.observerPID!==witness.observerPID || closed.recoveryOwnerActualExit!==0 || !closed.actualWaitObserved || !proof.actualExitObserved || !proof.ownerDrivenRuntimeShutdown || proof.runtimeChildExit!=="terminal_exited_zero" || proof.retainedOwnedRuntime || proof.runtimeChildStillLiveAfterClose) process.exit(1);' "$phase"
       - name: Prove external owner survives actual controller failure
         shell: bash
         run: |

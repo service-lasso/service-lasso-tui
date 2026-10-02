@@ -131,9 +131,30 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertIn('input-custody.json', uploaded)
         self.assertIn('core-source-binding.json', uploaded)
         self.assertIn('build-output.json', uploaded)
+        self.assertIn('native-public-projection.json', uploaded)
         self.assertNotIn('private-input-custody.json', uploaded)
         self.assertNotIn('head-tree.json', uploaded)
         self.assertNotIn('native-terminal.txt', uploaded)
+        for private_name in ('ready.json', 'owner-birth.json', 'owner-close.json',
+                             'core-parent-exit.json', 'external-owner-live.json',
+                             'owner-death-recovery.json', 'operation-audit.json'):
+            self.assertNotIn(private_name, uploaded)
+        self.assertIn("awk '\\''{print $22}'\\'' /proc/$$/stat", source)
+        self.assertNotIn('awk "{print \\\\$22}"', source)
+
+    def test_observer_keeps_lineage_private_then_closes_its_owned_runtime(self):
+        observer = pathlib.Path(__file__).with_name("tui20-native-owner-observer.py").read_text(encoding="utf-8")
+        for phase in ('"initial"', '"witness"', '"unresolved"', '"closed"'):
+            self.assertIn('write_private(args.root,'+phase, observer)
+        self.assertIn('adverse_kill_observed=(status == -9', observer)
+        self.assertIn('write_private(args.root,"unresolved"', observer)
+        self.assertIn('result=close_runtime(runtime)', observer)
+        self.assertLess(observer.index('write_private(args.root,"unresolved"'), observer.index('result=close_runtime(runtime)', observer.index('write_private(args.root,"unresolved"')))
+        self.assertIn('native-public-projection.json', observer)
+        self.assertIn('runtimeStdoutClosed', observer)
+        self.assertIn('runtimeStderrClosed', observer)
+        self.assertIn('ownerStdoutClosed', observer)
+        self.assertIn('ownerStderrClosed', observer)
 
     def test_native_pty_bytes_never_persist_to_a_file(self):
         posix = pathlib.Path(__file__).with_name("tui20-native-posix-five-action.py").read_text(encoding="utf-8")

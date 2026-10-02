@@ -147,7 +147,10 @@ jobs:
               source_tree="$(git rev-parse HEAD^{tree})"
               source_dirty="$(git status --porcelain | sha256sum | cut -d " " -f1)"
               source_inventory="$(git ls-files -z | xargs -0 sha256sum | sha256sum | cut -d " " -f1)"
-              birth="$(case "$(uname -s)" in Linux) awk "{print \\$22}" /proc/$$/stat ;; Darwin) ps -o lstart= -p $$ | xargs ;; esac)"
+              # This script is itself single-quoted for env -i/bash -c.  Close
+              # that quote around the awk program so $22 remains awk syntax,
+              # rather than an unset Bash positional parameter under set -u.
+              birth="$(case "$(uname -s)" in Linux) awk '\''{print $22}'\'' /proc/$$/stat ;; Darwin) ps -o lstart= -p $$ | xargs ;; esac)"
               tool_record() { tool="$1"; tool_path="$(command -v "$tool")"; printf "%s\\t%s\\t%s\\t%s\\n" "$tool" "$tool_path" "$(sha256sum "$tool_path" | cut -d " " -f1)" "$(wc -c < "$tool_path")"; }
               compiler_path="$(go env GOTOOLDIR)/compile"
               tool_records="$(for tool in bash dirname mkdir env git sha256sum cut xargs awk wc uname ps readlink node npm go python3; do tool_record "$tool"; done; printf "go-compile\\t%s\\t%s\\t%s\\n" "$compiler_path" "$(sha256sum "$compiler_path" | cut -d " " -f1)" "$(wc -c < "$compiler_path")")"
@@ -224,7 +227,7 @@ jobs:
            preflight_status=$?
            set -e
            test "$preflight_status" -ne 0
-           node -e 'const fs=require("fs"); const root=process.argv[1]; const proof=JSON.parse(fs.readFileSync(root+"/owner-preflight-cleanup.json","utf8")); const exit=JSON.parse(fs.readFileSync(root+"/native-exit-receipt.json","utf8")); if (proof.outcome!=="failed" || proof.preflight!=="runtime_receipt_invalid" || !proof.ownerDrivenRuntimeShutdown || proof.runtimeChildExit!=="terminal_exited_zero" || proof.retainedOwnedRuntime || exit.outcome!=="failed") process.exit(1);' "$phase"
+           node -e 'const fs=require("fs"); const root=process.argv[1]; const closed=JSON.parse(fs.readFileSync(root+"/owner-private-closed.json","utf8")); const projection=JSON.parse(fs.readFileSync(root+"/native-public-projection.json","utf8")); if (closed.reason!=="owner_reported_failure" || !closed.actualExitObserved || closed.runtimeChildExit!=="terminal_exited_zero" || projection.result!=="failed" || projection.ownedRuntimeClosed!==true) process.exit(1);' "$phase"
           phase="$attempt/five-actions"
           binary="$phase/service-lasso-tui"
           SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json" node scripts/tui20-native-core.mjs --root "$phase" --executable "$binary" --source-commit "$CI_SOURCE_SHA" --core-commit "$CORE_COMMIT" --helper scripts/tui20-native-posix-five-action.py
@@ -239,14 +242,14 @@ jobs:
           handoff_status=$?
           set -e
           test "$handoff_status" -ne 0
-          node -e 'const fs=require("fs"); const root=process.argv[1]; const proof=JSON.parse(fs.readFileSync(root+"/owner-runtime-recovery.json","utf8")); if (proof.outcome!=="observed_closed" || proof.runtimeChildExit!=="terminal_exited_zero" || !proof.shutdownRequested || !proof.actualExitObserved) process.exit(1);' "$phase"
+          node -e 'const fs=require("fs"); const root=process.argv[1]; const proof=JSON.parse(fs.readFileSync(root+"/owner-private-closed.json","utf8")); if (proof.reason!=="runtime_ready_timeout" || proof.runtimeChildExit!=="terminal_exited_zero" || !proof.shutdownRequested || !proof.actualExitObserved || !proof.runtimeStdoutClosed || !proof.runtimeStderrClosed) process.exit(1);' "$phase"
           phase="$attempt/shutdown-pipe-failure"
           set +e
           SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json" node scripts/tui20-native-core.mjs --root "$phase" --executable "$phase/service-lasso-tui" --source-commit "$CI_SOURCE_SHA" --core-commit "$CORE_COMMIT" --helper scripts/tui20-native-posix-five-action.py --shutdown-pipe-failure true
           pipe_status=$?
           set -e
           test "$pipe_status" -ne 0
-          node -e 'const fs=require("fs"); const root=process.argv[1]; const proof=JSON.parse(fs.readFileSync(root+"/owner-runtime-recovery.json","utf8")); if (proof.outcome!=="observed_closed" || proof.runtimeChildExit!=="terminal_exited_zero" || proof.shutdownRequested || !proof.actualExitObserved) process.exit(1);' "$phase"
+          node -e 'const fs=require("fs"); const root=process.argv[1]; const proof=JSON.parse(fs.readFileSync(root+"/owner-private-closed.json","utf8")); const projection=JSON.parse(fs.readFileSync(root+"/native-public-projection.json","utf8")); if (proof.reason!=="owner_reported_failure" || proof.runtimeChildExit!=="terminal_exited_zero" || proof.shutdownRequested || !proof.actualExitObserved || projection.result!=="failed") process.exit(1);' "$phase"
       - name: Prove finalization failure still closes the actual owned runtime
         shell: bash
         run: |
@@ -266,8 +269,8 @@ jobs:
           set -e
           test "$controller_status" -eq 137
           for attempt_number in $(seq 1 150); do test -f "$attempt/recovery-owner-proof.json" && break; sleep 0.1; done
-           for attempt_number in $(seq 1 150); do test -f "$attempt/owner-close.json" && break; sleep 0.1; done
-           node -e 'const fs=require("fs"); const root=process.argv[1]; const proof=JSON.parse(fs.readFileSync(root+"/recovery-owner-proof.json","utf8")); const exit=JSON.parse(fs.readFileSync(root+"/native-exit-receipt.json","utf8")); const birth=JSON.parse(fs.readFileSync(root+"/owner-birth.json","utf8")); const close=JSON.parse(fs.readFileSync(root+"/owner-close.json","utf8")); if (!proof.controllerFailed || !proof.childLiveAfterFailure || !proof.ptyHeldAfterFailure || !proof.immutableExecutionHeldAfterFailure || !proof.coreAndJwksLiveAfterFailure || proof.naturalChildExit!=="terminal_exited_zero" || exit.outcome!=="succeeded" || !birth.recoveryOwnerBirth || !birth.runtimeBirth || !birth.nativeSHA256 || close.recoveryOwnerPID!==birth.recoveryOwnerPID || close.recoveryOwnerActualExit!==0 || !close.actualWaitObserved) process.exit(1);' "$attempt"
+           for attempt_number in $(seq 1 150); do test -f "$attempt/owner-private-owner-closed.json" && break; sleep 0.1; done
+           node -e 'const fs=require("fs"); const root=process.argv[1]; const proof=JSON.parse(fs.readFileSync(root+"/recovery-owner-proof.json","utf8")); const exit=JSON.parse(fs.readFileSync(root+"/native-exit-receipt.json","utf8")); const witness=JSON.parse(fs.readFileSync(root+"/owner-private-witness.json","utf8")); const close=JSON.parse(fs.readFileSync(root+"/owner-private-owner-closed.json","utf8")); if (!proof.controllerFailed || !proof.childLiveAfterFailure || !proof.ptyHeldAfterFailure || !proof.immutableExecutionHeldAfterFailure || !proof.coreAndJwksLiveAfterFailure || proof.naturalChildExit!=="terminal_exited_zero" || exit.outcome!=="succeeded" || !witness.recoveryOwnerBirth || !witness.runtimeBirth || !witness.binarySHA256 || close.recoveryOwnerPID!==witness.recoveryOwnerPID || close.recoveryOwnerActualExit!==0 || !close.actualWaitObserved || !close.ownerStdoutClosed || !close.ownerStderrClosed) process.exit(1);' "$attempt"
       - name: Record actual TUI external reaping after adverse owner death
         shell: bash
         run: |
@@ -278,7 +281,7 @@ jobs:
           owner_status=$?
           set -e
           test "$owner_status" -ne 0
-          node -e 'const fs=require("fs"); const root=process.argv[1]; const proof=JSON.parse(fs.readFileSync(root+"/owner-death-recovery.json","utf8")); const close=JSON.parse(fs.readFileSync(root+"/owner-close.json","utf8")); if (!proof.ownerUnexpectedDeath || proof.terminal!=="terminal_unknown" || !proof.actualTuiExternallyReaped || !proof.coreAndJwksLiveAfterOwnerDeath || !proof.runtimeRetained || proof.actualRuntimeExitObserved || close.recoveryOwnerActualSignal!==9 || close.phase!=="owner_death_live") process.exit(1);' "$attempt"
+          node -e 'const fs=require("fs"); const root=process.argv[1]; const unresolved=JSON.parse(fs.readFileSync(root+"/owner-private-unresolved.json","utf8")); const closed=JSON.parse(fs.readFileSync(root+"/owner-private-closed.json","utf8")); const owner=JSON.parse(fs.readFileSync(root+"/owner-private-owner-closed.json","utf8")); const projection=JSON.parse(fs.readFileSync(root+"/native-public-projection.json","utf8")); if (!unresolved.ownerUnexpectedDeath || !unresolved.adverseKillObserved || !unresolved.actualTuiExternallyReaped || !unresolved.coreAndJwksLiveAfterOwnerDeath || unresolved.actualRuntimeExitObserved || closed.reason!=="owner_death_after_unresolved" || !closed.actualExitObserved || owner.recoveryOwnerActualSignal!==9 || owner.ownerPhase!=="owner_death_live" || projection.result!=="unresolved" || !projection.ownedRuntimeClosed) process.exit(1);' "$attempt"
       - name: Retain native direct-evidence receipt
         if: always()
         uses: actions/upload-artifact@v4
@@ -289,20 +292,7 @@ jobs:
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/input-custody.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/core-source-binding.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/build-output.json
-            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/ready.json
-            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/native-exit-receipt.json
-            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/native-cleanup-receipt.json
-            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/operation-audit.json
-            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/owner-birth.json
-            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/owner-close.json
-            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/core-parent-exit.json
-            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/owner-preflight-cleanup.json
-            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/owner-finalization-failure-proof.json
-            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/owner-runtime-recovery.json
-            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/recovery-unresolved-receipt.json
-            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/recovery-owner-proof.json
-            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/external-owner-live.json
-            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/owner-death-recovery.json
+            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/native-public-projection.json
           if-no-files-found: warn
           retention-days: 90
   release-asset-compile:

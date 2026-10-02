@@ -106,6 +106,15 @@ records its outcome and whether recovery material remains; it cannot replace
 the primary child outcome. A bounded `q` observation never kills an owned
 child: an unresolved live child retains its PTY and execution object for
 recovery, while an observed negative wait status is `terminal_signaled`.
+
+`TUI-ACCEPTANCE-003`: The retained native public artifact is a closed metadata
+receipt. Before upload, the workflow validates every selected file against its
+exact schema and rejects host paths, process identifiers, birth data, private
+custody labels, images, tool records, and literal command data. The binary
+receipt records only its digest and byte size; it never uses a pathname-bearing
+checksum format. All GitHub Actions used by CI and candidate publication are
+committed SHA references, with their human version labels retained only in
+comments.
 Each native run also mutates the
 source inode in place after the immutable execution object exists and proves
 the launch still reaches the verified object; it restores the source byte

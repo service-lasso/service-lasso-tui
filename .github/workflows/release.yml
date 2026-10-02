@@ -22,7 +22,7 @@ jobs:
     env:
       CANDIDATE_VERSION: ${{ inputs.candidate_version }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ github.sha }}
           fetch-depth: 1
@@ -53,11 +53,11 @@ jobs:
           - name: macOS
             runner: macos-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ needs.validate-source.outputs.sha }}
           fetch-depth: 1
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
       - name: Test clean source
@@ -90,11 +90,11 @@ jobs:
       CANDIDATE_TAG: ${{ needs.validate-source.outputs.tag }}
       CANDIDATE_SHA: ${{ needs.validate-source.outputs.sha }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ needs.validate-source.outputs.sha }}
           fetch-depth: 1
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
       - name: Build and archive one exact four-platform candidate
@@ -155,7 +155,7 @@ jobs:
             '{schemaVersion: 2, kind: "develop-prerelease-candidate", source: {repository: $repository, ref: $sourceRef, commit: $sourceCommit}, release: {tag: $tag, prerelease: true, draft: false, immutable: true}, version: $version, checksumManifest: {name: "SHA256SUMS.txt", sha256: $checksumManifestSha256}, corePackagingIssue: "service-lasso/service-lasso#1461", assets: [{platform: "win32-amd64", name: $win32, sha256: $win32Sha256, executable: "service-lasso-tui.exe"}, {platform: "linux-amd64", name: $linux, sha256: $linuxSha256, executable: "service-lasso-tui"}, {platform: "darwin-amd64", name: $darwinAmd64, sha256: $darwinAmd64Sha256, executable: "service-lasso-tui"}, {platform: "darwin-arm64", name: $darwinArm64, sha256: $darwinArm64Sha256, executable: "service-lasso-tui"}]}' > candidate-manifest.json
           node --input-type=module -e 'import { createHash } from "node:crypto"; import { readFileSync, statSync } from "node:fs"; const inventory = {}; for (const name of process.argv.slice(1)) { const bytes = readFileSync(name); inventory[name] = { sha256: createHash("sha256").update(bytes).digest("hex"), size: statSync(name).size }; } process.stdout.write(JSON.stringify(inventory));' "service-lasso-tui-${CANDIDATE_VERSION}-win32-amd64.zip" "service-lasso-tui-${CANDIDATE_VERSION}-linux-amd64.tar.gz" "service-lasso-tui-${CANDIDATE_VERSION}-darwin-amd64.tar.gz" "service-lasso-tui-${CANDIDATE_VERSION}-darwin-arm64.tar.gz" SHA256SUMS.txt candidate-manifest.json > candidate-local-assets.json
           node ../scripts/verify-candidate-publication-cli.mjs --mode publication-assets --source-ref "$GITHUB_REF" --source-commit "$CANDIDATE_SHA" --version "$CANDIDATE_VERSION" --tag "$CANDIDATE_TAG" --manifest candidate-manifest.json --local-assets candidate-local-assets.json --asset-directory .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: service-lasso-tui-candidate-${{ needs.validate-source.outputs.version }}-${{ needs.validate-source.outputs.sha }}
           path: release-assets
@@ -176,11 +176,11 @@ jobs:
       CANDIDATE_SHA: ${{ needs.validate-source.outputs.sha }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ needs.validate-source.outputs.sha }}
           fetch-depth: 1
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22.23.2'
       - name: Bind checked-out source before candidate artifact retrieval
@@ -188,7 +188,7 @@ jobs:
         run: |
           set -euo pipefail
           scripts/bind-candidate-publication-source.sh "$CANDIDATE_SHA" "$GITHUB_REF" "$RUNNER_TEMP/candidate-source-binding.json" "service-lasso-tui-candidate-${CANDIDATE_VERSION}-${CANDIDATE_SHA}"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: service-lasso-tui-candidate-${{ needs.validate-source.outputs.version }}-${{ needs.validate-source.outputs.sha }}
           path: release-assets
@@ -242,7 +242,7 @@ jobs:
           set -euo pipefail
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$CANDIDATE_TAG" > final-release.json
           node scripts/verify-candidate-publication-cli.mjs --mode receipt --source-ref "$GITHUB_REF" --source-commit "$CANDIDATE_SHA" --version "$CANDIDATE_VERSION" --tag "$CANDIDATE_TAG" --manifest release-assets/candidate-manifest.json --release final-release.json --local-assets release-assets/candidate-local-assets.json --asset-directory release-assets --download-dir "$RUNNER_TEMP/public-candidate-receipt"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: service-lasso-tui-publication-receipt-${{ needs.validate-source.outputs.version }}-${{ needs.validate-source.outputs.sha }}
           path: |

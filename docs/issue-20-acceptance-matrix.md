@@ -177,6 +177,14 @@ written to a terminal transcript or artifact. Existing private failure evidence
 is preserved under its existing authority; this workflow does not create a new
 private artifact permission.
 
+The uploaded executable receipt is a closed JSON digest-and-size schema, rather
+than `sha256sum` output that includes the runner-local binary path. The upload
+step parses every selected public receipt before transfer, requires its exact
+schema, and rejects paths, PID/PPID or birth fields, private custody labels,
+images, tool records, and literal commands. CI and candidate-publication
+Actions are resolved to verified committed SHA references; their version labels
+remain comments for auditability.
+
 The mechanisms are constrained by their native operating systems, rather than
 by advisory process behavior: Linux documents sealing for `memfd_create` and
 its `F_SEAL_WRITE` restriction in [memfd_create(2)](https://man7.org/linux/man-pages/man2/memfd_create.2.html),

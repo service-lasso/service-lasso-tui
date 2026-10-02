@@ -27,10 +27,10 @@ jobs:
             runner: macos-latest
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ env.CI_SOURCE_SHA }}
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
       - name: Test clean source and build the checked revision
@@ -49,7 +49,7 @@ jobs:
           if ($metadata -notmatch "vcs.revision=$sourceCommit" -or $metadata -notmatch 'vcs.modified=false') { throw 'built binary does not carry the clean checked-out VCS identity' }
       - name: Install pinned Windows ConPTY helper
         if: runner.os == 'Windows'
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.14'
       - name: Run real Windows ConPTY unavailable-state probe
@@ -79,7 +79,7 @@ jobs:
           python scripts/verify-release-asset-conpty.py --executable $binary --mode unavailable --api-url http://127.0.0.1:1 --source-commit $sourceCommit --expected-executable-sha256 $binarySHA256
       - name: Retain failed Windows constructor candidate
         if: runner.os == 'Windows' && failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: service-lasso-tui-windows-constructor-failure-${{ env.CI_SOURCE_SHA }}
           path: |
@@ -91,7 +91,7 @@ jobs:
         run: |
           python scripts/verify-release-asset-conpty-python.test.py
           python scripts/tui20-native-five-action.test.py
-          node --test scripts/tui20-native-core.recovery.test.mjs scripts/verify-real-core-conpty.test.mjs scripts/verify-release-asset-conpty.test.mjs scripts/verify-candidate-publication.test.mjs scripts/verify-candidate-publication-fresh-job.test.mjs
+          node --test scripts/tui20-native-core.recovery.test.mjs scripts/verify-tui20-native-public-receipt.test.mjs scripts/verify-real-core-conpty.test.mjs scripts/verify-release-asset-conpty.test.mjs scripts/verify-candidate-publication.test.mjs scripts/verify-candidate-publication-fresh-job.test.mjs
 
   native-posix-lifecycle:
     name: ${{ matrix.name }} native PTY Core lifecycle acceptance
@@ -108,14 +108,14 @@ jobs:
     env:
       CORE_COMMIT: 2633c07be25512d0a84f9bfa28de6be5edff35e8
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ env.CI_SOURCE_SHA }}
           fetch-depth: 1
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22.23.2'
       - name: Build exact native TUI and exact Core source
@@ -198,18 +198,21 @@ jobs:
               go build -mod=readonly -buildvcs=true -trimpath -o "$binary" ./cmd/service-lasso-tui
               go version -m "$binary" | grep -F "vcs.revision=$CI_SOURCE_SHA" >/dev/null
               go version -m "$binary" | grep -F "vcs.modified=false" >/dev/null
-              sha256sum "$binary" > "$phase/binary.sha256"
-              TUI20_BUILD_OUTPUT="$phase/build-output.json" TUI20_BINARY="$binary" TUI20_TUI_COMMIT="$CI_SOURCE_SHA" python3 - <<'PY'
+              TUI20_BINARY_DIGEST="$phase/binary-digest.json" TUI20_BUILD_OUTPUT="$phase/build-output.json" TUI20_BINARY="$binary" TUI20_TUI_COMMIT="$CI_SOURCE_SHA" python3 - <<'PY'
               import hashlib, json, os
               binary=os.environ["TUI20_BINARY"]
               with open(binary,"rb") as stream: digest=hashlib.file_digest(stream,"sha256").hexdigest()
-              data=json.dumps({"schemaVersion":1,"kind":"tui20-native-build-output","tuiCommit":os.environ["TUI20_TUI_COMMIT"],"nativeBinary":{"sha256":digest,"size":os.stat(binary).st_size}},separators=(",",":"),sort_keys=True).encode("utf-8")
-              fd=os.open(os.environ["TUI20_BUILD_OUTPUT"],os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
-              try: os.write(fd,data); os.fsync(fd)
-              finally: os.close(fd)
-              directory=os.open(os.path.dirname(os.environ["TUI20_BUILD_OUTPUT"]),os.O_RDONLY)
-              try: os.fsync(directory)
-              finally: os.close(directory)
+              def write_fsync(path, value):
+                  data=json.dumps(value,separators=(",",":"),sort_keys=True).encode("utf-8")
+                  fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+                  try: os.write(fd,data); os.fsync(fd)
+                  finally: os.close(fd)
+                  directory=os.open(os.path.dirname(path),os.O_RDONLY)
+                  try: os.fsync(directory)
+                  finally: os.close(directory)
+              size=os.stat(binary).st_size
+              write_fsync(os.environ["TUI20_BINARY_DIGEST"],{"schemaVersion":1,"kind":"tui20-native-binary-digest","sha256":digest,"size":size})
+              write_fsync(os.environ["TUI20_BUILD_OUTPUT"],{"schemaVersion":1,"kind":"tui20-native-build-output","tuiCommit":os.environ["TUI20_TUI_COMMIT"],"nativeBinary":{"sha256":digest,"size":size}})
               PY
             '
           }
@@ -282,13 +285,20 @@ jobs:
           set -e
           test "$owner_status" -ne 0
           node -e 'const fs=require("fs"); const root=process.argv[1]; const unresolved=JSON.parse(fs.readFileSync(root+"/owner-private-unresolved.json","utf8")); const closed=JSON.parse(fs.readFileSync(root+"/owner-private-closed.json","utf8")); const owner=JSON.parse(fs.readFileSync(root+"/owner-private-owner-closed.json","utf8")); const projection=JSON.parse(fs.readFileSync(root+"/native-public-projection.json","utf8")); if (!unresolved.ownerUnexpectedDeath || !unresolved.adverseKillObserved || !unresolved.actualTuiExternallyReaped || !unresolved.coreAndJwksLiveAfterOwnerDeath || unresolved.actualRuntimeExitObserved || closed.reason!=="owner_death_after_unresolved" || !closed.actualExitObserved || owner.recoveryOwnerActualSignal!==9 || owner.ownerPhase!=="owner_death_live" || projection.result!=="unresolved" || !projection.ownedRuntimeClosed) process.exit(1);' "$attempt"
+      - name: Reject private or host-specific native receipt content
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          attempt="$RUNNER_TEMP/tui20-native-${{ matrix.name }}-$CI_SOURCE_SHA"
+          node scripts/verify-tui20-native-public-receipt.mjs "$attempt"
       - name: Retain native direct-evidence receipt
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: tui20-native-${{ matrix.name }}-lifecycle-${{ env.CI_SOURCE_SHA }}
           path: |
-            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/binary.sha256
+            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/binary-digest.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/input-custody.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/core-source-binding.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/build-output.json
@@ -299,10 +309,10 @@ jobs:
     name: Release asset cross-compilation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ env.CI_SOURCE_SHA }}
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
       - name: Compile declared release targets

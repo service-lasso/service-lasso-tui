@@ -15,8 +15,8 @@ Raw stdout/stderr go directly to exclusive private files before spawn and are
 fsynced/read back afterward. They never enter public output or uploaded artifacts.
 A closed lexical projector emits only fixed command categories, bounded source
 line/depth integers, caller/producer roles, exact hashes/sizes and observed sink
-dispositions. A read category means an xtrace command boundary was observed,
-not that the read completed. Repeated PS4 prefixes identify trace nesting only,
+dispositions. A read category means only untrusted stderr text matched a marker and command,
+with unknown origin, reached-read and dispatch. Repeated PS4 prefixes match text only,
 not an independently observed command-substitution process or failing parser.
 Unrecognized/truncated traces remain incomplete; no raw excerpt, argv or ENV is
 projected. Secondary success cannot satisfy primary acceptance. Projector
@@ -484,3 +484,42 @@ paired -n stdin/-c zero results do not prove runtime success or causal repair.
 Proposal remains UNQUALIFIED until exact new candidate natural mandatory Darwin
 producer succeeds. DIFFERENT ENTIRE review and NEW ROOT admission precede local
 execution; all R1 and prior native/publisher/full-delivery requirements remain.
+
+## PR27 F1/F2/F3 coherent source successor
+TUI-ACCEPTANCE-003: combined stderr is untrusted lexical input. Public fields
+name marker matches and command-text categories only; origin, reached read,
+dispatch and child parser identity remain unknown even for exact forged PS4,
+multiline argv/ENV, verbose source or command-stderr frames. No authentication
+or private-artifact grant is inferred.
+
+Secondary raw descriptor files remain private and retained in full on failure.
+Readback uses the original held read/write descriptor, fsync and regular-file
+fstat before allocation. Fixed source quotas: 1,048,576 bytes per stream,
+8,192 bytes per physical line, 32,768 physical lines. Oversize skips readback
+before allocation; no full hash or complete projection is claimed. Admitted
+readback allocates at most 1,048,577 bytes, reads positionally in at most 65,536
+byte requests plus a one-byte EOF probe, then repeats held fstat. Changed size,
+identity, metadata, short read, extra bytes or IO failure close incomplete or
+unavailable with no hash. The full hash describes only the bounded observed
+held bytes with EOF and unchanged fstat; it is not an immutable seal.
+Projection scans bounded Buffer offsets, decodes at most one 8,192-byte line
+(no whole UTF8 conversion/split), and rejects exceeded byte/line/count quotas
+with incomplete output and no partial match set. Counts are at most 32,768;
+source-line numbers 1..999999 and prefix depths 1..64, fixed enums, two roles.
+Maximum simultaneous readback input is one quota plus one byte; decoded line
+is at most 16,384 UTF16 bytes (with bounded regex captures), four fixed records.
+Raw writing has no invented capture cap: disk/descriptor persistence failure
+remains honestly failed; readback quota does not truncate or delete raw files.
+All secondary failures and closure preserve the unchanged primary result,
+mandatory assertion, fed 8331 bytes/hash, private roots and waits/fsync.
+
+Issue18 SPEC002 AC2/AC3/AC7: normalize CRLF to LF inside the source contract
+before every selector/split/regex; both line endings exercise EVERY existing
+scoped credential, read permission, publisher-only and no-fallback assertion
+and all negative mutations. No workflow permission or credential change.
+
+Author meaningful forged-frame, held-private IO/oversize/line/count/growth/error
+and LF/CRLF regressions but do not execute them before DIFFERENT ENTIRE SOURCE
+GO and NEW complete-input ROOT admission. c585 natural Darwin and Windows
+failures stay preserved; native cause, protected scoped credential, publication
+and same-published-byte Core/full delivery remain incomplete.

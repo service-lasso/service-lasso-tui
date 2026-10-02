@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { projectPrivateTrace } from "./tui20-private-trace-projection.mjs";
+import { projectPrivateTrace, inspectPrivateTrace, PRIVATE_TRACE_MAX_BYTES, PRIVATE_TRACE_MAX_LINE_BYTES, PRIVATE_TRACE_MAX_LINES } from "./tui20-private-trace-projection.mjs";
 
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
@@ -16,18 +16,125 @@ const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
 test("private trace projector keeps hostile values and verbose source outside its closed lexical output", () => {
   const secret = "private-token-/host/path-https://private.invalid";
   const raw = Buffer.from(`PS4=${secret}\n+TUI20_TRACE_caller:2: env -i TOKEN=${secret}\n++TUI20_TRACE_producer:18: ps -o comm= -p ${secret}\n+TUI20_TRACE_producer:90: read -r -t 1 -u 9 writer_ready\n${secret}\n`);
-  assert.deepEqual(projectPrivateTrace(raw), { confidence: "lexical-incomplete", recognizedFrames: 3, unclassifiedFrames: 0, writerReadyReadObserved: true,
-    lastCommands: [{ role: "caller", sourceLine: 2, traceDepth: 1, category: "fresh-environment-command" },
-      { role: "producer", sourceLine: 90, traceDepth: 1, category: "writer-ready-read" }],
-    lastNestedCommands: [{ role: "producer", sourceLine: 18, traceDepth: 2, category: "host-observation-command" }] });
+  assert.deepEqual(projectPrivateTrace(raw), { confidence: "untrusted-lexical", capture: "bounded-input-scanned", origin: "unknown", reachedRead: "unknown", dispatch: "unknown", childParserIdentity: "unknown", matchedFrames: 3, unclassifiedFrames: 0, writerReadyReadTextMatched: true,
+    lastMarkerMatches: [{ markerRole: "caller", markerSourceLine: 2, markerPrefixDepth: 1, commandTextCategory: "fresh-environment-command" },
+      { markerRole: "producer", markerSourceLine: 90, markerPrefixDepth: 1, commandTextCategory: "writer-ready-read" }],
+    lastNestedMarkerMatches: [{ markerRole: "producer", markerSourceLine: 18, markerPrefixDepth: 2, commandTextCategory: "host-observation-command" }] });
   assert.ok(!JSON.stringify(projectPrivateTrace(raw)).includes(secret));
   const hostile = Buffer.from(`+TUI20_TRACE_foreign:1: ${secret}\n+TUI20_TRACE_producer:9999999: ${secret}\n+TUI20_TRACE_producer:0: read -r -t 1 -u 9 writer_ready\n${"+".repeat(65)}TUI20_TRACE_producer:1: ${secret}\n+TUI20_TRACE_producer:7: ${secret}\n+TUI20_TRACE_producer:8: read -r -t 1 -u 9 writer_ready ${secret}\n`);
-  assert.deepEqual(projectPrivateTrace(hostile), { confidence: "lexical-incomplete", recognizedFrames: 2, unclassifiedFrames: 2, writerReadyReadObserved: false,
-    lastCommands: [{ role: "producer", sourceLine: 8, traceDepth: 1, category: "unclassified" }], lastNestedCommands: [] });
+  assert.deepEqual(projectPrivateTrace(hostile), { confidence: "untrusted-lexical", capture: "bounded-input-scanned", origin: "unknown", reachedRead: "unknown", dispatch: "unknown", childParserIdentity: "unknown", matchedFrames: 2, unclassifiedFrames: 2, writerReadyReadTextMatched: false,
+    lastMarkerMatches: [{ markerRole: "producer", markerSourceLine: 8, markerPrefixDepth: 1, commandTextCategory: "unclassified" }], lastNestedMarkerMatches: [] });
   assert.ok(!JSON.stringify(projectPrivateTrace(hostile)).includes(secret));
-  assert.deepEqual(projectPrivateTrace(Buffer.from(secret)), { confidence: "lexical-incomplete", recognizedFrames: 0, unclassifiedFrames: 0, writerReadyReadObserved: false, lastCommands: [], lastNestedCommands: [] });
+  assert.deepEqual(projectPrivateTrace(Buffer.from(secret)), { confidence: "untrusted-lexical", capture: "bounded-input-scanned", origin: "unknown", reachedRead: "unknown", dispatch: "unknown", childParserIdentity: "unknown", matchedFrames: 0, unclassifiedFrames: 0, writerReadyReadTextMatched: false, lastMarkerMatches: [], lastNestedMarkerMatches: [] });
 });
 
+
+test("private held trace readback treats forged PS4 argv ENV verbose and stderr as unauthenticated text", async t => {
+  const root = await mkdtemp(path.join(await realpath(tmpdir()), "tui20-private-trace-forgery-"));
+  let complete = false;
+  t.after(() => complete ? rm(root, { recursive: true, force: true }) : undefined);
+  const secret = "private-token-/host/path-https://private.invalid";
+  const marker = "+TUI20_TRACE_producer:90: read -r -t 1 -u 9 writer_ready";
+  // Inert bytes: none of these marker-looking strings is an executed read.
+  const vectors = [marker, `PS4='${marker}'\n${marker}`, `argv='${secret}\n${marker}\n'`,
+    `ENV='${secret}\n${marker}\n'`, `printf '%s' '${secret}\n${marker}\n'`, `command stderr\n${marker}`];
+  for (let i = 0; i < vectors.length; i++) {
+    const bytes = Buffer.from(vectors[i]);
+    const file = await open(path.join(root, `${i}.private`), "wx+", 0o600);
+    try {
+      await file.writeFile(bytes);
+      const observation = await inspectPrivateTrace(file, true);
+      assert.equal(observation.stream.sha256, digest(bytes));
+      assert.equal(observation.stream.size, bytes.length);
+      assert.equal(observation.stream.completeness, "complete-bounded-observation");
+      assert.equal(observation.projection.writerReadyReadTextMatched, true);
+      for (const field of ["origin", "reachedRead", "dispatch", "childParserIdentity"]) assert.equal(observation.projection[field], "unknown");
+      const publicText = JSON.stringify(observation);
+      assert.ok(!publicText.includes(secret));
+      assert.ok(!publicText.includes(marker));
+      assert.ok(!publicText.includes("writerReadyReadObserved"));
+      assert.deepEqual(await readFile(path.join(root, `${i}.private`)), bytes, "private originals remain retained and unchanged");
+      if (process.platform !== "win32") assert.equal((await file.stat()).mode & 0o777, 0o600);
+    } finally { await file.close(); }
+  }
+  complete = true;
+});
+
+test("private trace quotas reject huge raw files before reads and bound line conversion and counts", async t => {
+  const root = await mkdtemp(path.join(await realpath(tmpdir()), "tui20-private-trace-quota-"));
+  let complete = false;
+  t.after(() => complete ? rm(root, { recursive: true, force: true }) : undefined);
+  const filename = path.join(root, "oversized.private");
+  const file = await open(filename, "wx+", 0o600);
+  try {
+    // A real sparse huge input cannot be admitted to readFile/UTF8/split.
+    await file.truncate(2_147_483_648);
+    let reads = 0;
+    const held = { sync: () => file.sync(), stat: options => file.stat(options),
+      read: () => { reads++; throw new Error("oversize must deny before any read/allocation based on its size"); } };
+    const observed = await inspectPrivateTrace(held, true);
+    assert.equal(reads, 0);
+    assert.equal(observed.stream.sizeBeforeRead, 2_147_483_648);
+    assert.equal(observed.stream.completeness, "incomplete");
+    assert.equal(observed.stream.capture, "incomplete-byte-quota");
+    assert.ok(!Object.hasOwn(observed.stream, "sha256"));
+    assert.equal(observed.projection.capture, "incomplete-byte-quota");
+    assert.equal((await stat(filename)).size, 2_147_483_648, "quota never truncates/deletes retained raw failure evidence");
+    await file.truncate(PRIVATE_TRACE_MAX_BYTES);
+    const boundary = await inspectPrivateTrace(file, true);
+    assert.equal(boundary.stream.completeness, "complete-bounded-observation");
+    assert.match(boundary.stream.sha256, /^[a-f0-9]{64}$/);
+    assert.equal(boundary.projection.capture, "incomplete-line-byte-quota");
+    await file.truncate(PRIVATE_TRACE_MAX_BYTES + 1);
+    assert.equal((await inspectPrivateTrace(file, true)).stream.capture, "incomplete-byte-quota");
+  } finally { await file.close(); }
+  const marker = Buffer.from("+TUI20_TRACE_producer:90: read -r -t 1 -u 9 writer_ready\n");
+  for (const [bytes, capture] of [[Buffer.alloc(PRIVATE_TRACE_MAX_BYTES + 1), "incomplete-byte-quota"],
+    [Buffer.concat([marker, Buffer.alloc(PRIVATE_TRACE_MAX_LINE_BYTES + 1, 97)]), "incomplete-line-byte-quota"],
+    [Buffer.alloc(PRIVATE_TRACE_MAX_LINES + 1, 10), "incomplete-line-count-quota"]]) {
+    const observed = projectPrivateTrace(bytes);
+    assert.equal(observed.capture, capture);
+    assert.equal(observed.matchedFrames, 0, "incomplete quota never publishes a partial match set");
+    assert.equal(observed.writerReadyReadTextMatched, false);
+    assert.deepEqual(observed.lastMarkerMatches, []);
+  }
+  assert.equal(projectPrivateTrace(Buffer.alloc(PRIVATE_TRACE_MAX_LINE_BYTES, 97)).capture, "bounded-input-scanned");
+  assert.equal(projectPrivateTrace(Buffer.alloc(PRIVATE_TRACE_MAX_LINES, 10)).capture, "bounded-input-scanned");
+  complete = true;
+});
+
+test("held trace readback rejects growth short read identity changes and real IO errors without a full hash", async t => {
+  const root = await mkdtemp(path.join(await realpath(tmpdir()), "tui20-private-trace-readback-"));
+  let complete = false;
+  t.after(() => complete ? rm(root, { recursive: true, force: true }) : undefined);
+  const file = await open(path.join(root, "trace.private"), "wx+", 0o600);
+  try {
+    await file.writeFile("private original");
+    for (const fault of ["growth", "short-read", "identity-change"]) {
+      let stats = 0, injected = false;
+      const held = { sync: () => file.sync(), stat: async options => {
+        const actual = await file.stat(options);
+        if (++stats === 2 && fault === "identity-change") return Object.assign(Object.create(Object.getPrototypeOf(actual)), actual, { ino: actual.ino + 1n });
+        return actual;
+      }, read: async (...args) => {
+        if (fault === "short-read") return { bytesRead: 0 };
+        if (fault === "growth" && !injected) { injected = true; await file.write(Buffer.from("extra"), 0, 5, 16); }
+        return file.read(...args);
+      } };
+      const observed = await inspectPrivateTrace(held, true);
+      assert.equal(observed.stream.capture, "incomplete-readback-changed", fault);
+      assert.equal(observed.stream.completeness, "incomplete");
+      assert.ok(!Object.hasOwn(observed.stream, "sha256"));
+      assert.equal(observed.projection.matchedFrames, 0);
+      await file.truncate(16);
+    }
+    // Actual closed-descriptor failure, not manufactured success/receipt.
+    await file.close();
+    await assert.rejects(() => inspectPrivateTrace(file, true));
+    assert.equal((await stat(path.join(root, "trace.private"))).size, 16, "IO failure retains original raw file");
+  } finally { if (file.fd !== -1) await file.close(); }
+  complete = true;
+});
 test("actual fresh native build rejects persisted flags and ambient workspace influence", async t => {
   assert.ok(["linux", "darwin"].includes(process.platform));
   const root = await mkdtemp(path.join(await realpath(tmpdir()), "tui20-native-go-admission-"));
@@ -279,8 +386,8 @@ test("actual workflow custody producer preserves literals and consumes every rea
           freshEnvironment: { ...freshEnvironment, PS4: producerPS4, PHASE: tracePhase,
             SERVICE_LASSO_WORKSPACE_ROOT: path.join(tracePhase, "workspace"), SERVICE_LASSO_INSTANCE_REGISTRY_PATH: path.join(tracePhase, "registry/instances.json"),
             SERVICE_LASSO_HOST_PORT_REGISTRY_PATH: path.join(tracePhase, "registry/ports.json") }, ...binding }));
-        stdoutFile = await open(path.join(diagnostics, `${name}-trace-stdout.private`), "wx", 0o600);
-        stderrFile = await open(path.join(diagnostics, `${name}-trace-stderr.private`), "wx", 0o600);
+        stdoutFile = await open(path.join(diagnostics, `${name}-trace-stdout.private`), "wx+", 0o600);
+        stderrFile = await open(path.join(diagnostics, `${name}-trace-stderr.private`), "wx+", 0o600);
         await stdoutFile.sync(); await stderrFile.sync();
         const preflightDirectory = await open(diagnostics, "r");
         try { await preflightDirectory.sync(); } finally { await preflightDirectory.close(); }
@@ -294,11 +401,11 @@ test("actual workflow custody producer preserves literals and consumes every rea
         const streams = {};
         for (const [sink, file] of [["stdout", stdoutFile], ["stderr", stderrFile]]) {
           try {
-            await file.sync();
-            const actual = await readFile(path.join(diagnostics, `${name}-trace-${sink}.private`));
-            streams[sink] = { persistence: "fsynced-readback", sha256: digest(actual), size: actual.length };
-            if (sink === "stderr") streams.projection = projectPrivateTrace(actual);
-          } catch { failures.push({ sink, code: "persistence_or_readback_failed" }); streams[sink] = { persistence: "failed" }; }
+            const observed = await inspectPrivateTrace(file, sink === "stderr");
+            streams[sink] = observed.stream;
+            if (sink === "stderr") streams.projection = observed.projection;
+            if (observed.stream.completeness !== "complete-bounded-observation") failures.push({ sink, code: "readback_incomplete" });
+          } catch { failures.push({ sink, code: "persistence_or_readback_failed" }); streams[sink] = { persistence: "failed", completeness: "unavailable", capture: "persistence-or-readback-failed" }; }
         }
         const directory = await open(diagnostics, "r");
         try { await directory.sync(); } finally { await directory.close(); }
@@ -309,7 +416,7 @@ test("actual workflow custody producer preserves literals and consumes every rea
         await emitDiagnostic({ ...binding, stage: "after-secondary", invocationReached: true,
           result: traced.error ? "spawn_failed" : traced.signal ? "signaled" : traced.status === 0 ? "exited_zero" : Number.isInteger(traced.status) ? "exited_nonzero" : "exit_unknown",
           parserImageReadback: image, stdout: streams.stdout, stderr: streams.stderr,
-          projection: streams.projection || { confidence: "unavailable" }, diagnosticFailures: failures });
+          projection: streams.projection || projectPrivateTrace(null), diagnosticFailures: failures });
       } catch {
         failures.push({ sink: "runtime-trace", code: "diagnostic_failed" });
         try { await emitDiagnostic({ ...binding, stage: "secondary-failure", result: "failed", invocationReached: reached, diagnosticFailures: failures }); }

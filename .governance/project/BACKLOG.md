@@ -156,3 +156,6 @@ six original held assets, private draft and headerless public byte checks remain
 Source regression is UNEXECUTED pending DIFFERENT fresh ENTIRE SOURCE GO and NEW
 complete-input ROOT admission. No secret/settings/identity is provisioned here;
 mandatory native/Darwin/Core and same-byte publication gates remain unmet.
+
+
+PR27 coherent F1/F2/F3 successor: SPEC001 PR27 source contract above and SPEC002 AC2/AC3/AC7 bind untrusted lexical markers, fixed preallocation/private held-readback quotas and LF/CRLF-equivalent credential assertions. All new regressions UNEXECUTED; original mandatory failure preserved. DIFFERENT ENTIRE SOURCE GO and NEW complete-input ROOT admission required; native/full-delivery and protected scoped publication/same-byte Core gates unmet.

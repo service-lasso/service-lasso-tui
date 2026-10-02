@@ -148,6 +148,7 @@ test("fresh job binds checked source before consuming its artifact and runs the 
 test("release workflow confines scoped authority to the actual publisher step", async () => {
   const workflow = await readFile(path.join(scriptsDirectory, "../.github/workflows/release.yml"), "utf8");
   const assertCredentialContract = text => {
+    text = text.replaceAll("\r\n", "\n");
     const publisher = text.split("  publish-candidate:\n")[1];
     assert.ok(publisher, "publication job missing");
     const [job, ...steps] = publisher.split("      - ");
@@ -168,10 +169,12 @@ test("release workflow confines scoped authority to the actual publisher step", 
     const command = actual[0].split("node scripts/publish-candidate.mjs")[1];
     assert.doesNotMatch(command, /GH_TOKEN|DEVELOPMENT_CANDIDATE_TOKEN|--token/u);
   };
-  assertCredentialContract(workflow);
-  // These old or unsafe bindings must be rejected by the same source contract.
-  assert.throws(() => assertCredentialContract(workflow.replace("secrets.DEVELOPMENT_CANDIDATE_TOKEN", "github.token")));
-  assert.throws(() => assertCredentialContract(workflow.replace("secrets.DEVELOPMENT_CANDIDATE_TOKEN", "secrets.DEVELOPMENT_CANDIDATE_TOKEN || github.token")));
-  assert.throws(() => assertCredentialContract(workflow.replace("      contents: read", "      contents: write")));
-  assert.throws(() => assertCredentialContract(workflow.replace('          test -n "$GH_TOKEN"', '          echo "$GH_TOKEN"\n          test -n "$GH_TOKEN"')));
+  for (const text of [workflow.replaceAll("\r\n", "\n"), workflow.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n")]) {
+    assertCredentialContract(text);
+    // EVERY original negative is applied before normalization for both forms.
+    assert.throws(() => assertCredentialContract(text.replace("secrets.DEVELOPMENT_CANDIDATE_TOKEN", "github.token")));
+    assert.throws(() => assertCredentialContract(text.replace("secrets.DEVELOPMENT_CANDIDATE_TOKEN", "secrets.DEVELOPMENT_CANDIDATE_TOKEN || github.token")));
+    assert.throws(() => assertCredentialContract(text.replace("      contents: read", "      contents: write")));
+    assert.throws(() => assertCredentialContract(text.replace('          test -n "$GH_TOKEN"', '          echo "$GH_TOKEN"\n          test -n "$GH_TOKEN"')));
+  }
 });

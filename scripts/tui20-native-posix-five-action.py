@@ -288,7 +288,7 @@ def bound_execution(held,identity,root):
     if sys_platform()=="darwin":
         launch,binding=darwin_system_immutable_execution(held,identity,root); return launch,launch,binding
     raise RuntimeError("native immutable execution unavailable on this platform")
-def bound_replacement_probe(launch_fd,held,executable,identity,profile,env):
+def bound_replacement_probe(launch_fd,held,executable,inode_identity,digest_identity,profile,env):
     """Prove pathname replacement and mutable source bytes cannot alter the sealed launch."""
     directory=os.path.dirname(executable); original=os.path.join(directory,".tui20-held-original"); replacement=os.path.join(directory,".tui20-untrusted-replacement")
     if os.path.exists(original) or os.path.lexists(replacement): raise RuntimeError("bound-launch probe paths already exist")
@@ -303,7 +303,7 @@ def bound_replacement_probe(launch_fd,held,executable,identity,profile,env):
             else: os.replace(replacement,executable)
             named=os.lstat(executable)
             held_stat=os.fstat(held)
-            if (held_stat.st_dev,held_stat.st_ino)!=(identity[0],identity[1]) or (not reparse and (named.st_dev,named.st_ino)==identity): raise RuntimeError("held executable binding changed")
+            if (held_stat.st_dev,held_stat.st_ino)!=inode_identity or (not reparse and (named.st_dev,named.st_ino)==inode_identity): raise RuntimeError("held executable binding changed")
             term=Terminal(launch_fd,executable,profile,env); term.wait(('connection profile "missing" credential is unavailable',),30); exit_value=term.close(2)
             results.append({"attack":name,"heldCandidateLaunch":True,"terminalExit":exit_value})
             os.replace(original,executable); os.link(executable,original)
@@ -312,13 +312,13 @@ def bound_replacement_probe(launch_fd,held,executable,identity,profile,env):
             original_byte=os.pread(modifier,1,0)
             if len(original_byte)!=1: raise RuntimeError("source candidate mutation probe unavailable")
             os.pwrite(modifier,bytes([original_byte[0]^0x01]),0); os.fsync(modifier)
-            if sha256_fd(held)==identity["binarySHA256"]: raise RuntimeError("source candidate mutation probe did not alter held inode")
+            if sha256_fd(held)==digest_identity["binarySHA256"]: raise RuntimeError("source candidate mutation probe did not alter held inode")
             term=Terminal(launch_fd,executable,profile,env); term.wait(('connection profile "missing" credential is unavailable',),30); exit_value=term.close(2)
             results.append({"attack":"inplace-content-mutation","heldCandidateLaunch":True,"terminalExit":exit_value,"sourceDigestChanged":True})
         finally:
             if 'original_byte' in locals(): os.pwrite(modifier,original_byte,0); os.fsync(modifier)
             os.close(modifier)
-        if sha256_fd(held)!=identity["binarySHA256"]: raise RuntimeError("source candidate mutation restoration failed")
+        if sha256_fd(held)!=digest_identity["binarySHA256"]: raise RuntimeError("source candidate mutation restoration failed")
     finally:
         if os.path.lexists(replacement): os.unlink(replacement)
         if os.path.lexists(original): os.replace(original,executable)
@@ -513,7 +513,7 @@ def main():
         for profile,label,expected,audit_expected in (("missing","missing-credential",2,0),("invalid","invalid-credential",0,0),("denied","scope-denied",0,5)):
             count=len(operations(url,token)); audit=audit_count(url,token)
             if profile=="missing":
-                outcome["heldExecutableBinding"]["replacementProbe"]=bound_replacement_probe(launch_fd,held,args.executable,held_inode,profile,env)
+                outcome["heldExecutableBinding"]["replacementProbe"]=bound_replacement_probe(launch_fd,held,args.executable,held_inode,identity,profile,env)
                 term=Terminal(launch_fd,args.executable,profile,env); term.wait(('connection profile "missing" credential is unavailable',),30)
             else:
                 term=Terminal(launch_fd,args.executable,profile,env); term.wait(("Runtime identity:",),30); detail(term); term.write("i"); term.wait(("Runtime API unavailable:",),30)

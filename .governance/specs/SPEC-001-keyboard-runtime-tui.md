@@ -341,3 +341,12 @@ and controller-to-observer-to-external-owner regressions are required.
 All prior five producer repairs and Issue #18 nine-mutation/six-held-asset
 publisher safeguards remain required. Source and regressions stay UNEXECUTED
 until fresh ENTIRE independent SOURCE GO and NEW complete-input ROOT admission.
+Issue #20 final87ad entire SOURCE NO-GO requires all three coherent repairs:
+explicit source inode tuple and candidate digest inputs to the actual mutation
+probe with restored-byte regression; observer ownership from runtime spawn
+through every acquisition/owner launch/birth/persistence/handoff failure, actual
+child waits and birth-absence proof before closed failure projection; private
+FIFO peer-aware rendezvous with truthful parent-owned writer waits on death
+before ready and shell failure before observation. Retain all earlier producer,
+finalization, immutable execution and Issue #18 publisher protections. New
+regressions remain UNEXECUTED until fresh ENTIRE SOURCE GO and NEW ROOT admission.

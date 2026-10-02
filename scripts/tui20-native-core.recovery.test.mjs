@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -143,12 +143,13 @@ test("actual controller observer external-owner finalization retains failure and
   for (const pid of [proof.ownerPID,proof.runtimePID,proof.observerPID]) assert.throws(()=>process.kill(pid,0),{code:"ESRCH"},"actual production children must be absent after parent wait");
   // Negative owner fixtures exercise the actual controller/observer/runtime
   // edge. They never substitute for the actual-owner positive path above.
-  for (const [name,body] of [["missing","sys.exit(0)"],["malformed","json.dump({},open(os.path.join(root,'external-owner-finalization.json'),'w')); sys.exit(0)"],["crashed","os.kill(os.getpid(),signal.SIGKILL)"]]) {
+  for (const [name,body,consume=true] of [["missing","sys.exit(0)"],["malformed","json.dump({},open(os.path.join(root,'external-owner-finalization.json'),'w')); sys.exit(0)"],["crashed","os.kill(os.getpid(),signal.SIGKILL)"],["exit-before-read","os.close(0); sys.exit(0)",false],["crash-before-read","os.close(0); os.kill(os.getpid(),signal.SIGKILL)",false],["witness-write-failure","sys.stdin.readline(); sys.exit(0)",false]]) {
     const phase=path.join(root,name);
     await mkdir(phase);
     await cp(path.join(root,"core-source"),path.join(phase,"core-source"),{recursive:true});
     const helper=path.join(phase,"negative-owner.py");
-    await writeFile(helper,`import json,os,signal,sys\nroot=sys.argv[sys.argv.index('--root')+1]\nsys.stdin.readline()\n${body}\n`);
+    await writeFile(helper,`import json,os,signal,sys\nroot=sys.argv[sys.argv.index('--root')+1]\n${consume ? "sys.stdin.readline()" : ""}\n${body}\n`);
+    if(name==="witness-write-failure") await mkdir(path.join(phase,"owner-private-witness.json"));
     const failed=spawn(process.execPath,[path.join(scripts,"tui20-native-core.mjs"),"--root",phase,"--executable",binary,"--source-commit","a".repeat(40),"--core-commit","b".repeat(40),"--python","python3","--helper",helper],{stdio:["ignore","pipe","pipe"]});
     failed.stdout.resume(); failed.stderr.resume();
     const [failureCode,failureSignal]=await new Promise((resolve,reject)=>{failed.once("exit",(...values)=>resolve(values));failed.once("error",reject);});
@@ -160,6 +161,41 @@ test("actual controller observer external-owner finalization retains failure and
     assert.equal(failureProjection.actionsPassed,false,name);
     assert.equal(failureClosure.actualExitObserved,true,name);
     assert.equal(failureClosure.runtimeChildStillLiveAfterClose,false,name);
+    assert.equal(failureClosure.runtimeBirthAbsentObserved,true,name);
+    const actualOwner=JSON.parse(await readFile(path.join(phase,"owner-private-owner-closed.json"),"utf8"));
+    assert.equal(actualOwner.actualWaitObserved,true,name);
+    assert.ok(actualOwner.recoveryOwnerActualExit!==null || actualOwner.recoveryOwnerActualSignal!==null,name);
+    assert.equal(await readFile(path.join(phase,"workspace/actual-stop.json"),"utf8"),"closed",name);
+    for(const pid of [actualOwner.recoveryOwnerPID,failureClosure.runtimePID]) assert.throws(()=>process.kill(pid,0),{code:"ESRCH"},name);
     await assert.rejects(()=>readFile(path.join(phase,"owner-finalization-failure-proof.json")),{code:"ENOENT"},name);
+  }
+  // Fault instrumentation affects only the named OS boundary. It executes
+  // unchanged observer main() and real Popen children via the real controller;
+  // waits, runtime EOF teardown and receipts are never substituted.
+  for(const name of ["owner-launch-error","runtime-birth-error","owner-birth-error","handoff-write-error"]){
+    const phase=path.join(root,name); await mkdir(phase);
+    await cp(path.join(root,"core-source"),path.join(phase,"core-source"),{recursive:true});
+    const runner=path.join(phase,"observer-boundary.py"), launcher=path.join(phase,"python-launcher.sh");
+    await writeFile(runner,`import runpy,sys,subprocess\nsource=sys.argv.pop(1)\nnamespace=runpy.run_path(source)\nglobals=namespace['main'].__globals__\noriginal_birth=globals['process_birth']\noriginal_popen=subprocess.Popen\nbirth_count=0\nlaunch_count=0\ndef birth(pid):\n    global birth_count\n    birth_count+=1\n    if ('${name}'=='runtime-birth-error' and birth_count==1) or ('${name}'=='owner-birth-error' and birth_count==3): raise OSError('controlled birth observation error')\n    return original_birth(pid)\ndef launch(*args,**kwargs):\n    global launch_count\n    launch_count+=1\n    if '${name}'=='owner-launch-error' and launch_count==2: raise OSError('controlled owner launch error')\n    child=original_popen(*args,**kwargs)\n    if '${name}'=='handoff-write-error' and launch_count==2:\n        original=child.stdin\n        class FailedWrite:\n            def write(self,*args): raise BrokenPipeError('controlled handoff write error')\n            def close(self): return original.close()\n        child.stdin=FailedWrite()\n    return child\nglobals['process_birth']=birth\nsubprocess.Popen=launch\nnamespace['main']()\n`);
+    await writeFile(launcher,`#!/bin/sh\nexec python3 '${runner.replaceAll("'","'\\''")}' "$@"\n`); await chmod(launcher,0o700);
+    const failed=spawn(process.execPath,[path.join(scripts,"tui20-native-core.mjs"),"--root",phase,"--executable",binary,"--source-commit","a".repeat(40),"--core-commit","b".repeat(40),"--python",launcher,"--invalid-ready-receipt","true"],{stdio:["ignore","pipe","pipe"]});
+    failed.stdout.resume();failed.stderr.resume();
+    const [code,signal]=await new Promise((resolve,reject)=>{failed.once("exit",(...values)=>resolve(values));failed.once("error",reject);});
+    assert.equal(signal,null);assert.equal(code,1,name);
+    const closure=JSON.parse(await readFile(path.join(phase,"owner-private-closed.json"),"utf8"));
+    const projection=JSON.parse(await readFile(path.join(phase,"native-public-projection.json"),"utf8"));
+    assert.equal(closure.actualExitObserved,true,name);
+    assert.equal(closure.runtimeChildExit,"terminal_exited_zero",name);
+    assert.equal(closure.runtimeBirthAbsentObserved,name!=="runtime-birth-error",name);
+    assert.equal(projection.result,"failed",name);assert.equal(projection.actionsPassed,false,name);
+    assert.equal(projection.ownedRuntimeClosed,name!=="runtime-birth-error",name);
+    assert.throws(()=>process.kill(closure.runtimePID,0),{code:"ESRCH"},name);
+    assert.equal(await readFile(path.join(phase,"workspace/actual-stop.json"),"utf8"),"closed",name);
+    if(name!=="owner-launch-error" && name!=="runtime-birth-error"){
+      const ownerClosure=JSON.parse(await readFile(path.join(phase,"owner-private-owner-closed.json"),"utf8"));
+      assert.equal(ownerClosure.actualWaitObserved,true,name);
+      assert.equal(ownerClosure.ownerBirthAbsentObserved,name!=="owner-birth-error",name);
+      assert.throws(()=>process.kill(ownerClosure.recoveryOwnerPID,0),{code:"ESRCH"},name);
+    }
   }
 });

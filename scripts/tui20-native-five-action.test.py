@@ -200,6 +200,46 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertEqual(actual["closedReason"], "leaf_release_failed")
         self.assertEqual(writes, [("native-exit-receipt.json", primary), ("native-cleanup-receipt.json", actual)])
 
+    @unittest.skipUnless(sys.platform == "linux", "requires actual Linux sealed bytes and pwrite")
+    def test_actual_replacement_probe_separates_inode_and_digest_and_restores_mutated_bytes(self):
+        harness = load_posix_harness()
+        with tempfile.TemporaryDirectory() as root:
+            candidate=pathlib.Path(root,"candidate")
+            original=b"actual mutable source bytes for contract regression"
+            candidate.write_bytes(original)
+            held,identity,inode=harness["hold_candidate"](str(candidate),"a"*40)
+            sealed,_=harness["linux_sealed_execution"](held,identity)
+            observations=[]
+            # Only terminal rendering is controlled here. The actual probe
+            # replaces the path and mutates/restores the real held source inode;
+            # every launch verifies the actual kernel-sealed copy's bytes.
+            class ObservedTerminal:
+                def __init__(self,launch,executable,profile,env):
+                    self_case.assertEqual(harness["sha256_fd"](launch),identity["binarySHA256"])
+                    self_case.assertEqual((os.fstat(held).st_dev,os.fstat(held).st_ino),inode)
+                    observations.append(harness["sha256_fd"](held))
+                def wait(self,need,seconds): pass
+                def close(self,expected): return harness["terminal_exit_reason"](expected)
+            self_case=self
+            try:
+                with patch.dict(harness["bound_replacement_probe"].__globals__,{"Terminal":ObservedTerminal}):
+                    results=harness["bound_replacement_probe"](sealed,held,str(candidate),inode,identity,"missing",{})
+                self.assertEqual([item["attack"] for item in results],["rename","reparse","inplace-content-mutation"])
+                self.assertEqual(observations[:2],[identity["binarySHA256"]]*2)
+                self.assertNotEqual(observations[2],identity["binarySHA256"])
+                self.assertEqual(candidate.read_bytes(),original)
+                self.assertEqual(harness["sha256_fd"](held),identity["binarySHA256"])
+                class FailingMutationTerminal(ObservedTerminal):
+                    def wait(self,need,seconds):
+                        if observations[-1]!=identity["binarySHA256"]: raise RuntimeError("controlled mutation launch assertion")
+                with patch.dict(harness["bound_replacement_probe"].__globals__,{"Terminal":FailingMutationTerminal}):
+                    with self.assertRaisesRegex(RuntimeError,"controlled mutation launch assertion"):
+                        harness["bound_replacement_probe"](sealed,held,str(candidate),inode,identity,"missing",{})
+                self.assertEqual(candidate.read_bytes(),original,"actual source byte must restore even when the mutation launch assertion fails")
+                self.assertEqual(harness["sha256_fd"](held),identity["binarySHA256"])
+            finally:
+                os.close(sealed); os.close(held)
+
     def test_cleanup_receipt_writer_failure_cannot_replace_primary_outcome(self):
         harness = load_posix_harness()
         writes = []

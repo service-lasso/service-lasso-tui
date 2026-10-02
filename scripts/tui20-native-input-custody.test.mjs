@@ -62,6 +62,24 @@ test("actual workflow custody producer preserves literals and consumes every rea
   assert.equal(await realpath(writer.image), await realpath(privateInput.tools.python3.path));
   assert.equal(await realpath(parent.image), await realpath(privateInput.tools.bash.path));
   assert.notEqual(writer.image, parent.image, "Python identity cannot reuse Bash executable");
+  // Extracted actual producer, with one explicit failure inserted at the
+  // specified boundary. No fixture identity or successful receipt is supplied.
+  for (const [name, failedProducer] of [
+    ["writer-death-before-ready", producer.replace("writer=observed(os.getpid()); producer=observed(os.getppid())", "raise RuntimeError('controlled writer death before ready')\nwriter=observed(os.getpid()); producer=observed(os.getppid())")],
+    ["bash-failure-before-observation", producer.replace('test "$writer_ready" = "$writer_pid"', 'test "$writer_ready" = "$writer_pid"\nfalse # controlled parent observation failure')]
+  ]) {
+    const failurePhase=path.join(root,name);
+    const failed=spawnSync("bash",["-euo","pipefail","-c",`phase=${quote(failurePhase)}\n${failedProducer}TUI20_PHASE\n`],{cwd:source,env:{...process.env,CI_SOURCE_SHA:commit,CORE_COMMIT:commit},encoding:"utf8",timeout:10000});
+    assert.equal(failed.error,undefined,"actual rendezvous must finish through owned failure closure, not timeout");
+    assert.equal(failed.signal,null);
+    assert.notEqual(failed.status,0,name);
+    const closure=JSON.parse(await readFile(path.join(failurePhase,"private-writer-failure.json"),"utf8"));
+    assert.equal(closure.actualWaitObserved,true,name);
+    assert.notEqual(closure.writerExit,0,name);
+    assert.notEqual(closure.producerExit,0,name);
+    assert.throws(()=>process.kill(closure.writerPID,0),{code:"ESRCH"},"actual child must be absent after parent wait");
+    await assert.rejects(()=>readFile(path.join(failurePhase,"input-custody.json")),{code:"ENOENT"},name);
+  }
   assert.equal(input.source.tuiTree, tree);
   assert.equal(input.source.tuiDirtyHash, digest(Buffer.alloc(0)));
   assert.equal(input.source.tuiInventoryHash, digest(Buffer.from(`${digest(await readFile(path.join(source, "fixture.txt")))}  fixture.txt\n`)));

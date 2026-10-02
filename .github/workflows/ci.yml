@@ -161,8 +161,29 @@ jobs:
           compiler_path="$(go env GOTOOLDIR)/compile"
           tool_records="$(for tool in bash dirname mkdir env git sha256sum cut xargs awk wc uname ps readlink node npm go python3; do tool_record "$tool"; done; printf "go-compile\\t%s\\t%s\\t%s\\n" "$compiler_path" "$(sha256sum "$compiler_path" | cut -d " " -f1)" "$(wc -c < "$compiler_path")")"
           python3 -c 'import os,sys; os.mkfifo(sys.argv[1],0o600); os.mkfifo(sys.argv[2],0o600)' "$phase/writer-observation.fifo" "$phase/writer-ready.fifo"
+          # Open both private endpoints before spawning: no peer can block at
+          # open(). Actual child ownership, not a deadline, drives failure.
+          exec 9<> "$phase/writer-ready.fifo"
+          exec 8<> "$phase/writer-observation.fifo"
+          writer_pid=""
+          writer_failure() {
+            failure_status=$?
+            trap - EXIT
+            printf 'failed\n' >&8
+            exec 8>&- 9>&-
+            if test -n "$writer_pid"; then
+              writer_status=0
+              wait "$writer_pid" || writer_status=$?
+              python3 -c 'import json,os,sys; value={"classification":"owner-private","reason":"writer_rendezvous_failed","writerPID":int(sys.argv[2]),"actualWaitObserved":True,"writerExit":int(sys.argv[3]),"producerExit":int(sys.argv[4])}; f=open(sys.argv[1],"x"); json.dump(value,f); f.flush(); os.fsync(f.fileno()); f.close()' "$phase/private-writer-failure.json" "$writer_pid" "$writer_status" "$failure_status"
+            fi
+            test "$failure_status" -ne 0 || failure_status=1
+            exit "$failure_status"
+          }
+          trap writer_failure EXIT
           TUI20_PRIVATE_CUSTODY="$phase/private-input-custody.json" TUI20_PUBLIC_CUSTODY="$phase/input-custody.json" TUI20_PHASE="$phase" TUI20_WORKSPACE="$workspace" TUI20_INSTANCES="$instances" TUI20_PORTS="$ports" TUI20_TUI_COMMIT="$CI_SOURCE_SHA" TUI20_TUI_TREE="$source_tree" TUI20_TUI_DIRTY="$source_dirty" TUI20_TUI_INVENTORY="$source_inventory" TUI20_CORE_COMMIT="$CORE_COMMIT" TUI20_PRODUCER_PID="$$" TUI20_BIRTH="$birth" TUI20_IMAGE="$(readlink -f /proc/$$/exe 2>/dev/null || ps -o comm= -p $$ | xargs)" TUI20_TOOL_RECORDS="$tool_records" TUI20_LITERAL_COMMANDS='mkdir -p; git rev-parse HEAD^{tree}; git status --porcelain; git ls-files -z; go env GOTOOLDIR; git -C $phase/core-source init -q; git -C $phase/core-source remote add origin; git -C $phase/core-source fetch --no-tags origin develop; git -C $phase/core-source merge-base --is-ancestor $CORE_COMMIT origin/develop; git -C $phase/core-source fetch --depth=1 origin $CORE_COMMIT; git -C $phase/core-source checkout --detach -q FETCH_HEAD; npm ci; npm run build; go build -mod=readonly -buildvcs=true -trimpath' python3 - <<'PY' &
-          import json, os, subprocess
+          import json, os, select, subprocess
+          # Never retain inherited self-connected endpoints in the writer.
+          os.close(8); os.close(9)
           def observed(pid):
               if os.uname().sysname == 'Linux':
                   with open('/proc/%d/stat' % pid) as stream: fields=stream.read().rsplit(') ',1)[1].split()
@@ -170,9 +191,23 @@ jobs:
               def ps(field): return ' '.join(subprocess.check_output(['ps','-o',field+'=','-p',str(pid)],text=True).split())
               return {'pid':pid,'ppid':int(ps('ppid')),'birth':ps('lstart'),'image':ps('comm')}
           writer=observed(os.getpid()); producer=observed(os.getppid())
-          with open(os.path.join(os.environ['TUI20_PHASE'],'writer-ready.fifo'),'w') as stream: stream.write(str(os.getpid())+'\n')
-          with open(os.path.join(os.environ['TUI20_PHASE'],'writer-observation.fifo')) as stream:
-              pid,ppid,birth,image=stream.read().rstrip('\n').split('\t')
+          ready_fd=os.open(os.path.join(os.environ['TUI20_PHASE'],'writer-ready.fifo'),os.O_WRONLY|os.O_NONBLOCK)
+          try: os.write(ready_fd,(str(os.getpid())+'\n').encode())
+          finally: os.close(ready_fd)
+          observation_fd=os.open(os.path.join(os.environ['TUI20_PHASE'],'writer-observation.fifo'),os.O_RDONLY|os.O_NONBLOCK)
+          try:
+              data=b''
+              while b'\n' not in data:
+                  if os.getppid()!=producer['pid'] or observed(producer['pid'])!=producer: raise RuntimeError('producer died before writer observation')
+                  readable,_,_=select.select([observation_fd],[],[],.1)
+                  if not readable: continue
+                  chunk=os.read(observation_fd,4096)
+                  if not chunk: raise RuntimeError('producer observation EOF')
+                  data+=chunk
+                  if len(data)>4096: raise RuntimeError('producer observation frame overflow')
+              if data==b'failed\n': raise RuntimeError('producer failed before writer observation')
+              pid,ppid,birth,image=data.decode().rstrip('\n').split('\t')
+          finally: os.close(observation_fd)
           parent_observation={'pid':int(pid),'ppid':int(ppid),'birth':birth,'image':image}
           if writer != parent_observation or producer['pid'] != int(os.environ['TUI20_PRODUCER_PID']) or producer['birth'] != os.environ['TUI20_BIRTH'] or producer['image'] != os.environ['TUI20_IMAGE']: raise RuntimeError('actual producer/writer identity mismatch')
           def write_fsync(path, value):
@@ -193,7 +228,13 @@ jobs:
           write_fsync(os.environ["TUI20_PUBLIC_CUSTODY"],public)
           PY
           writer_pid=$!
-          read -r writer_ready < "$phase/writer-ready.fifo"
+          while ! read -r -t 1 writer_ready <&9; do
+            running=false
+            for running_pid in $(jobs -pr); do
+              if test "$running_pid" = "$writer_pid"; then running=true; fi
+            done
+            "$running" || exit 1
+          done
           test "$writer_ready" = "$writer_pid"
           case "$(uname -s)" in
             Linux) writer_birth="$(awk '{print $22}' /proc/$writer_pid/stat)"; writer_image="$(readlink -f /proc/$writer_pid/exe)" ;;
@@ -201,8 +242,10 @@ jobs:
           esac
           writer_ppid="$(ps -o ppid= -p "$writer_pid" | xargs)"
           test "$writer_ppid" = "$$"
-          printf '%s\t%s\t%s\t%s\n' "$writer_pid" "$writer_ppid" "$writer_birth" "$writer_image" > "$phase/writer-observation.fifo"
+          printf '%s\t%s\t%s\t%s\n' "$writer_pid" "$writer_ppid" "$writer_birth" "$writer_image" >&8
           wait "$writer_pid"
+          trap - EXIT
+          exec 8>&- 9>&-
           git -C "$phase/core-source" init -q
           git -C "$phase/core-source" remote add origin https://github.com/service-lasso/service-lasso.git
           git -C "$phase/core-source" fetch --no-tags origin develop

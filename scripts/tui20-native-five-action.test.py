@@ -308,6 +308,126 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
             finally:
                 os.close(recovery["leafFD"]); os.close(recovery["directoryFD"])
 
+    @unittest.skipUnless(os.name == "posix", "requires POSIX descriptor cleanup and retained recovery directory")
+    def test_production_cleanup_receipt_io_failures_deny_actual_owner_observer_aggregate(self):
+        # Only terminal/API/birth/runtime behavior is controlled. Run actual
+        # main/finalize/default production write_json and actual observer main
+        # plus close_runtime. Fail natural file I/O, never a writer callback.
+        import builtins, io, json
+        for cleanup_kind in ("descriptor","darwin-retained"):
+            boundaries=("none","open","write","flush","fsync") if cleanup_kind=="descriptor" else ("open","write","flush","fsync")
+            for boundary in boundaries:
+                with self.subTest(cleanup=cleanup_kind,boundary=boundary), tempfile.TemporaryDirectory() as root:
+                    harness=load_posix_harness()
+                    observer=runpy.run_path(str(pathlib.Path(__file__).with_name("tui20-native-owner-observer.py")))
+                    candidate=pathlib.Path(root,"candidate"); candidate.write_bytes(b"mandatory cleanup receipt fixture")
+                    birth={"platform":"fixture","startTime":"controlled"}
+                    paths={"coreReadback":True,"uniqueOwnedPaths":["workspaceRoot","instanceRegistryPath","hostPortRegistryPath"],"runtimeInstanceBound":True}
+                    pathlib.Path(root,"ready.json").write_text(json.dumps({"coreCommit":"b"*40,"runtimePathReceipt":paths}))
+                    handoff={"url":"fixture","token":"fixture","deniedToken":"fixture","jwksPort":1,"_runtimePID":202,"_runtimeBirth":birth}
+                    recovery=None; execution_fd=None
+                    if cleanup_kind=="darwin-retained":
+                        directory=pathlib.Path(root,"protected"); directory.mkdir()
+                        leaf=directory/"launch"; leaf.write_bytes(candidate.read_bytes())
+                        recovery={"path":str(leaf),"directory":str(directory),"leafFD":os.open(leaf,os.O_RDONLY),"directoryFD":os.open(directory,os.O_RDONLY),"systemImmutable":0x20000}
+                        execution_fd=recovery
+                        expected_cleanup={"outcome":"failed","closedReason":"leaf_release_failed","recoveryRetained":True}
+                    else:
+                        execution_fd=os.open(candidate,os.O_RDONLY)
+                        expected_cleanup={"outcome":"succeeded","closedReason":"sealed_descriptor_closed","recoveryRetained":False}
+                    class Terminal:
+                        def __init__(self,*_):
+                            self.exit_reason=None
+                            self.child=types.SimpleNamespace(pid=303,tui20_birth=birth,reaped_unowned=False,poll=lambda:None if self.exit_reason is None else 0)
+                            harness["OWNED_TERMINALS"].append(self)
+                        def wait(self,*_): pass
+                        def close(self): self.exit_reason="terminal_exited_zero"; return self.exit_reason
+                    actual_open=builtins.open; actual_fsync=os.fsync
+                    cleanup_fds=set(); reached=[]; chflags=[]
+                    class CleanupStream:
+                        def __init__(self,stream): self.stream=stream
+                        def __enter__(self): self.stream.__enter__(); cleanup_fds.add(self.stream.fileno()); return self
+                        def __exit__(self,*args):
+                            cleanup_fds.discard(self.stream.fileno())
+                            return self.stream.__exit__(*args)
+                        def write(self,value):
+                            if boundary=="write": reached.append("write"); raise OSError("controlled cleanup file write failure")
+                            return self.stream.write(value)
+                        def flush(self):
+                            if boundary=="flush": reached.append("flush"); raise OSError("controlled cleanup file flush failure")
+                            return self.stream.flush()
+                        def fileno(self): return self.stream.fileno()
+                    def open_receipt(path,*args,**kwargs):
+                        if os.fspath(path)==str(pathlib.Path(root,"native-cleanup-receipt.json")) and args and args[0]=="w":
+                            if boundary=="open": reached.append("open"); raise OSError("controlled cleanup file open failure")
+                            return CleanupStream(actual_open(path,*args,**kwargs))
+                        return actual_open(path,*args,**kwargs)
+                    def fsync_receipt(fd):
+                        if fd in cleanup_fds and boundary=="fsync": reached.append("fsync"); raise OSError("controlled cleanup file fsync failure")
+                        return actual_fsync(fd)
+                    def deny_release(command,**_):
+                        chflags.append(command); return types.SimpleNamespace(returncode=1)
+                    owner_argv=["owner","--root",root,"--executable",str(candidate),"--source-commit","a"*40,"--core-commit","b"*40,"--external-runtime","--adverse-controller-crash","--controller-pid","404"]
+                    try:
+                        with patch.object(sys,"argv",owner_argv), patch.object(sys,"stdin",io.StringIO(json.dumps(handoff)+"\n")), patch.object(builtins,"open",open_receipt), patch.object(os,"fsync",fsync_receipt), patch.object(harness["subprocess"],"run",deny_release), patch.object(harness["urllib"].request,"urlopen",lambda *_args,**_kwargs:io.BytesIO(b"{}")), patch.dict(harness["main"].__globals__,{"Terminal":Terminal,"bound_execution":lambda *_:(execution_fd,recovery,{"platform":cleanup_kind}),"detail":lambda *_:None,"controller_failed":lambda *_:True,"request":lambda *_:{},"process_birth":lambda *_:birth}):
+                            harness["main"]()
+                        primary_bytes=pathlib.Path(root,"native-exit-receipt.json").read_bytes()
+                        primary=json.loads(primary_bytes)
+                        finalization=json.loads(pathlib.Path(root,"external-owner-finalization.json").read_text())
+                        self.assertEqual(primary["outcome"],"succeeded")
+                        self.assertEqual(primary["terminals"],[{"terminal":"controller-failure-recovery","exit":"terminal_exited_zero"}])
+                        self.assertNotIn("finalizationFailure",primary)
+                        self.assertEqual(finalization["primaryOutcome"],"succeeded")
+                        self.assertFalse(finalization["liveTuiChildRetained"])
+                        self.assertEqual(reached,[] if boundary=="none" else [boundary],"production writer must reach the requested natural I/O seam")
+                        self.assertEqual(finalization["finalizationFailure"],None if boundary=="none" else "cleanup_receipt_persistence_failed")
+                        if boundary!="none": self.assertEqual(finalization["cleanupOutcome"],expected_cleanup)
+                        if cleanup_kind=="descriptor":
+                            with self.assertRaises(OSError): os.fstat(execution_fd)
+                            if boundary=="none": self.assertEqual(json.loads(pathlib.Path(root,"native-cleanup-receipt.json").read_text()),expected_cleanup)
+                        else:
+                            self.assertEqual(chflags,[["sudo","-n","/usr/bin/chflags","noschg",str(leaf)]])
+                            self.assertEqual(leaf.read_bytes(),candidate.read_bytes())
+                            os.fstat(recovery["leafFD"]); os.fstat(recovery["directoryFD"])
+                        # Feed the actual owner tuple and successful natural q
+                        # receipt to the real observer; exercise its real runtime
+                        # close/write/wait/stream-closure path with owned fixtures.
+                        owner_waits=[]; runtime_waits=[]; shutdown=[]
+                        owner=types.SimpleNamespace(pid=os.getpid(),stdin=io.StringIO(),stdout=io.StringIO(),stderr=io.StringIO(),wait=lambda:owner_waits.append("wait") or 0)
+                        class RuntimeInput(io.StringIO):
+                            def write(self,value): shutdown.append(value); return super().write(value)
+                        runtime=types.SimpleNamespace(pid=202,tui20_birth=birth,stdin=RuntimeInput(),stdout=io.StringIO(),stderr=io.StringIO(),returncode=None)
+                        def wait_runtime(): runtime_waits.append("wait"); runtime.returncode=0; return 0
+                        runtime.wait=wait_runtime
+                        def start(_args,retain): retain(runtime); return runtime,dict(handoff)
+                        observer_argv=["observer","--owner","controlled-owner","--root",root,"--executable",str(candidate),"--source-commit","a"*40,"--core-commit","b"*40,"--runtime-script","controlled-runtime","--node","controlled-node"]
+                        with patch.object(sys,"argv",observer_argv), patch.object(observer["subprocess"],"Popen",lambda *_args,**_kwargs:owner), patch.dict(observer["main"].__globals__,{"start_runtime":start,"process_birth":lambda *_:birth,"birth_absent":lambda *_:True}):
+                            if boundary=="none": observer["main"]()
+                            else:
+                                with self.assertRaises(SystemExit) as denied: observer["main"]()
+                                self.assertEqual(denied.exception.code,1)
+                        projection=json.loads(pathlib.Path(root,"native-public-projection.json").read_text())
+                        self.assertEqual(projection["result"],"succeeded" if boundary=="none" else "failed")
+                        self.assertEqual(projection["actionsPassed"],boundary=="none")
+                        self.assertTrue(projection["ownedRuntimeClosed"])
+                        self.assertEqual(shutdown,["close\n"]); self.assertEqual(runtime_waits,["wait"])
+                        self.assertEqual(len(owner_waits),2)
+                        for process in (owner,runtime):
+                            self.assertTrue(process.stdin.closed); self.assertTrue(process.stdout.closed); self.assertTrue(process.stderr.closed)
+                        closure=json.loads(pathlib.Path(root,"owner-private-closed.json").read_text())
+                        self.assertTrue(closure["actualExitObserved"]); self.assertTrue(closure["runtimeBirthAbsentObserved"])
+                        if boundary!="none":
+                            proof=json.loads(pathlib.Path(root,"owner-finalization-failure-proof.json").read_text())
+                            self.assertEqual(proof["finalizationFailure"],"cleanup_receipt_persistence_failed")
+                            self.assertEqual(proof["cleanupOutcome"],expected_cleanup)
+                            self.assertTrue(proof["actualExitObserved"])
+                            self.assertEqual(closure["reason"],"owner_finalization_failed")
+                        self.assertEqual(pathlib.Path(root,"native-exit-receipt.json").read_bytes(),primary_bytes)
+                        if recovery is not None: self.assertTrue(leaf.exists()); self.assertTrue(directory.is_dir())
+                    finally:
+                        if recovery is not None:
+                            os.close(recovery["leafFD"]); os.close(recovery["directoryFD"])
+
     @unittest.skipUnless(sys.platform == "linux", "requires actual Linux sealed bytes and pwrite")
     def test_actual_replacement_probe_separates_inode_and_digest_and_restores_mutated_bytes(self):
         harness = load_posix_harness()
@@ -422,8 +542,10 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
             writes.append((pathlib.Path(path).name, value))
             if path.endswith("native-cleanup-receipt.json"): raise OSError("controlled recorder failure")
         cleanup = lambda *_: {"outcome":"failed","closedReason":"protected_artifact_removal_failed","recoveryRetained":True}
-        actual = harness["finalize_native_outcome"]("controlled-root", primary, None, object(), -1, cleanup=cleanup, writer=record)
-        self.assertEqual(actual["recoveryRetained"], True)
+        with self.assertRaises(harness["CleanupReceiptPersistenceFailure"]) as failed:
+            harness["finalize_native_outcome"]("controlled-root", primary, None, object(), -1, cleanup=cleanup, writer=record)
+        self.assertEqual(failed.exception.cleanup_outcome,{"outcome":"failed","closedReason":"protected_artifact_removal_failed","recoveryRetained":True})
+        self.assertIsInstance(failed.exception.__cause__,OSError)
         self.assertEqual(writes[0], ("native-exit-receipt.json", primary))
 
     def test_injected_cleanup_failure_can_be_observed_without_rewriting_primary(self):

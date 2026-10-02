@@ -230,7 +230,7 @@ jobs:
           write_fsync(os.environ["TUI20_PUBLIC_CUSTODY"],public)
           PY
           writer_pid=$!
-          while ! read -r -t 1 writer_ready <&9; do
+          while ! read -r -t 1 -u 9 writer_ready; do
             running=false
             for running_pid in $(jobs -pr); do
               if test "$running_pid" = "$writer_pid"; then running=true; fi

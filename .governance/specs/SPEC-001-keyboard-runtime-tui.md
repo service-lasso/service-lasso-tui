@@ -434,3 +434,31 @@ before each route and emit only closed outcomes/hashes. Original invocation and
 assertions remain primary. All prior repairs and full delivery gates remain;
 DIFFERENT entire source review and NEW complete-input ROOT admission precede
 execution. No diagnostic has run locally and no source causal repair is claimed.
+## Issue20 PR25 da17 mandatory cleanup receipt persistence successor
+SPEC001 TUI-ACCEPTANCE-002/003 requires mandatory cleanup receipt durability
+independently of the primary outcome and actual OS cleanup result. A natural
+open/write/flush/fsync OSError at the production cleanup writer must propagate
+as cleanup_receipt_persistence_failed through the real owner finalization and
+observer denial. Preserve the successful primary, true cleanup disposition and
+retained Darwin recovery; receipt failure must not relabel OS cleanup failed.
+Actual main/finalize/production writer and observer regressions cover successful
+cleanup and natural retained Darwin cleanup failure with later receipts live.
+Source-only; all regressions UNEXECUTED pending DIFFERENT ENTIRE source review
+and NEW complete-input ROOT admission. F3 actual Darwin producer is unresolved;
+paired parse-only zero results identify no runtime cause. Prior F1/F2/P2 and all
+5+6+5+2+3, Issue18 AC1..7/Core authority/native/full-delivery gates remain.
+## Issue20 PR25 F3 accepted explicit-FIFO descriptor source proposal
+SPEC001 TUI-ACCEPTANCE-003 retains the mandatory actual native producer and
+its selected Bash/parser/quoted heredoc/options. The parent accepted replacing
+read -r -t 1 writer_ready <&9 with read -r -t 1 -u 9 writer_ready so peer-ready
+FIFO consumption does not redirect script-input fd0. GNU/Apple published text
+supports descriptor isolation, not an exact source-to-Darwin-image binding or
+causal defect. Seekback/undo counterevidence is retained. Preserve status/variable,
+actual jobs-alive policy/$! identity/reciprocal FIFO birth-image-PPID checks,
+failed-frame/EOF/overflow denial/trap actual wait/private fsync/success wait.
+Existing actual producer plus writer-death/producer-failure adversaries remain
+primary and bind the new operation. Original da17 runtime failure remains FAILED;
+paired -n stdin/-c zero results do not prove runtime success or causal repair.
+Proposal remains UNQUALIFIED until exact new candidate natural mandatory Darwin
+producer succeeds. DIFFERENT ENTIRE review and NEW ROOT admission precede local
+execution; all R1 and prior native/publisher/full-delivery requirements remain.

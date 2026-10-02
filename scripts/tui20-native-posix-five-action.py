@@ -284,6 +284,11 @@ def cleanup_execution(launch_fd,darwin_protected,held,live_child=False):
         return result
     except OSError:
         return {"outcome":"failed","closedReason":"descriptor_close_failed","recoveryRetained":darwin_protected is not None}
+class CleanupReceiptPersistenceFailure(RuntimeError):
+    def __init__(self,cleanup_outcome):
+        super().__init__("mandatory cleanup receipt persistence failed")
+        self.cleanup_outcome=cleanup_outcome
+
 def finalize_native_outcome(root,outcome,launch_fd,darwin_protected,held,live_child=False,primary_persisted=False,recovery_observation=None,cleanup=cleanup_execution,writer=write_json):
     """Record primary state first; cleanup recording can never mask that state."""
     if live_child: raise RuntimeError("external recovery owner must observe a live child before finalization")
@@ -291,7 +296,7 @@ def finalize_native_outcome(root,outcome,launch_fd,darwin_protected,held,live_ch
     cleanup_outcome=cleanup(launch_fd,darwin_protected,held,live_child)
     if recovery_observation is not None: cleanup_outcome={**cleanup_outcome,"recoveryObservation":recovery_observation}
     try: persist_cleanup_outcome(root,cleanup_outcome,writer)
-    except OSError: pass
+    except OSError as error: raise CleanupReceiptPersistenceFailure(cleanup_outcome) from error
     return cleanup_outcome
 def bound_execution(held,identity,root):
     if sys_platform()=="linux":
@@ -504,7 +509,7 @@ def main():
     if not args.executable or not args.source_commit or not args.core_commit or (not args.external_runtime and (not args.runtime_script or not args.node)): raise RuntimeError("native executable, source identity, and owned runtime are required")
     if args.adverse_controller_crash and not args.controller_pid: raise RuntimeError("adverse controller proof requires controller identity")
     paths={"coreReadback":True,"uniqueOwnedPaths":["workspaceRoot","instanceRegistryPath","hostPortRegistryPath"],"runtimeInstanceBound":True}
-    runtime=None; held=None; launch_fd=None; darwin_protected=None; term=None; primary_persisted=False; finalization_failure=None
+    runtime=None; held=None; launch_fd=None; darwin_protected=None; term=None; primary_persisted=False; finalization_failure=None; cleanup_receipt_failure=None
     def retain_runtime(child):
         nonlocal runtime
         runtime=child
@@ -612,6 +617,11 @@ def main():
             cleanup=lambda *values: (_ for _ in ()).throw(RuntimeError("injected native finalization cleanup failure")) if args.inject_finalization_cleanup_failure else cleanup_execution(*values)
             cleanup_outcome=finalize_native_outcome(args.root,outcome,launch_fd,darwin_protected,held,live_child,primary_persisted,outcome.get("recoveryObservation"),cleanup=cleanup)
             if cleanup_outcome["outcome"]!="succeeded": finalization_failure="cleanup_failed"
+        except CleanupReceiptPersistenceFailure as error:
+            finalization_failure="cleanup_receipt_persistence_failed"
+            # Retain true OS cleanup state separately from its missing durability.
+            # The already-persisted primary is never rewritten by this failure.
+            cleanup_receipt_failure={key:error.cleanup_outcome[key] for key in ("outcome","closedReason","recoveryRetained")}
         except Exception as error:
             finalization_failure="injected_cleanup_failure" if args.inject_finalization_cleanup_failure else "finalization_failure"
             outcome["finalizationFailure"]=finalization_failure
@@ -620,7 +630,8 @@ def main():
                 # This is the owner's outcome only. Core belongs to the durable
                 # observer; no owner declaration can attest its shutdown.
                 handoff=locals().get("runtime_handoff",{})
-                write_json(os.path.join(args.root,"external-owner-finalization.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"runtimePID":handoff.get("_runtimePID"),"runtimeBirth":handoff.get("_runtimeBirth"),"sourceCommit":args.source_commit,"binarySHA256":binary_sha256,"finalizationFailure":finalization_failure,"liveTuiChildRetained":live_child,"primaryOutcome":outcome["outcome"]})
+                cleanup_receipt_evidence={"cleanupOutcome":cleanup_receipt_failure} if cleanup_receipt_failure is not None else {}
+                write_json(os.path.join(args.root,"external-owner-finalization.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"runtimePID":handoff.get("_runtimePID"),"runtimeBirth":handoff.get("_runtimeBirth"),"sourceCommit":args.source_commit,"binarySHA256":binary_sha256,"finalizationFailure":finalization_failure,"liveTuiChildRetained":live_child,"primaryOutcome":outcome["outcome"],**cleanup_receipt_evidence})
             # This is deliberately nested: a persistence or cleanup failure must
             # never strand the real owner child once no TUI child remains live.
             if runtime is not None and not live_child:
@@ -630,5 +641,5 @@ def main():
                 if args.invalid_ready_receipt:
                     write_json(os.path.join(args.root,"owner-preflight-cleanup.json"),{"outcome":"failed","preflight":"runtime_receipt_invalid","ownerDrivenRuntimeShutdown":shutdown_requested,"runtimeChildExit":runtime_exit,"retainedOwnedRuntime":False,"actualExitObserved":True})
                 if finalization_failure is not None:
-                    write_json(os.path.join(args.root,"owner-finalization-failure-proof.json"),{"outcome":"failed","finalizationFailure":finalization_failure,"ownerDrivenRuntimeShutdown":shutdown_requested,"runtimeChildExit":runtime_exit,"retainedOwnedRuntime":False,"runtimeChildStillLiveAfterClose":runtime.poll() is None,"actualExitObserved":True})
+                    write_json(os.path.join(args.root,"owner-finalization-failure-proof.json"),{"outcome":"failed","finalizationFailure":finalization_failure,"ownerDrivenRuntimeShutdown":shutdown_requested,"runtimeChildExit":runtime_exit,"retainedOwnedRuntime":False,"runtimeChildStillLiveAfterClose":runtime.poll() is None,"actualExitObserved":True,**({"cleanupOutcome":cleanup_receipt_failure} if cleanup_receipt_failure is not None else {})})
 if __name__=="__main__": main()

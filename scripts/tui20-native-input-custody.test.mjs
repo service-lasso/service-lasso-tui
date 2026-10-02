@@ -113,6 +113,11 @@ test("actual workflow custody producer preserves literals and consumes every rea
   assert.ok(envStart >= 0 && actualCustodyEnd > envStart, "actual native producer boundary moved; update the guard explicitly");
   const producer = workflow.slice(envStart, actualCustodyEnd).split("\n").map(line => line.startsWith("          ") ? line.slice(10) : line).join("\n");
   assert.match(producer, /bash -euo pipefail <<'TUI20_PHASE'/);
+  // Consume the owned ready FIFO directly; do not replace the Bash script's
+  // fd0 during a builtin. The complete actual runtime producer and adverse
+  // child/parent closure assertions below remain the mandatory evidence.
+  assert.equal(producer.split("while ! read -r -t 1 -u 9 writer_ready; do").length, 2);
+  assert.ok(!producer.includes("read -r -t 1 writer_ready <&9"));
   // Select exactly the existing PATH parser, then invoke that explicit image
   // at both caller and env-i seams. This binds evidence; it changes no parser.
   let parser;

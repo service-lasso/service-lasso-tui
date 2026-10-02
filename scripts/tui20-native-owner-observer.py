@@ -120,7 +120,13 @@ def main():
                 if not isinstance(live,dict): live=None; raise RuntimeError("owner live custody invalid")
             with open(os.path.join(args.root,"external-owner-finalization.json"),encoding="utf-8") as stream: finalization=json.load(stream)
             expected={"externalOwnerPID":owner.pid,"ownerBirth":owner_birth,"runtimePID":runtime.pid,"runtimeBirth":runtime_birth,"sourceCommit":args.source_commit,"binarySHA256":binary_sha256}
-            if set(finalization)!=set(expected)|{"finalizationFailure","liveTuiChildRetained","primaryOutcome"} or any(finalization.get(key)!=value for key,value in expected.items()) or finalization["liveTuiChildRetained"] is not False or finalization["finalizationFailure"] not in (None,"injected_cleanup_failure","finalization_failure","cleanup_failed") or finalization["primaryOutcome"] not in ("succeeded","failed","unresolved"): raise RuntimeError("owner finalization custody invalid")
+            receipt_failed=finalization.get("finalizationFailure")=="cleanup_receipt_persistence_failed"
+            receipt_fields={"cleanupOutcome"} if receipt_failed else set()
+            if set(finalization)!=set(expected)|{"finalizationFailure","liveTuiChildRetained","primaryOutcome"}|receipt_fields or any(finalization.get(key)!=value for key,value in expected.items()) or finalization["liveTuiChildRetained"] is not False or finalization["finalizationFailure"] not in (None,"injected_cleanup_failure","finalization_failure","cleanup_failed","cleanup_receipt_persistence_failed") or finalization["primaryOutcome"] not in ("succeeded","failed","unresolved"): raise RuntimeError("owner finalization custody invalid")
+            if receipt_failed:
+                cleanup=finalization["cleanupOutcome"]
+                reasons={"succeeded":("released_and_removed","sealed_descriptor_closed","no_execution_object"),"failed":("live_child_unresolved","leaf_release_failed","leaf_release_readback_failed","parent_release_failed","parent_release_readback_failed","protected_artifact_removal_failed","descriptor_close_failed")}
+                if not isinstance(cleanup,dict) or set(cleanup)!={"outcome","closedReason","recoveryRetained"} or cleanup.get("outcome") not in reasons or cleanup.get("closedReason") not in reasons[cleanup["outcome"]] or type(cleanup.get("recoveryRetained")) is not bool or (cleanup["outcome"]=="succeeded" and cleanup["recoveryRetained"]): raise RuntimeError("owner cleanup persistence failure state invalid")
         except Exception:
             custody_failure="owner_finalization_receipt_invalid_or_missing"
         if not owner_birth_absent: custody_failure="owner_birth_absence_unproven"
@@ -152,6 +158,7 @@ def main():
             raise SystemExit(1)
         if finalization["finalizationFailure"] is not None:
             proof={"outcome":"failed","finalizationFailure":finalization["finalizationFailure"],"ownerDrivenRuntimeShutdown":result["shutdownRequested"],"runtimeChildExit":result["runtimeChildExit"],"retainedOwnedRuntime":False,"runtimeChildStillLiveAfterClose":result["runtimeChildStillLiveAfterClose"],"actualExitObserved":result["actualExitObserved"],"observerPID":os.getpid(),"runtimePID":runtime.pid,"runtimeBirth":runtime_birth,"ownerPID":owner.pid,"ownerBirth":owner_birth,"sourceCommit":args.source_commit,"binarySHA256":binary_sha256}
+            if finalization["finalizationFailure"]=="cleanup_receipt_persistence_failed": proof["cleanupOutcome"]=finalization["cleanupOutcome"]
             write_json(os.path.join(args.root,"owner-finalization-failure-proof.json"),proof)
             write_private(args.root,"closed",{**private_tuple,"reason":"owner_finalization_failed",**result})
             write_public(args.root,args.source_commit,binary_sha256,"failed",False,True)

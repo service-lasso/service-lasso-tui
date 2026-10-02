@@ -303,6 +303,42 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
                     self.assertEqual((candidate.stat().st_dev,candidate.stat().st_ino),inode)
                     self.assertFalse(os.path.lexists(pathlib.Path(root,".tui20-held-original")))
                     self.assertFalse(os.path.lexists(pathlib.Path(root,".tui20-untrusted-replacement")))
+                staged=pathlib.Path(root,".tui20-untrusted-replacement.link")
+                actual_replace=os.replace
+                for substitute in (False,True):
+                    reached=[]
+                    foreign_staged=pathlib.Path(root,"foreign-staged-link")
+                    if substitute: os.symlink("foreign target must remain",foreign_staged)
+                    def fail_staged_rename(source,target):
+                        if str(source)==str(staged):
+                            self.assertTrue(staged.is_symlink(),"failure must occur after actual staged symlink creation")
+                            reached.append(os.lstat(staged).st_ino)
+                            if substitute: actual_replace(foreign_staged,staged)
+                            raise OSError("controlled staged rename failure")
+                        return actual_replace(source,target)
+                    with patch.dict(harness["bound_replacement_probe"].__globals__,{"Terminal":ObservedTerminal}), patch.object(os,"replace",fail_staged_rename):
+                        with self.assertRaisesRegex(OSError,"controlled staged rename failure"):
+                            harness["bound_replacement_probe"](sealed,held,str(candidate),inode,identity,"missing",{})
+                    self.assertEqual(len(reached),1)
+                    self.assertEqual(candidate.read_bytes(),original)
+                    self.assertEqual((candidate.stat().st_dev,candidate.stat().st_ino),inode)
+                    self.assertFalse(os.path.lexists(pathlib.Path(root,".tui20-held-original")))
+                    self.assertFalse(os.path.lexists(pathlib.Path(root,".tui20-untrusted-replacement")))
+                    if substitute:
+                        self.assertTrue(staged.is_symlink())
+                        self.assertEqual(os.readlink(staged),"foreign target must remain")
+                        with self.assertRaisesRegex(RuntimeError,"probe paths already exist"):
+                            harness["bound_replacement_probe"](sealed,held,str(candidate),inode,identity,"missing",{})
+                        # This is the test-created foreign fixture, never probe cleanup.
+                        staged.unlink()
+                    else:
+                        self.assertFalse(os.path.lexists(staged))
+                        with patch.dict(harness["bound_replacement_probe"].__globals__,{"Terminal":ObservedTerminal}):
+                            repeated=harness["bound_replacement_probe"](sealed,held,str(candidate),inode,identity,"missing",{})
+                        self.assertEqual(len(repeated),3)
+                        self.assertEqual(candidate.read_bytes(),original)
+                        self.assertFalse(os.path.lexists(staged))
+                        self.assertFalse(os.path.lexists(pathlib.Path(root,".tui20-held-original")))
                 foreign=pathlib.Path(root,"foreign-alias")
                 foreign.write_bytes(b"unowned replacement alias must remain")
                 class ForeignAliasTerminal(ObservedTerminal):

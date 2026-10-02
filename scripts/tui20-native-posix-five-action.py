@@ -304,13 +304,17 @@ def bound_replacement_probe(launch_fd,held,executable,inode_identity,digest_iden
     directory=os.path.dirname(executable); original=os.path.join(directory,".tui20-held-original"); replacement=os.path.join(directory,".tui20-untrusted-replacement")
     if os.path.lexists(original) or os.path.lexists(replacement) or os.path.lexists(replacement+".link"): raise RuntimeError("bound-launch probe paths already exist")
     os.link(executable,original)
-    results=[]
+    results=[]; staged=replacement+".link"; staged_identity=None
     try:
         for name,reparse in (("rename",False),("reparse",True)):
             with open(replacement,"wb") as stream: stream.write(b"untrusted replacement must never execute\n")
             os.chmod(replacement,0o700)
             if reparse:
-                staged=replacement+".link"; os.symlink(replacement,staged); os.replace(staged,executable)
+                os.symlink(replacement,staged)
+                staged_stat=os.lstat(staged)
+                if not stat.S_ISLNK(staged_stat.st_mode): raise RuntimeError("bound-launch staged link type changed")
+                staged_identity=(staged_stat.st_dev,staged_stat.st_ino)
+                os.replace(staged,executable)
             else: os.replace(replacement,executable)
             named=os.lstat(executable)
             held_stat=os.fstat(held)
@@ -331,6 +335,12 @@ def bound_replacement_probe(launch_fd,held,executable,inode_identity,digest_iden
             os.close(modifier)
         if sha256_fd(held)!=digest_identity["binarySHA256"]: raise RuntimeError("source candidate mutation restoration failed")
     finally:
+        if staged_identity is not None and os.path.lexists(staged):
+            staged_stat=os.lstat(staged)
+            if stat.S_ISLNK(staged_stat.st_mode) and (staged_stat.st_dev,staged_stat.st_ino)==staged_identity:
+                os.unlink(staged)
+            # A substituted foreign object is retained. Its presence makes
+            # the next preflight fail closed, without replacing this failure.
         if os.path.lexists(replacement): os.unlink(replacement)
         if os.path.lexists(original):
             alias=os.lstat(original)

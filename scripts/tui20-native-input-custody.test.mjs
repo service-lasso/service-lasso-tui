@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { access, lstat, mkdtemp, mkdir, open, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -14,8 +15,26 @@ const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
 test("actual fresh native build rejects persisted flags and ambient workspace influence", async t => {
   assert.ok(["linux", "darwin"].includes(process.platform));
   const root = await mkdtemp(path.join(await realpath(tmpdir()), "tui20-native-go-admission-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
   const checkout = path.join(root, "checkout"), home = path.join(root, "home"), phase = path.join(root, "phase");
+  let completed = false;
+  t.after(async () => {
+    // Failed fixtures remain private evidence. Only the cache created by this
+    // successful real build under this owned HOME is eligible for cleanup.
+    if (!completed) return;
+    const moduleCache = path.join(home, "go/pkg/mod");
+    for (const directory of [root, home, path.join(home, "go"), path.join(home, "go/pkg"), moduleCache]) {
+      const entry = await lstat(directory);
+      assert.ok(entry.isDirectory() && !entry.isSymbolicLink(), "owned module-cache ancestry must remain directories");
+      assert.equal(await realpath(directory), directory);
+    }
+    const cleanupEnvironment = { ...ambient, GOENV: "off", GOMODCACHE: moduleCache };
+    assert.equal(run("go", ["env", "GOMODCACHE"], checkout, cleanupEnvironment), moduleCache);
+    // Go removes its read-only module files itself; no shared-cache sweep or
+    // permission change is made. Any failure retains the root and fails the hook.
+    run("go", ["clean", "-modcache"], checkout, cleanupEnvironment);
+    await assert.rejects(() => lstat(moduleCache), { code: "ENOENT" });
+    await rm(root, { recursive: true, force: true });
+  });
   await Promise.all([mkdir(home), mkdir(phase)]);
   const repository = path.resolve(scripts, "..");
   const commit = run("git", ["rev-parse", "HEAD"], repository);
@@ -58,6 +77,7 @@ test("actual fresh native build rejects persisted flags and ambient workspace in
   assert.equal(observed.status, 0, observed.stderr);
   assert.match(observed.stdout, /"goflags":"","gowork":"off"/);
   assert.ok((await stat(path.join(phase, "service-lasso-tui"))).size > 0, "actual admitted native build must run");
+  completed = true;
 });
 function run(program, args, cwd, env = process.env) {
   const result = spawnSync(program, args, { cwd, env, encoding: "utf8" });
@@ -69,7 +89,8 @@ function run(program, args, cwd, env = process.env) {
 test("actual workflow custody producer preserves literals and consumes every real tab tool record with genuine Git trees", async t => {
   assert.ok(["linux", "darwin"].includes(process.platform), "this actual POSIX producer guard must run on Linux or macOS");
   const root = await mkdtemp(path.join(await realpath(tmpdir()), "tui20-custody-boundary-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  let completed = false;
+  t.after(() => completed ? rm(root, { recursive: true, force: true }) : undefined);
   const source = path.join(root, "source");
   // Spaces and a dollar expression are pathname bytes, never shell input.
   const phase = path.join(root, "phase $literal space");
@@ -92,10 +113,58 @@ test("actual workflow custody producer preserves literals and consumes every rea
   assert.ok(envStart >= 0 && actualCustodyEnd > envStart, "actual native producer boundary moved; update the guard explicitly");
   const producer = workflow.slice(envStart, actualCustodyEnd).split("\n").map(line => line.startsWith("          ") ? line.slice(10) : line).join("\n");
   assert.match(producer, /bash -euo pipefail <<'TUI20_PHASE'/);
+  // Select exactly the existing PATH parser, then invoke that explicit image
+  // at both caller and env-i seams. This binds evidence; it changes no parser.
+  let parser;
+  for (const entry of process.env.PATH.split(path.delimiter)) {
+    const candidate = path.resolve(source, entry, "bash");
+    try { await access(candidate, constants.X_OK); if ((await stat(candidate)).isFile()) { parser = await realpath(candidate); break; } }
+    catch (error) { if (!["ENOENT", "ENOTDIR", "EACCES"].includes(error.code)) throw error; }
+  }
+  assert.ok(parser, "actual PATH-selected Bash must be available");
+  const parserBytes = await readFile(parser);
+  const parserVersion = run(parser, ["--version"], source);
+  const diagnostics = path.join(root, "private-parser-diagnostics");
+  await mkdir(diagnostics, { mode: 0o700 });
+  const persist = async (name, bytes) => {
+    const file = await open(path.join(diagnostics, name), "wx", 0o600);
+    try { await file.writeFile(bytes); await file.sync(); } finally { await file.close(); }
+    const directory = await open(diagnostics, "r");
+    try { await directory.sync(); } finally { await directory.close(); }
+  };
+  let invocation = 0;
+  const invokeProducer = async (selectedPhase, selectedProducer, timeout) => {
+    const name = String(++invocation);
+    const explicitProducer = selectedProducer.replace(" bash -euo pipefail <<'TUI20_PHASE'", ` ${quote(parser)} -euo pipefail <<'TUI20_PHASE'`);
+    assert.notEqual(explicitProducer, selectedProducer, "actual inner parser seam must be explicitly bound");
+    const callerSource = Buffer.from(`phase=${quote(selectedPhase)}\n${explicitProducer}TUI20_PHASE\n`);
+    const fedSource = Buffer.from(selectedProducer.slice(selectedProducer.indexOf("\n") + 1));
+    assert.deepEqual(Buffer.from(explicitProducer.slice(explicitProducer.indexOf("\n") + 1)), fedSource, "parser binding must not alter any byte fed to the inner producer");
+    const environment = { ...process.env, CI_SOURCE_SHA: commit, CORE_COMMIT: commit };
+    const freshEnvironment = { PATH: environment.PATH, HOME: environment.HOME, LANG: environment.LANG || "C.UTF-8", LC_ALL: environment.LC_ALL || "C.UTF-8", GOFLAGS: "", GOWORK: "off", CI_SOURCE_SHA: commit, CORE_COMMIT: commit, PHASE: selectedPhase, SERVICE_LASSO_WORKSPACE_ROOT: path.join(selectedPhase, "workspace"), SERVICE_LASSO_INSTANCE_REGISTRY_PATH: path.join(selectedPhase, "registry/instances.json"), SERVICE_LASSO_HOST_PORT_REGISTRY_PATH: path.join(selectedPhase, "registry/ports.json") };
+    const args = ["-euo", "pipefail", "-c", callerSource.toString("utf8")];
+    // Private exact bytes/environment are fsynced BEFORE parsing can fail.
+    // None of these files is a public receipt or an uploaded artifact.
+    await persist(`${name}-caller.source`, callerSource);
+    await persist(`${name}-producer.source`, Buffer.from(selectedProducer));
+    await persist(`${name}-fed.source`, fedSource);
+    await persist(`${name}-binding.json`, JSON.stringify({ classification: "owner-private-parser-diagnostic", platform: process.platform, parser: { path: parser, sha256: digest(parserBytes), size: parserBytes.length, version: parserVersion }, caller: { path: process.execPath, version: process.version, sha256: digest(await readFile(process.execPath)), sourceSHA256: digest(await readFile(fileURLToPath(import.meta.url))) }, workflowSHA256: digest(await readFile(path.join(scripts, "../.github/workflows/ci.yml"))), extraction: "LF normalization; env-i through pre-Core git init; remove ten-space YAML prefix; append closing delimiter", cwd: source, argv: args, innerArgv: ["-euo", "pipefail"], environment, freshEnvironment, callerSourceSHA256: digest(callerSource), fedSourceSHA256: digest(fedSource), fedSourceSize: fedSource.length }));
+    const result = spawnSync(parser, args, { cwd: source, env: environment, encoding: "utf8", ...(timeout === undefined ? {} : { timeout }) });
+    result.diagnosticFailures = [];
+    for (const [suffix, bytes] of [["stdout.private", result.stdout || ""], ["stderr.private", result.stderr || ""], ["result.json", JSON.stringify({ status: result.status, signal: result.signal, errorCode: result.error?.code || null })]]) {
+      try { await persist(`${name}-${suffix}`, bytes); }
+      catch (error) { result.diagnosticFailures.push({ sink: suffix, code: error.code || "unknown" }); }
+    }
+    t.diagnostic(`private parser binding ${name}: ${process.platform}, parser SHA256 ${digest(parserBytes)}, fed SHA256 ${digest(fedSource)}; primary producer result retained`);
+    return result;
+  };
   // Execute the complete actual pre-fetch producer, including fresh env,
   // real tool printf, Python parser, and both fsync custody writes. Only the
   // subsequent external Core acquisition/build is outside this unit boundary.
-  run("bash", ["-euo", "pipefail", "-c", `phase=${quote(phase)}\n${producer}TUI20_PHASE\n`], source, { ...process.env, CI_SOURCE_SHA: commit, CORE_COMMIT: commit });
+  const actualProducer = await invokeProducer(phase, producer);
+  assert.equal(actualProducer.error, undefined);
+  assert.equal(actualProducer.status, 0, actualProducer.stderr);
+  assert.deepEqual(actualProducer.diagnosticFailures, [], "independent diagnostic persistence must also succeed");
   const privateInput = JSON.parse(await readFile(path.join(phase, "private-input-custody.json"), "utf8"));
   const input = JSON.parse(await readFile(path.join(phase, "input-custody.json"), "utf8"));
   const { producer: parent, writer, writerObservedByProducer } = privateInput.process;
@@ -110,6 +179,9 @@ test("actual workflow custody producer preserves literals and consumes every rea
   }
   assert.equal(await realpath(writer.image), await realpath(privateInput.tools.python3.path));
   assert.equal(await realpath(parent.image), await realpath(privateInput.tools.bash.path));
+  assert.equal(await realpath(parent.image), parser, "actual observed producer image must match the explicitly bound parser");
+  assert.equal(privateInput.tools.bash.sha256, digest(parserBytes));
+  assert.equal(digest(await readFile(parser)), digest(parserBytes), "bound parser bytes must still match after invocation");
   assert.notEqual(writer.image, parent.image, "Python identity cannot reuse Bash executable");
   // Extracted actual producer, with one explicit failure inserted at the
   // specified boundary. No fixture identity or successful receipt is supplied.
@@ -118,10 +190,11 @@ test("actual workflow custody producer preserves literals and consumes every rea
     ["bash-failure-before-observation", producer.replace('test "$writer_ready" = "$writer_pid"', 'test "$writer_ready" = "$writer_pid"\nfalse # controlled parent observation failure')]
   ]) {
     const failurePhase=path.join(root,name);
-    const failed=spawnSync("bash",["-euo","pipefail","-c",`phase=${quote(failurePhase)}\n${failedProducer}TUI20_PHASE\n`],{cwd:source,env:{...process.env,CI_SOURCE_SHA:commit,CORE_COMMIT:commit},encoding:"utf8",timeout:10000});
+    const failed=await invokeProducer(failurePhase,failedProducer,10000);
     assert.equal(failed.error,undefined,"actual rendezvous must finish through owned failure closure, not timeout");
     assert.equal(failed.signal,null);
     assert.notEqual(failed.status,0,name);
+    assert.deepEqual(failed.diagnosticFailures, [], name);
     const closure=JSON.parse(await readFile(path.join(failurePhase,"private-writer-failure.json"),"utf8"));
     assert.equal(closure.actualWaitObserved,true,name);
     assert.notEqual(closure.writerExit,0,name);
@@ -148,9 +221,10 @@ test("actual workflow custody producer preserves literals and consumes every rea
   await mkdir(actualParent);
   await symlink(actualParent, linkedParent);
   const rejectedPhase = path.join(linkedParent, "phase");
-  const rejected = spawnSync("bash", ["-euo", "pipefail", "-c", `phase=${quote(rejectedPhase)}\n${producer}TUI20_PHASE\n`], { cwd: source, env: { ...process.env, CI_SOURCE_SHA: commit, CORE_COMMIT: commit }, encoding: "utf8" });
+  const rejected = await invokeProducer(rejectedPhase, producer);
   assert.equal(rejected.error, undefined);
   assert.notEqual(rejected.status, 0, "actual producer must reject linked parents");
+  assert.deepEqual(rejected.diagnosticFailures, []);
   await assert.rejects(() => readFile(path.join(rejectedPhase, "input-custody.json")), { code: "ENOENT" });
   const core = path.join(phase, "core-source");
   await writeFile(path.join(core, "fixture.txt"), await readFile(path.join(source, "fixture.txt")));
@@ -173,4 +247,5 @@ test("actual workflow custody producer preserves literals and consumes every rea
   };
   for (const [name, value] of Object.entries(records)) await writeFile(path.join(phase, name), JSON.stringify(value));
   run(process.execPath, [path.join(scripts, "verify-tui20-native-public-receipt.mjs"), phase], source);
+  completed = true;
 });

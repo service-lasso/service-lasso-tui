@@ -109,3 +109,18 @@ All five form one SOURCE-ONLY bundle. Prior6+5+2+3 assertions, provider policy,
 private held-byte gates, Core authority, TLS and secrecy stay mandatory.
 All new regressions are UNEXECUTED until DIFFERENT fresh ENTIRE SOURCE GO plus
 NEW complete-input ROOT admission. No native or full-delivery claim is made.
+## Issue20 PR25 current1102 two repairs and parser evidence preparation
+
+SPEC001 TUI-ACCEPTANCE-002/003 and TUI-DISTRIBUTION-002 require identity-bound
+cleanup of an actual staged reparse link after failed rename, with actual
+post-symlink failure, repeat restoration and foreign-substitution regressions;
+and bounded cleanup of the real build's positively owned private HOME module
+cache without changing persisted GOFLAGS or foreign GOWORK assertions.
+The mandatory actual Darwin producer failure remains UNRESOLVED. Prepare
+private caller/parser path/version/hash, exact source bytes, argv and environment
+binding before parsing through the actual producer test seam. Preserve primary
+syntax diagnostics, real tuple/tool/Git/FIFO assertions and mandatory Darwin
+execution. This is diagnostic preparation, not a causal source repair or pass.
+Entire scope remains SOURCE-ONLY and regressions UNEXECUTED until DIFFERENT
+fresh ENTIRE SOURCE GO and NEW complete-input ROOT admission. Preserve all
+prior cumulative protections, Issue18 SPEC002 AC1..7 and every full-delivery gate.

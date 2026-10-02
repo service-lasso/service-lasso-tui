@@ -112,7 +112,12 @@ receipt. Before upload, the workflow validates every selected file against its
 exact schema and rejects host paths, process identifiers, birth data, private
 custody labels, images, tool records, and literal command data. The binary
 receipt records only its digest and byte size; it never uses a pathname-bearing
-checksum format. All GitHub Actions used by CI and candidate publication are
+checksum format. Each phase directory contains exactly one complete five-record
+set; foreign public records and partial or duplicate sibling sets fail closed.
+Within that set, the input-custody, build-output, and public-projection TUI
+commits must agree; input-custody and Core binding commits must agree; and the
+binary digest and byte size must agree with build-output and public-projection.
+All GitHub Actions used by CI and candidate publication are
 committed SHA references, with their human version labels retained only in
 comments.
 Each native run also mutates the

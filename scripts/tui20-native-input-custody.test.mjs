@@ -10,6 +10,55 @@ import { fileURLToPath } from "node:url";
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
+
+test("actual fresh native build rejects persisted flags and ambient workspace influence", async t => {
+  assert.ok(["linux", "darwin"].includes(process.platform));
+  const root = await mkdtemp(path.join(await realpath(tmpdir()), "tui20-native-go-admission-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const checkout = path.join(root, "checkout"), home = path.join(root, "home"), phase = path.join(root, "phase");
+  await Promise.all([mkdir(home), mkdir(phase)]);
+  const repository = path.resolve(scripts, "..");
+  const commit = run("git", ["rev-parse", "HEAD"], repository);
+  run("git", ["init", "--quiet", checkout], root);
+  run("git", ["-C", checkout, "fetch", "--no-tags", "--depth=1", repository, commit], root);
+  run("git", ["-C", checkout, "checkout", "--detach", "--quiet", "FETCH_HEAD"], root);
+  const ambient = { ...process.env, HOME: home, GOFLAGS: "", GOWORK: "off" };
+  delete ambient.GOENV; delete ambient.XDG_CONFIG_HOME;
+  const config = run("go", ["env", "GOENV"], checkout, ambient);
+  await mkdir(path.dirname(config), { recursive: true });
+  const overlay = path.join(root, "overlay.json"), foreign = path.join(root, "foreign");
+  await mkdir(foreign);
+  await writeFile(path.join(foreign, "go.mod"), "module github.com/service-lasso/service-lasso-tui\n\ngo 1.26.0\n");
+  await writeFile(path.join(root, "go.work"), "go 1.26.0\nuse ./foreign\n");
+  await writeFile(overlay, JSON.stringify({ Replace: { [path.join(checkout, "cmd/service-lasso-tui/main.go")]: path.join(root, "missing-foreign.go") } }));
+  await writeFile(config, `GOFLAGS=-overlay=${overlay}\n`);
+  // Confirm these real ambient inputs would be active without the phase's
+  // explicit environment. No synthetic effective-Go receipt is supplied.
+  const uncontrolled = { ...process.env, HOME: home }; delete uncontrolled.GOFLAGS; delete uncontrolled.GOWORK; delete uncontrolled.GOENV; delete uncontrolled.XDG_CONFIG_HOME;
+  assert.equal(run("go", ["env", "GOFLAGS"], checkout, uncontrolled), `-overlay=${overlay}`);
+  assert.equal(run("go", ["env", "GOWORK"], checkout, uncontrolled), path.join(root, "go.work"));
+  const workflow = (await readFile(path.join(scripts, "../.github/workflows/ci.yml"), "utf8")).replaceAll("\r\n", "\n");
+  const envStart = workflow.indexOf('            env -i PATH="$PATH"');
+  const envEnd = workflow.indexOf("\n", envStart);
+  const buildStart = workflow.indexOf('          binary="$phase/service-lasso-tui"', envEnd);
+  const buildEnd = workflow.indexOf('          TUI20_BINARY_DIGEST=', buildStart);
+  assert.ok(envStart >= 0 && buildStart > envEnd && buildEnd > buildStart);
+  const freshEnvironment = workflow.slice(envStart, envEnd).trimStart();
+  const actualBuild = workflow.slice(buildStart, buildEnd).split("\n").map(line => line.startsWith("          ") ? line.slice(10) : line).join("\n");
+  assert.ok(actualBuild.indexOf("node scripts/assert-go-source-provenance.mjs") < actualBuild.indexOf("go build "));
+  const invoke = () => spawnSync("bash", ["-euo", "pipefail", "-c", `phase=${quote(phase)}\n${freshEnvironment}\nphase="$PHASE"\n${actualBuild}TUI20_PHASE\n`], { cwd: checkout, env: { ...uncontrolled, CI_SOURCE_SHA: commit, CORE_COMMIT: commit }, encoding: "utf8" });
+  const rejected = invoke();
+  assert.equal(rejected.error, undefined);
+  assert.notEqual(rejected.status, 0, "persisted Go flags must deny actual native build");
+  assert.match(rejected.stderr, /effective GOFLAGS are not empty/);
+  await assert.rejects(() => stat(path.join(phase, "service-lasso-tui")), { code: "ENOENT" });
+  await writeFile(config, "");
+  const observed = invoke();
+  assert.equal(observed.error, undefined);
+  assert.equal(observed.status, 0, observed.stderr);
+  assert.match(observed.stdout, /"goflags":"","gowork":"off"/);
+  assert.ok((await stat(path.join(phase, "service-lasso-tui"))).size > 0, "actual admitted native build must run");
+});
 function run(program, args, cwd, env = process.env) {
   const result = spawnSync(program, args, { cwd, env, encoding: "utf8" });
   assert.equal(result.error, undefined);
@@ -84,7 +133,7 @@ test("actual workflow custody producer preserves literals and consumes every rea
   assert.equal(input.source.tuiDirtyHash, digest(Buffer.alloc(0)));
   assert.equal(input.source.tuiInventoryHash, digest(Buffer.from(`${digest(await readFile(path.join(source, "fixture.txt")))}  fixture.txt\n`)));
   assert.deepEqual(privateInput.ownedPaths, { workspaceRoot: path.join(phase, "workspace"), instanceRegistryPath: path.join(phase, "registry/instances.json"), hostPortRegistryPath: path.join(phase, "registry/ports.json"), allParentsNonLink: true, registriesInitiallyAbsent: true });
-  assert.deepEqual(privateInput.literalCommands, ["mkdir -p", "git rev-parse HEAD^{tree}", "git status --porcelain", "git ls-files -z", "go env GOTOOLDIR", "git -C $phase/core-source init -q", "git -C $phase/core-source remote add origin", "git -C $phase/core-source fetch --no-tags origin develop", "git -C $phase/core-source merge-base --is-ancestor $CORE_COMMIT origin/develop", "git -C $phase/core-source fetch --depth=1 origin $CORE_COMMIT", "git -C $phase/core-source checkout --detach -q FETCH_HEAD", "npm ci", "npm run build", "go build -mod=readonly -buildvcs=true -trimpath"]);
+  assert.deepEqual(privateInput.literalCommands, ["mkdir -p", "git rev-parse HEAD^{tree}", "git status --porcelain", "git ls-files -z", "go env GOTOOLDIR", "git -C $phase/core-source init -q", "git -C $phase/core-source remote add origin", "git -C $phase/core-source fetch --no-tags origin develop", "git -C $phase/core-source merge-base --is-ancestor $CORE_COMMIT origin/develop", "git -C $phase/core-source fetch --depth=1 origin $CORE_COMMIT", "git -C $phase/core-source checkout --detach -q FETCH_HEAD", "npm ci", "npm run build", "node scripts/assert-go-source-provenance.mjs", "go build -mod=readonly -buildvcs=true -trimpath"]);
   const expectedTools = ["bash", "dirname", "mkdir", "env", "git", "sha256sum", "cut", "xargs", "awk", "wc", "uname", "ps", "readlink", "node", "npm", "go", "python3", "go-compile"].sort();
   assert.deepEqual(Object.keys(privateInput.tools).sort(), expectedTools);
   assert.deepEqual(input.verification.requiredToolsVerified, expectedTools);

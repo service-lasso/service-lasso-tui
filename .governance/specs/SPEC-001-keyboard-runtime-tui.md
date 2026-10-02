@@ -2,6 +2,29 @@
 
 Status: active
 
+## Issue20 final042 source repair contract
+
+TUI-ACCEPTANCE-001/002/003 and TUI-DISTRIBUTION-002 jointly require all six
+final042 findings to be repaired before new execution admission:
+F1: actual fresh native phase retains explicit empty GOFLAGS and GOWORK=off
+and admits effective Go environment/module immediately before native build.
+F2: register a fully initialized terminal immediately after fork, before birth
+observation; unknown birth remains owned/unproven until actual child wait.
+F3: actual Windows reconnect caller supplies the pinned source SHA and digest
+of the extracted executable; the Python held identity spans direct constructor
+and ConPTY without reacquisition. F4: authentic reconnect success requires the
+closed candidateIdentity and matching directConstructor, bound to caller input;
+identity-free, foreign and unexpected fields deny success. F5: native writer
+accepts the closed direct-constructor stage, and Node attempts independent exit
+persistence even when helper persistence fails, retaining primary and both sink
+failures. F6: q success in both Windows read helpers requires actual wait with
+observed zero; nonzero/signaled/unknown are closed failure categories.
+Actual phase/post-fork/entrypoint/producer-consumer/native-writer/q-outcome
+regressions are required. All remain UNEXECUTED pending DIFFERENT fresh ENTIRE
+SOURCE GO and NEW complete-input ROOT admission. Preserve all earlier 5+2+3
+repairs and Issue18 SPEC002 publisher controls; no native/operator/Core1553,
+published-byte, release or full-delivery acceptance is implied.
+
 ## TUI-CONNECTION
 
 The client validates an HTTP(S) runtime URL, retrieves `/api/health`, and clearly
@@ -300,8 +323,10 @@ handle live, and creates that root and both receipt files relative to held
 directory handles. It rejects reparse points during construction, applies an
 owner-only DACL, and keeps the owner non-delete- and non-write-shareable while
 the receipt is live. Native fixtures must prove replacement of the attempt
-root, parent, and grandparent is refused during acquisition. Node asks that writer to replace
-the helper record with its bounded helper-exit state before cleanup. Every
+root, parent, and grandparent is refused during acquisition. Node asks that
+writer to persist the helper result and independently persist its bounded
+helper-exit state in the separate Node sink before cleanup. Both attempts are
+required even if the helper sink rejects. Every
 receipt enum and response schema is closed; a receipt sink failure preserves
 the original probe failure. Until a handle-relative owned deletion operation is
 implemented, Windows native attempt roots are retained as evidence rather than

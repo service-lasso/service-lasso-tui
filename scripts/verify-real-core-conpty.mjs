@@ -82,10 +82,14 @@ async function reserveUnavailableLoopbackURL() {
   };
 }
 
-function parseProbe(stdout, mode) {
+export function parseProbe(stdout, mode) {
   try {
     const result = JSON.parse(stdout.trim());
-    if (result?.ok === true && result.mode === mode && result.exit === "q") {
+    if (result?.ok === true && result.mode === mode && result.exit === "q" &&
+      Object.keys(result).sort().join(",") === "exit,mode,navigation,ok,receipt" &&
+      result.navigation === (mode === "connected" ? "help" : "not_applicable") &&
+      Object.keys(result.receipt ?? {}).sort().join(",") === "closedReason,outcome,stage" &&
+      result.receipt.stage === "exit" && result.receipt.outcome === "normal" && result.receipt.closedReason === "completed") {
       return result;
     }
   } catch {

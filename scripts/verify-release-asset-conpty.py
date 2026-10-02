@@ -146,6 +146,18 @@ def terminal_close_reason(process):
         return "terminal_exited_nonzero"
     return "terminal_unknown"
 
+def observed_q_exit(process):
+    # Called only after bounded non-live observation. wait() is the actual
+    # owned terminal wait; EOF or isalive(False) alone never proves normal q.
+    try:
+        waited = process.wait()
+    except Exception:
+        return "terminal_unknown"
+    reason = terminal_close_reason(process)
+    if reason == "terminal_exited_zero" and (not isinstance(waited, int) or isinstance(waited, bool) or waited != 0):
+        return "terminal_unknown"
+    return reason or "terminal_unknown"
+
 def startup_boundary_from_terminal_text(text, nonce, candidate_identity):
     # The marker is emitted only by the TUI's explicit probe mode. Its fresh
     # nonce binds it to this owned attempt; no terminal text is retained or
@@ -267,6 +279,9 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
                     if readable: process.read()
                 except EOFError: break
             if process.isalive(): return fail_probe(stage, outcome_receipt=receipt(stage, "error", "stage_failed", candidate_identity=candidate_identity))
+            closed_reason = observed_q_exit(process)
+            if closed_reason != "terminal_exited_zero":
+                return fail_probe(stage, outcome_receipt=receipt(stage, "error", closed_reason, candidate_identity=candidate_identity))
             result = {"ok": True, "mode": mode, "exit": "q", "receipt": receipt(stage, "normal", "completed", candidate_identity=candidate_identity)}
             if direct_constructor is not None: result["directConstructor"] = direct_constructor
             emit(result); return 0
@@ -304,6 +319,9 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
             except EOFError: break
         if process.isalive():
             return fail_probe(stage, outcome_receipt=receipt(stage, "timeout", "timed_out", candidate_identity=candidate_identity))
+        closed_reason = observed_q_exit(process)
+        if closed_reason != "terminal_exited_zero":
+            return fail_probe(stage, outcome_receipt=receipt(stage, "error", closed_reason, candidate_identity=candidate_identity))
         result = {"ok": True, "mode": mode, "reconnect": "r", "navigation": ["d", "?"], "narrowResize": narrow_resize, "exit": "q", "receipt": receipt(stage, "normal", "completed", candidate_identity=candidate_identity)}
         if direct_constructor is not None: result["directConstructor"] = direct_constructor
         emit(result); return 0

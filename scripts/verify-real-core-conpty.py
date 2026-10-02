@@ -39,9 +39,27 @@ def emit(result):
     print(json.dumps(result, separators=(",", ":")))
 
 
-def fail(stage):
-    emit({"ok": False, "stage": stage})
+def fail(stage, closed_reason=None):
+    result = {"ok": False, "stage": stage}
+    if closed_reason is not None:
+        result["receipt"] = {"stage": "exit", "outcome": "error", "closedReason": closed_reason}
+    emit(result)
     return 1
+
+def observed_q_exit(process):
+    try:
+        waited = process.wait()
+        signal_status = getattr(process, "signalstatus", None)
+        exit_status = getattr(process, "exitstatus", None)
+    except Exception:
+        return "terminal_unknown"
+    if isinstance(signal_status, int) and not isinstance(signal_status, bool):
+        if signal_status != 0: return "terminal_signaled"
+    elif signal_status is not None: return "terminal_unknown"
+    if not isinstance(exit_status, int) or isinstance(exit_status, bool): return "terminal_unknown"
+    if exit_status == 0:
+        return "terminal_exited_zero" if isinstance(waited, int) and not isinstance(waited, bool) and waited == 0 else "terminal_unknown"
+    return "terminal_exit_code_1" if exit_status == 1 else "terminal_exit_code_2" if exit_status == 2 else "terminal_exited_nonzero"
 
 
 def architecture():
@@ -80,7 +98,9 @@ def probe(executable, mode, api_url):
                 break
         if process.isalive():
             return fail(stage)
-        emit({"ok": True, "mode": mode, "navigation": "help" if mode == "connected" else "not_applicable", "exit": "q"})
+        closed_reason = observed_q_exit(process)
+        if closed_reason != "terminal_exited_zero": return fail(stage, closed_reason)
+        emit({"ok": True, "mode": mode, "navigation": "help" if mode == "connected" else "not_applicable", "exit": "q", "receipt": {"stage": "exit", "outcome": "normal", "closedReason": "completed"}})
         return 0
     except Exception:
         return fail(stage)

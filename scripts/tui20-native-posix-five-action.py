@@ -61,10 +61,17 @@ def terminal_exit_reason(result):
 class ChildReapedUnowned(RuntimeError): pass
 class TerminalUnresolved(RuntimeError):
     def __init__(self, terminal, reason): super().__init__(reason); self.terminal=terminal
-def fexecve_child(fd,argv,env,master,slave):
+def retain_terminal_child(terminal,pid):
+    child=BoundProcess(pid); child.tui20_birth=None
+    if terminal is not None:
+        terminal.child=child
+        OWNED_TERMINALS.append(terminal)
+    return child
+def fexecve_child(fd,argv,env,master,slave,terminal=None):
     pid=os.fork()
     if pid:
-        os.close(slave); return BoundProcess(pid)
+        child=retain_terminal_child(terminal,pid)
+        os.close(slave); return child
     try:
         os.close(master); os.dup2(slave,0); os.dup2(slave,1); os.dup2(slave,2)
         if slave>2: os.close(slave)
@@ -74,11 +81,12 @@ def fexecve_child(fd,argv,env,master,slave):
         libc.fexecve(fd,argp,envp)
         failure=ctypes.get_errno(); os.write(2,("held fexecve failed: "+os.strerror(failure)+"\n").encode())
     finally: os._exit(127)
-def darwin_execve_child(launch,argv,env,master,slave):
+def darwin_execve_child(launch,argv,env,master,slave,terminal=None):
     """Execute the protected leaf only after resolving it through the held directory."""
     pid=os.fork()
     if pid:
-        os.close(slave); return BoundProcess(pid)
+        child=retain_terminal_child(terminal,pid)
+        os.close(slave); return child
     try:
         os.close(master); os.dup2(slave,0); os.dup2(slave,1); os.dup2(slave,2)
         if slave>2: os.close(slave)
@@ -93,12 +101,15 @@ def darwin_execve_child(launch,argv,env,master,slave):
 class Terminal:
     def __init__(self, held, executable, profile, env):
         self.master,self.slave=pty.openpty()
+        self.text=""; self.label=profile; self.exit_reason=None; self.child=None
         args=[executable,"--profile",profile]
-        if sys_platform()=="linux": self.child=fexecve_child(held,args,env,self.master,self.slave)
+        if sys_platform()=="linux": self.child=fexecve_child(held,args,env,self.master,self.slave,self)
         elif sys_platform()=="darwin":
-            self.child=darwin_execve_child(held,args,env,self.master,self.slave)
+            self.child=darwin_execve_child(held,args,env,self.master,self.slave,self)
         else: raise RuntimeError("native held-executable launch unsupported on this platform")
-        self.child.tui20_birth=process_birth(self.child.pid); self.text=""; self.label=profile; self.exit_reason=None; OWNED_TERMINALS.append(self)
+        # Registration precedes every fallible post-fork observation. Unknown
+        # birth stays owned and cannot be used as proof of process absence.
+        self.child.tui20_birth=process_birth(self.child.pid)
     def write(self,value): os.write(self.master,value.encode())
     def read(self):
         ready,_,_=select.select([self.master],[],[],.1)
@@ -557,14 +568,14 @@ def main():
         outcome["heldExecutableBinding"]={"platform":"darwin","mechanism":"system-immutable-held-directory-execve","systemImmutableLeaf":True,"systemImmutableParent":False,"partialActivationRecovery":True}
         outcome["failureReason"]="native_harness_assertion_failed"; raise
     except Exception:
-        observed=term if term is not None else (OWNED_TERMINALS[-1] if OWNED_TERMINALS else None)
+        observed=OWNED_TERMINALS[-1] if OWNED_TERMINALS else term
         if observed is not None and observed.exit_reason is not None and not any(item.get("terminal")==observed.label and item.get("exit")==observed.exit_reason for item in outcome["terminals"]): outcome["terminals"].append({"terminal":observed.label,"exit":observed.exit_reason})
         if observed is not None and observed.child.returncode is None: primary_persisted=retain_primary_and_recover(args.root,outcome,observed)
         else: outcome["failureReason"]="native_harness_assertion_failed"
         raise
     finally:
         # Cleanup is reported separately and cannot relabel a true child exit.
-        live_child=any(owned.child.poll() is None and not owned.child.reaped_unowned for owned in OWNED_TERMINALS)
+        live_child=any(owned.child.poll() is None for owned in OWNED_TERMINALS)
         try:
             cleanup=lambda *values: (_ for _ in ()).throw(RuntimeError("injected native finalization cleanup failure")) if args.inject_finalization_cleanup_failure else cleanup_execution(*values)
             finalize_native_outcome(args.root,outcome,launch_fd,darwin_protected,held,live_child,primary_persisted,outcome.get("recoveryObservation"),cleanup=cleanup)

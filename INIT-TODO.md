@@ -1,5 +1,12 @@
 # Governance and adoption TODO
 
+- [ ] Issue20 final042 F1..F6 / SPEC001 TUI-ACCEPTANCE-001/002/003 and
+  TUI-DISTRIBUTION-002: coherently repair actual native Go admission, post-fork
+  ownership, real reconnect caller identity/schema, native writer/independent
+  exit persistence and observed-zero q completion. Author actual regressions;
+  do not execute before fresh ENTIRE SOURCE GO and NEW ROOT admission.
+  Preserve prior5+2+3, publisher controls and every full delivery gate.
+
 - [ ] Issue #20 / TUI-ACCEPTANCE-003: repair all three inherited native source
   pipeline findings (literal shell custody, actual-tab tool records, real Git
   tree identities); independently review the entire cumulative PR25 and obtain

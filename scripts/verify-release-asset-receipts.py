@@ -115,7 +115,7 @@ def secure_root(base_root):
         raise
 
 def valid(receipt):
-    if not isinstance(receipt, dict) or receipt.get("stage") not in {"launch", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit", "helper-exit"} or receipt.get("outcome") not in {"normal", "error", "timeout"} or receipt.get("closedReason") not in {"completed", "stage_failed", "timed_out", "shutdown_requested", "terminal_exited_zero", "terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown", "helper_exit_nonzero", "helper_exit_signal", "helper_exit_spawn_error"}:
+    if not isinstance(receipt, dict) or receipt.get("stage") not in {"launch", "direct-constructor", "startup", "wait-reconnect", "reconnect", "navigation", "resize-observation", "exit", "helper-exit"} or receipt.get("outcome") not in {"normal", "error", "timeout"} or receipt.get("closedReason") not in {"completed", "stage_failed", "timed_out", "shutdown_requested", "terminal_exited_zero", "terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown", "helper_exit_nonzero", "helper_exit_signal", "helper_exit_spawn_error"}:
         return False
     identity = receipt.get("candidateIdentity")
     if identity is not None and (not isinstance(identity, dict) or set(identity) != {"sourceCommit", "binarySHA256"} or not isinstance(identity["sourceCommit"], str) or not isinstance(identity["binarySHA256"], str) or re.fullmatch(r"[a-f0-9]{40}", identity["sourceCommit"]) is None or re.fullmatch(r"[a-f0-9]{64}", identity["binarySHA256"]) is None):

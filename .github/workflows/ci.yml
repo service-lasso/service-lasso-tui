@@ -95,7 +95,9 @@ jobs:
       - name: Test actual native custody producer and receipt consumer
         if: runner.os != 'Windows'
         shell: bash
-        run: node --test scripts/tui20-native-input-custody.test.mjs
+        run: |
+          node --test scripts/tui20-native-input-custody.test.mjs
+          python3 scripts/tui20-terminal-birth.test.py
 
   native-posix-lifecycle:
     name: ${{ matrix.name }} native PTY Core lifecycle acceptance
@@ -136,7 +138,7 @@ jobs:
             phase="$1"
             test ! -e "$phase"
             mkdir -p "$(dirname "$phase")"
-            env -i PATH="$PATH" HOME="$HOME" LANG="${LANG:-C.UTF-8}" LC_ALL="${LC_ALL:-C.UTF-8}" CI_SOURCE_SHA="$CI_SOURCE_SHA" CORE_COMMIT="$CORE_COMMIT" PHASE="$phase" SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json" bash -euo pipefail <<'TUI20_PHASE'
+            env -i PATH="$PATH" HOME="$HOME" LANG="${LANG:-C.UTF-8}" LC_ALL="${LC_ALL:-C.UTF-8}" GOFLAGS='' GOWORK=off CI_SOURCE_SHA="$CI_SOURCE_SHA" CORE_COMMIT="$CORE_COMMIT" PHASE="$phase" SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json" bash -euo pipefail <<'TUI20_PHASE'
           phase="$PHASE"
           workspace="$SERVICE_LASSO_WORKSPACE_ROOT"
           instances="$SERVICE_LASSO_INSTANCE_REGISTRY_PATH"
@@ -180,7 +182,7 @@ jobs:
             exit "$failure_status"
           }
           trap writer_failure EXIT
-          TUI20_PRIVATE_CUSTODY="$phase/private-input-custody.json" TUI20_PUBLIC_CUSTODY="$phase/input-custody.json" TUI20_PHASE="$phase" TUI20_WORKSPACE="$workspace" TUI20_INSTANCES="$instances" TUI20_PORTS="$ports" TUI20_TUI_COMMIT="$CI_SOURCE_SHA" TUI20_TUI_TREE="$source_tree" TUI20_TUI_DIRTY="$source_dirty" TUI20_TUI_INVENTORY="$source_inventory" TUI20_CORE_COMMIT="$CORE_COMMIT" TUI20_PRODUCER_PID="$$" TUI20_BIRTH="$birth" TUI20_IMAGE="$(readlink -f /proc/$$/exe 2>/dev/null || ps -o comm= -p $$ | xargs)" TUI20_TOOL_RECORDS="$tool_records" TUI20_LITERAL_COMMANDS='mkdir -p; git rev-parse HEAD^{tree}; git status --porcelain; git ls-files -z; go env GOTOOLDIR; git -C $phase/core-source init -q; git -C $phase/core-source remote add origin; git -C $phase/core-source fetch --no-tags origin develop; git -C $phase/core-source merge-base --is-ancestor $CORE_COMMIT origin/develop; git -C $phase/core-source fetch --depth=1 origin $CORE_COMMIT; git -C $phase/core-source checkout --detach -q FETCH_HEAD; npm ci; npm run build; go build -mod=readonly -buildvcs=true -trimpath' python3 - <<'PY' &
+          TUI20_PRIVATE_CUSTODY="$phase/private-input-custody.json" TUI20_PUBLIC_CUSTODY="$phase/input-custody.json" TUI20_PHASE="$phase" TUI20_WORKSPACE="$workspace" TUI20_INSTANCES="$instances" TUI20_PORTS="$ports" TUI20_TUI_COMMIT="$CI_SOURCE_SHA" TUI20_TUI_TREE="$source_tree" TUI20_TUI_DIRTY="$source_dirty" TUI20_TUI_INVENTORY="$source_inventory" TUI20_CORE_COMMIT="$CORE_COMMIT" TUI20_PRODUCER_PID="$$" TUI20_BIRTH="$birth" TUI20_IMAGE="$(readlink -f /proc/$$/exe 2>/dev/null || ps -o comm= -p $$ | xargs)" TUI20_TOOL_RECORDS="$tool_records" TUI20_LITERAL_COMMANDS='mkdir -p; git rev-parse HEAD^{tree}; git status --porcelain; git ls-files -z; go env GOTOOLDIR; git -C $phase/core-source init -q; git -C $phase/core-source remote add origin; git -C $phase/core-source fetch --no-tags origin develop; git -C $phase/core-source merge-base --is-ancestor $CORE_COMMIT origin/develop; git -C $phase/core-source fetch --depth=1 origin $CORE_COMMIT; git -C $phase/core-source checkout --detach -q FETCH_HEAD; npm ci; npm run build; node scripts/assert-go-source-provenance.mjs; go build -mod=readonly -buildvcs=true -trimpath' python3 - <<'PY' &
           import json, os, select, subprocess
           # Never retain inherited self-connected endpoints in the writer.
           os.close(8); os.close(9)
@@ -268,6 +270,7 @@ jobs:
           PY
           (cd "$phase/core-source" && npm ci && npm run build)
           binary="$phase/service-lasso-tui"
+          node scripts/assert-go-source-provenance.mjs
           go build -mod=readonly -buildvcs=true -trimpath -o "$binary" ./cmd/service-lasso-tui
           go version -m "$binary" | grep -F "vcs.revision=$CI_SOURCE_SHA" >/dev/null
           go version -m "$binary" | grep -F "vcs.modified=false" >/dev/null

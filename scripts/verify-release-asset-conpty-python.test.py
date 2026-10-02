@@ -17,6 +17,12 @@ SPEC.loader.exec_module(probe_module)
 
 class FakePty:
     spawned = None
+    exitstatus = 0
+    signalstatus = None
+
+    def wait(self):
+        self.wait_observed = True
+        return self.exitstatus
 
     @staticmethod
     def spawn(*args, **kwargs):
@@ -30,6 +36,9 @@ class FakePty:
         return False
 
     def write(self, _value):
+        pass
+
+    def setwinsize(self, _rows, _columns):
         pass
 
 
@@ -358,6 +367,53 @@ class ReceiptTests(unittest.TestCase):
             )
         self.assertEqual(result, 0)
         self.assertEqual(FakePty.spawned[0][0][0], os.path.abspath("candidate.exe"))
+
+    def test_actual_main_requires_both_identity_arguments_before_constructor_entry(self):
+        base = [SCRIPT, "--executable", "candidate.exe", "--mode", "reconnect", "--api-url", "http://127.0.0.1:1"]
+        identities = ["--source-commit", self.source_commit, "--expected-executable-sha256", self.binary_sha256]
+        for args, admitted in [(base, False), (base + identities[:2], False), (base + identities[2:], False), (base + identities, True)]:
+            with self.subTest(args=args), patch("sys.argv", args), patch.object(probe_module, "discriminate_constructor_then_probe", return_value=17) as constructor, contextlib.redirect_stdout(io.StringIO()):
+                result = probe_module.main()
+            self.assertEqual(constructor.called, admitted)
+            self.assertEqual(result, 17 if admitted else 1)
+            if admitted:
+                self.assertEqual(constructor.call_args.kwargs["source_commit"], self.source_commit)
+                self.assertEqual(constructor.call_args.kwargs["expected_binary_sha256"], self.binary_sha256)
+
+    def test_q_outcomes_traverse_both_actual_release_probe_modes_and_actual_real_core_probe(self):
+        import runpy
+        import types
+        import sys
+        # Portable source contract fixture; Windows uses the installed backend.
+        modules = {}
+        if os.name != "nt":
+            enums = types.ModuleType("winpty.enums"); enums.Backend = types.SimpleNamespace(ConPTY=None)
+            ptyprocess = types.ModuleType("winpty.ptyprocess"); ptyprocess.PtyProcess = FakePty
+            modules = {"winpty": types.ModuleType("winpty"), "winpty.enums": enums, "winpty.ptyprocess": ptyprocess}
+        with patch.dict(sys.modules, modules):
+            real_core = runpy.run_path(os.path.join(os.path.dirname(SCRIPT), "verify-real-core-conpty.py"))
+        for exitstatus, signalstatus, waited, reason in [(0, None, 0, "completed"), (1, None, 1, "terminal_exit_code_1"), (2, None, 2, "terminal_exit_code_2"), (9, None, 9, "terminal_exited_nonzero"), (None, 9, None, "terminal_signaled"), (None, None, None, "terminal_unknown"), (0, None, None, "terminal_unknown"), (True, None, True, "terminal_unknown"), ("sentinel", None, None, "terminal_unknown"), (0, "sentinel", 0, "terminal_unknown"), (0, None, OSError("controlled wait failure"), "terminal_unknown")]:
+            for helper_mode in ("unavailable", "reconnect", "connected", "core-unavailable"):
+                with self.subTest(exitstatus=exitstatus, signalstatus=signalstatus, waited=waited, mode=helper_mode), tempfile.TemporaryDirectory() as root:
+                    class QTerminal(FakePty):
+                        def wait(self):
+                            self.wait_observed = True
+                            if isinstance(waited, Exception): raise waited
+                            return waited
+                    terminal = QTerminal(); terminal.exitstatus = exitstatus; terminal.signalstatus = signalstatus
+                    pty = types.SimpleNamespace(spawn=lambda *_a, **_k: terminal)
+                    output = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        if helper_mode in ("connected", "core-unavailable"):
+                            with patch.dict(real_core["probe"].__globals__, {"PtyProcess": pty, "wait_for": lambda *_a: True}):
+                                result = real_core["probe"]("candidate.exe", "unavailable" if helper_mode == "core-unavailable" else helper_mode, "http://127.0.0.1:1")
+                        else:
+                            result = self.run_probe("candidate.exe", helper_mode, "http://127.0.0.1:1", os.path.join(root, "ready"), "reconnect", None, None, None, pty_process=pty, wait=lambda *_a: "rendered", wait_file=lambda *_a: True, backend=None)
+                    payload = json.loads(output.getvalue())
+                    self.assertTrue(terminal.wait_observed)
+                    self.assertEqual(result, 0 if reason == "completed" else 1)
+                    self.assertEqual(payload["receipt"]["closedReason"], reason)
+                    self.assertEqual(payload["receipt"]["outcome"], "normal" if reason == "completed" else "error")
 
 
 if __name__ == "__main__":

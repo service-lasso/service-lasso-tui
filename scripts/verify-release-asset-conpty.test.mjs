@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { access, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertCandidateManifest, assertExtractedCandidateBuildMetadata, cleanupOutcome, cleanupResources, closeReceiptSinks, createReceiptSinks, finalizeReconnectExit, npmCommand, parseArgs, parseProbe, persistNodeExitReceipt, prepareCoreRuntime, prepareSourceBuiltCore, publishReceipt, stopProbe, validateReceipt } from "./verify-release-asset-conpty.mjs";
+import { assertCandidateManifest, assertExtractedCandidateBuildMetadata, cleanupOutcome, cleanupResources, closeReceiptSinks, createReceiptSinks, finalizeReconnectExit, npmCommand, parseArgs, parseProbe, persistNodeExitReceipt, prepareCoreRuntime, prepareSourceBuiltCore, publishReceipt, startReconnectProbe, stopProbe, validateReceipt } from "./verify-release-asset-conpty.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -168,9 +169,16 @@ test("Windows native receipt writer accepts only the closed startup-boundary ext
     assert.deepEqual(await publishReceipt(sinks.helper, receipt), receipt);
     const apiReceipt = { stage: "startup", outcome: "error", closedReason: "terminal_exit_code_2", startupBoundary: "api_url_invalid" };
     assert.deepEqual(await publishReceipt(sinks.node, apiReceipt), apiReceipt);
+    const candidateIdentity = { sourceCommit: "a".repeat(40), binarySHA256: "b".repeat(64) };
+    const directFailure = { stage: "direct-constructor", outcome: "error", closedReason: "stage_failed", candidateIdentity };
+    assert.deepEqual(await publishReceipt(sinks.helper, directFailure), directFailure, "actual native enum must admit constructor stage");
+    const failurePayload = JSON.stringify({ ok: false, stage: "direct-constructor", receipt: directFailure });
+    await assert.rejects(() => finalizeReconnectExit({ helper: { writer: sinks.helper.writer, sink: "rejected-helper" }, node: sinks.node }, 1, null, failurePayload), error => error.message === "release-asset ConPTY reconnect probe failed" && error.receiptFailures.length === 1);
+    await assert.rejects(() => finalizeReconnectExit({ helper: { writer: sinks.helper.writer, sink: "rejected-helper" }, node: { writer: sinks.node.writer, sink: "rejected-node" } }, 1, null, failurePayload), error => error.message === "release-asset ConPTY reconnect probe failed" && error.receiptFailures.length === 2);
     await assert.rejects(() => publishReceipt(sinks.node, { ...receipt, startupBoundary: "SENTINEL_SECRET" }), /invalid reconnect receipt/u);
   } finally {
     await closeReceiptSinks(sinks);
+    assert.deepEqual(JSON.parse(await readFile(path.join(sinks.root, "node-exit-outcome.json"), "utf8")), { stage: "helper-exit", outcome: "error", closedReason: "helper_exit_nonzero" }, "actual native Node sink survives helper-sink rejection");
     await rm(tempRoot, { recursive: true, force: true });
   }
 });
@@ -362,11 +370,62 @@ test("reconnect receipts are closed schema and reject terminal sentinel text", (
 });
 
 test("probe success rejects extra or incomplete terminal metadata", async () => {
-  const receipt = { stage: "exit", outcome: "normal", closedReason: "completed" };
-  const success = JSON.stringify({ ok: true, mode: "reconnect", reconnect: "r", navigation: ["d", "?"], narrowResize: "help-screen-rendered-after-50-columns", exit: "q", receipt });
+  const candidateIdentity = { sourceCommit: "a".repeat(40), binarySHA256: "b".repeat(64) };
+  const directConstructor = { exit: "exit_code_2", startupBoundary: "api_url_invalid", candidateIdentity };
+  const receipt = { stage: "exit", outcome: "normal", closedReason: "completed", candidateIdentity };
+  const success = JSON.stringify({ ok: true, mode: "reconnect", reconnect: "r", navigation: ["d", "?"], narrowResize: "help-screen-rendered-after-50-columns", exit: "q", receipt, directConstructor });
   assert.deepEqual(await finalizeReconnectExit({ helper: { writeFile: async () => undefined, sync: async () => undefined }, node: { writeFile: async () => undefined, sync: async () => undefined } }, 0, null, success), JSON.parse(success));
   const foreign = JSON.stringify({ ok: true, mode: "reconnect", reconnect: "r", navigation: ["d", "?"], narrowResize: "help-screen-rendered-after-50-columns", exit: "q", receipt, terminal: "SENTINEL_SECRET" });
   await assert.rejects(() => finalizeReconnectExit({ helper: { writeFile: async () => undefined, sync: async () => undefined }, node: { writeFile: async () => undefined, sync: async () => undefined } }, 0, null, foreign), /bounded assertions/u);
+  for (const changed of [
+    { ...JSON.parse(success), directConstructor: undefined },
+    { ...JSON.parse(success), receipt: { stage: "exit", outcome: "normal", closedReason: "completed" } },
+    { ...JSON.parse(success), directConstructor: { ...directConstructor, candidateIdentity: { ...candidateIdentity, sourceCommit: "f".repeat(40) } } },
+  ]) assert.throws(() => parseProbe(JSON.stringify(changed), "reconnect", candidateIdentity), /bounded assertions/u);
+  assert.throws(() => parseProbe(success, "reconnect", { ...candidateIdentity, binarySHA256: "f".repeat(64) }), /bounded assertions/u);
+});
+
+test("actual reconnect caller reaches the real Python entrypoint with both bound identities", async () => {
+  const tempRoot = path.join(os.tmpdir(), `tui-reconnect-entry-${process.pid}-${Date.now()}`);
+  await mkdir(tempRoot, { recursive: true });
+  try {
+    const executable = path.join(tempRoot, "inert-candidate.exe");
+    const bytes = Buffer.from("inert protocol fixture; never native acceptance");
+    await writeFile(executable, bytes);
+    const candidateIdentity = { sourceCommit: "a".repeat(40), binarySHA256: createHash("sha256").update(bytes).digest("hex") };
+    let output = ""; let argv;
+    const sink = () => ({ writeFile: async () => undefined, sync: async () => undefined });
+    const probe = startReconnectProbe(executable, "http://127.0.0.1:1", "ready", "reconnect", "shutdown", "ack", "token", { helper: sink(), node: sink() }, candidateIdentity, { spawnProcess(program, args, options) {
+      argv = args;
+      const child = spawn(program, args, options);
+      child.stdout.on("data", chunk => { output += chunk; });
+      return child;
+    } });
+    candidateIdentity.sourceCommit = "f".repeat(40);
+    await assert.rejects(probe.completed, /reconnect probe failed/u);
+    const produced = JSON.parse(output);
+    assert.equal(produced.stage, "direct-constructor", "both required args must pass actual main setup");
+    assert.equal(produced.receipt.candidateIdentity.sourceCommit, "a".repeat(40));
+    assert.equal(produced.receipt.candidateIdentity.binarySHA256, candidateIdentity.binarySHA256);
+    assert.equal(argv[argv.indexOf("--source-commit") + 1], "a".repeat(40));
+    assert.equal(argv[argv.indexOf("--expected-executable-sha256") + 1], candidateIdentity.binarySHA256);
+  } finally { await rm(tempRoot, { recursive: true, force: true }); }
+});
+
+test("actual Python reconnect producer payload reaches the closed Node consumer", async () => {
+  const output = await new Promise((resolve, reject) => execFile("python", [path.join(repoRoot, "scripts/reconnect-protocol-fixture.py")], { windowsHide: true }, (error, stdout) => error ? reject(error) : resolve(stdout)));
+  const produced = JSON.parse(output);
+  const identity = produced.receipt.candidateIdentity;
+  assert.equal(identity.sourceCommit, "a".repeat(40));
+  assert.equal(identity.binarySHA256, createHash("sha256").update("real hashed protocol fixture bytes").digest("hex"));
+  assert.deepEqual(parseProbe(output, "reconnect", identity), produced);
+  for (const field of ["candidateIdentity", "directConstructor"]) {
+    const missing = structuredClone(produced);
+    if (field === "candidateIdentity") delete missing.receipt.candidateIdentity;
+    else delete missing.directConstructor;
+    assert.throws(() => parseProbe(JSON.stringify(missing), "reconnect", identity), /bounded assertions/u);
+  }
+  assert.throws(() => parseProbe(JSON.stringify({ ...produced, unexpected: true }), "reconnect", identity), /bounded assertions/u);
 });
 
 test("probe parser closes unavailable and failure schemas as well as reconnect success", () => {

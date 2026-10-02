@@ -1,5 +1,13 @@
 # Service Lasso TUI project intent
 
+Issue20 final042 maps F1 native Go admission, F2 immediate terminal ownership,
+F3 mandatory reconnect caller identity, F4 authentic closed reconnect schema,
+F5 native writer enum plus independent Node persistence, and F6 observed-zero q
+completion to SPEC001 TUI-ACCEPTANCE-001/002/003 and TUI-DISTRIBUTION-002.
+Repair all six as one source-only unit with actual boundary regressions;
+preserve prior5+2+3 repairs and Issue18 SPEC002 controls. Execution requires a
+DIFFERENT fresh ENTIRE SOURCE GO and NEW complete-input ROOT admission.
+
 Issue #20 source repair covers the complete inherited native custody pipeline:
 literal shell command preservation, real-tab tool inventory production/parsing,
 and 40-hex Git tree identity validation distinct from SHA256. All three require

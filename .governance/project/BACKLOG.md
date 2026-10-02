@@ -1,5 +1,12 @@
 # Backlog
 
+Issue20 final042 F1..F6 -> SPEC001 TUI-ACCEPTANCE-001/002/003 and
+TUI-DISTRIBUTION-002: effective native Go admission; post-fork ownership;
+mandatory caller identity; authentic closed reconnect schema; native writer
+stage and independent exit evidence; actual observed-zero q completion.
+One coherent source-only repair; actual regressions UNEXECUTED. Prior5+2+3 and
+Issue18 SPEC002 AC1..7 retained. Fresh ENTIRE review/NEW ROOT admission pending.
+
 Issue #20 / SPEC-001 TUI-ACCEPTANCE-003 tracks all three inherited native
 pipeline source findings in PR25: shell literal custody, actual tab inventory
 producer/consumer, and genuine 40-hex Git trees with separate SHA256 digests.

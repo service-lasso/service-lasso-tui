@@ -8,6 +8,9 @@ and new complete-input ROOT admission. Issue #18 / SPEC-002 AC-1..AC-7 remains
 in the same cumulative PR with all publisher safeguards preserved.
 The related Issue #20 producer finding (ancestor stripping reaches empty text
 instead of root) is included with terminating parent traversal and root checks.
+Natural d1beda9 macOS producer guard exposed the nested-case command
+substitution parse failure; preserve that failed job while correcting ordinary
+case/per-platform birth commands under the same Issue #20 producer scope.
 
 | Issue | Spec sections | State | Notes |
 | --- | --- | --- | --- |

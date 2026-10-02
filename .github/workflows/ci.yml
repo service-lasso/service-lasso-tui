@@ -153,7 +153,10 @@ jobs:
           source_dirty="$(git status --porcelain | sha256sum | cut -d " " -f1)"
           source_inventory="$(git ls-files -z | xargs -0 sha256sum | sha256sum | cut -d " " -f1)"
           # The quoted outer heredoc preserves shell and Python literals.
-          birth="$(case "$(uname -s)" in Linux) awk '{print $22}' /proc/$$/stat ;; Darwin) ps -o lstart= -p $$ | xargs ;; esac)"
+          case "$(uname -s)" in
+            Linux) birth="$(awk '{print $22}' /proc/$$/stat)" ;;
+            Darwin) birth="$(ps -o lstart= -p $$ | xargs)" ;;
+          esac
           tool_record() { tool="$1"; tool_path="$(command -v "$tool")"; printf "%s\\t%s\\t%s\\t%s\\n" "$tool" "$tool_path" "$(sha256sum "$tool_path" | cut -d " " -f1)" "$(wc -c < "$tool_path")"; }
           compiler_path="$(go env GOTOOLDIR)/compile"
           tool_records="$(for tool in bash dirname mkdir env git sha256sum cut xargs awk wc uname ps readlink node npm go python3; do tool_record "$tool"; done; printf "go-compile\\t%s\\t%s\\t%s\\n" "$compiler_path" "$(sha256sum "$compiler_path" | cut -d " " -f1)" "$(wc -c < "$compiler_path")")"

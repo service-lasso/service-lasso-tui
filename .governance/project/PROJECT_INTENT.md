@@ -8,6 +8,8 @@ source execution and native acceptance require a fresh entire review and new
 complete-input ROOT admission.
 The related producer traversal defect also requires a terminating parent walk
 with every ancestor and root checked for links, without weakening ownership.
+Preserve the natural d1beda9 macOS producer guard failure while correcting its
+nested case parsing with an ordinary case and unchanged host birth commands.
 
 Provide a standalone, keyboard-first terminal client for a running Service
 Lasso Core runtime. The TUI is an attached operator process: Core does not

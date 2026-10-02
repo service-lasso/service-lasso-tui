@@ -134,6 +134,10 @@ five-action or published-byte acceptance and preserves Issue #18 publication.
 The same producer must terminate ancestor traversal at `/` using real parent
 paths and check every ancestor including root for links; stripping a final
 slash component to an empty string is not a valid root traversal.
+The host birth selection uses an ordinary shell case with per-platform command
+substitutions, preserving Linux awk and Darwin ps identities under the native
+macOS Bash parser. Natural d1beda9 macOS guard failure is retained separately;
+it does not justify any local execution or a native acceptance claim.
 Each native run also mutates the
 source inode in place after the immutable execution object exists and proves
 the launch still reaches the verified object; it restores the source byte

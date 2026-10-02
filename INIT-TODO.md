@@ -8,6 +8,8 @@
   keyboard/error/cancel, real-Core and same-published-byte acceptance gates.
   Include the related ancestor termination defect; retain every ancestor and
   root non-link check while walking real parents to `/`.
+  Preserve natural d1beda9 macOS Bash parsing failure and repair ordinary
+  case/per-platform birth selection without executing or rerunning locally.
 
 - [x] Initialize repo-local governance for Issue #1 on the authorized `develop`
   development baseline.

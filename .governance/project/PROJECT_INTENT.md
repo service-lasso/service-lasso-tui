@@ -21,3 +21,5 @@ force-push setting. The publication job must bind its checked-out `HEAD` to the
 validated full SHA before consuming the matching candidate artifact or running
 any verifier. Candidate binaries remain development evidence, never a claim of
 GA, promotion, deployment, or a successful Core operation.
+
+Issue #18 source repair binds actual Git tag refs and recursively resolved annotated objects to the exact candidate SHA. Orphan, malformed, cyclic and mismatched tags deny all writes. The publisher retains validated provider policy and re-reads identical policy immediately before every create, asset upload and publish mutation; changed or unavailable policy denies further writes. Source-only implementation and regressions remain UNEXECUTED pending entire independent SOURCE GO and new complete-input ROOT admission. Full native five-action/keyboard/error/cancel and three-OS same-byte Core acceptance remain pending.

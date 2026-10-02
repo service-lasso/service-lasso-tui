@@ -51,3 +51,5 @@ failure has a causal Core-audit/registry diagnosis; pending reconciliation is
   readback is `404`; the repository owner must apply the documented controls
   and supply exact authenticated readback. No workflow is authorized to mutate
   the provider controls.
+
+Issue #18 source repair binds actual Git tag refs and recursively resolved annotated objects to the exact candidate SHA. Orphan, malformed, cyclic and mismatched tags deny all writes. The publisher retains validated provider policy and re-reads identical policy immediately before every create, asset upload and publish mutation; changed or unavailable policy denies further writes. Source-only implementation and regressions remain UNEXECUTED pending entire independent SOURCE GO and new complete-input ROOT admission. Full native five-action/keyboard/error/cancel and three-OS same-byte Core acceptance remain pending.

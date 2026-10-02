@@ -21,3 +21,7 @@ Run behavior-focused Node controls for preflight, manifest schema, recomputed lo
 ## Non-goals
 
 Do not dispatch a candidate, mutate GitHub settings, modify existing releases, promote, deploy, or claim GA.
+
+Issue #18 source repair binds actual Git tag refs and recursively resolved annotated objects to the exact candidate SHA. Orphan, malformed, cyclic and mismatched tags deny all writes. The publisher retains validated provider policy and re-reads identical policy immediately before every create, asset upload and publish mutation; changed or unavailable policy denies further writes. Source-only implementation and regressions remain UNEXECUTED pending entire independent SOURCE GO and new complete-input ROOT admission. Full native five-action/keyboard/error/cancel and three-OS same-byte Core acceptance remain pending.
+
+AC-5/AC-6: After proving no existing release or tag, create one lightweight ref at the full source SHA, resolve it through the actual Git ref API, then create the private release. Each mutation has its own immediate retained-policy read. Failure retains any newly created ref/draft as an unrecoverable collision unless a later read-only complete immutable receipt succeeds; never delete, retag or retry writes. Annotated existing refs are dereferenced recursively with bounded depth, identity and cycle checks. The public receipt checks the same tag chain before and after all six bytes.

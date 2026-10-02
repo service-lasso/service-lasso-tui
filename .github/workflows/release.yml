@@ -197,57 +197,17 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/verify-candidate-publication-cli.mjs --mode publication-assets --source-ref "$GITHUB_REF" --source-commit "$CANDIDATE_SHA" --version "$CANDIDATE_VERSION" --tag "$CANDIDATE_TAG" --manifest release-assets/candidate-manifest.json --local-assets release-assets/candidate-local-assets.json --asset-directory release-assets
-      - name: Fail closed unless immutable publication controls are live
+      - name: Publish or recover through the complete protected state machine
         shell: bash
         run: |
           set -euo pipefail
-          gh api "repos/$GITHUB_REPOSITORY/immutable-releases" > immutable-releases.json
-          gh api "repos/$GITHUB_REPOSITORY/environments/development-candidate" > development-candidate.json
-          gh api "repos/$GITHUB_REPOSITORY/branches/develop/protection" > develop-protection.json
-          node scripts/verify-candidate-publication-cli.mjs --mode preflight --source-ref "$GITHUB_REF" --source-commit "$CANDIDATE_SHA" --version "$CANDIDATE_VERSION" --tag "$CANDIDATE_TAG" --immutable-releases immutable-releases.json --environment development-candidate.json --branch-protection develop-protection.json
-      - name: Recover only a complete immutable exact candidate
-        id: existing
-        shell: bash
-        run: |
-          set -euo pipefail
-          node scripts/verify-candidate-publication-cli.mjs --mode publication-assets --source-ref "$GITHUB_REF" --source-commit "$CANDIDATE_SHA" --version "$CANDIDATE_VERSION" --tag "$CANDIDATE_TAG" --manifest release-assets/candidate-manifest.json --local-assets release-assets/candidate-local-assets.json --asset-directory release-assets
-          set +e
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$CANDIDATE_TAG" > existing-release.json 2> existing-release.err
-          status=$?
-          set -e
-          if [ "$status" -eq 0 ]; then
-            node scripts/verify-candidate-publication-cli.mjs --mode receipt --source-ref "$GITHUB_REF" --source-commit "$CANDIDATE_SHA" --version "$CANDIDATE_VERSION" --tag "$CANDIDATE_TAG" --manifest release-assets/candidate-manifest.json --release existing-release.json --local-assets release-assets/candidate-local-assets.json --asset-directory release-assets --download-dir "$RUNNER_TEMP/public-candidate-receipt"
-            echo 'recovered=true' >> "$GITHUB_OUTPUT"
-          elif grep -Fq 'HTTP 404' existing-release.err; then
-            echo 'recovered=false' >> "$GITHUB_OUTPUT"
-          else
-            echo "existing candidate lookup failed with an unexpected provider status" >&2
-            exit 1
-          fi
-      - name: Create a new draft candidate once, upload its exact inventory, then publish it
-        if: steps.existing.outputs.recovered != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          node scripts/verify-candidate-publication-cli.mjs --mode publication-assets --source-ref "$GITHUB_REF" --source-commit "$CANDIDATE_SHA" --version "$CANDIDATE_VERSION" --tag "$CANDIDATE_TAG" --manifest release-assets/candidate-manifest.json --local-assets release-assets/candidate-local-assets.json --asset-directory release-assets
-          jq -n --arg tag "$CANDIDATE_TAG" --arg sha "$CANDIDATE_SHA" --arg name "TUI candidate $CANDIDATE_VERSION" '{tag_name: $tag, target_commitish: $sha, name: $name, draft: true, prerelease: true, make_latest: "false", generate_release_notes: false}' > create-release.json
-          gh api --method POST "repos/$GITHUB_REPOSITORY/releases" --input create-release.json > created-release.json
-          release_id="$(jq -r '.id' created-release.json)"
-          test "$release_id" != null
-          node scripts/upload-verified-candidate-assets.mjs --asset-directory release-assets --local-assets release-assets/candidate-local-assets.json --source-ref "$GITHUB_REF" --source-commit "$CANDIDATE_SHA" --version "$CANDIDATE_VERSION" --tag "$CANDIDATE_TAG" --release-id "$release_id"
-          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" -f draft=false > published-release.json
-      - name: Read back immutable tag, full SHA, prerelease state, and every asset byte digest
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$CANDIDATE_TAG" > final-release.json
-          node scripts/verify-candidate-publication-cli.mjs --mode receipt --source-ref "$GITHUB_REF" --source-commit "$CANDIDATE_SHA" --version "$CANDIDATE_VERSION" --tag "$CANDIDATE_TAG" --manifest release-assets/candidate-manifest.json --release final-release.json --local-assets release-assets/candidate-local-assets.json --asset-directory release-assets --download-dir "$RUNNER_TEMP/public-candidate-receipt"
+          node scripts/publish-candidate.mjs --asset-directory release-assets --source-ref "$GITHUB_REF" --source-commit "$CANDIDATE_SHA" --version "$CANDIDATE_VERSION" --tag "$CANDIDATE_TAG" > publication-receipt.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: service-lasso-tui-publication-receipt-${{ needs.validate-source.outputs.version }}-${{ needs.validate-source.outputs.sha }}
           path: |
             release-assets
-            final-release.json
+            publication-receipt.json
             ${{ runner.temp }}/candidate-source-binding.json
           if-no-files-found: error
           retention-days: 90

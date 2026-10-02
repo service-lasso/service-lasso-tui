@@ -19,6 +19,52 @@ def load_posix_harness():
 
 
 class NativeFiveActionHarnessTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform in ("linux","darwin"), "requires actual POSIX runtime child and wait")
+    def test_actual_direct_owner_entrypoint_retains_runtime_on_every_acquisition_error(self):
+        # Core/JWKS behavior is a fixture; main/start_owned_runtime/finalization,
+        # the real child handle and real wait are the production ownership path.
+        harness=load_posix_harness()
+        for boundary in ("birth","select","read","parse","shape"):
+            with self.subTest(boundary=boundary), tempfile.TemporaryDirectory() as root:
+                candidate=pathlib.Path(root,"candidate"); candidate.write_bytes(b"preflight fixture never activated")
+                script=pathlib.Path(root,"runtime.py")
+                line="not-json" if boundary=="parse" else "[]" if boundary=="shape" else '{"event":"ready","url":"fixture","token":"fixture","deniedToken":"fixture","jwksPort":1}'
+                script.write_text("import sys,pathlib\nprint("+repr(line)+",flush=True)\nfor line in sys.stdin:\n    if line=='close\\n': break\npathlib.Path("+repr(str(pathlib.Path(root,"actual-close")))+").write_text('closed')\n",encoding="utf-8")
+                actual_popen=harness["subprocess"].Popen; children=[]
+                class FailedRead:
+                    def __init__(self,stream): self.stream=stream
+                    def fileno(self): return self.stream.fileno()
+                    def readline(self): raise OSError("controlled runtime read error")
+                def launch(*args,**kwargs):
+                    child=actual_popen(*args,**kwargs)
+                    command=args[0] if args else kwargs.get("args",[])
+                    is_runtime=isinstance(command,(list,tuple)) and len(command)>1 and command[1]==str(script)
+                    if is_runtime: children.append(child)
+                    if is_runtime and boundary=="read": child.stdout=FailedRead(child.stdout)
+                    return child
+                def failed_birth(pid): raise OSError("controlled runtime birth error")
+                def failed_select(*args): raise OSError("controlled runtime select error")
+                argv=["owner","--root",root,"--executable",str(candidate),"--source-commit","a"*40,"--core-commit","b"*40,"--node",sys.executable,"--runtime-script",str(script)]
+                with patch.object(sys,"argv",argv), patch.object(harness["subprocess"],"Popen",launch):
+                    with patch.dict(harness["main"].__globals__,{"process_birth":failed_birth} if boundary=="birth" else {}), patch.object(harness["select"],"select",failed_select if boundary=="select" else harness["select"].select):
+                        failure=OSError if boundary in ("birth","select","read") else harness["OwnedRuntimeAcquisitionFailure"] if boundary=="parse" else AttributeError
+                        with self.assertRaises(failure): harness["main"]()
+                self.assertEqual(len(children),1)
+                self.assertEqual(children[0].returncode,0,"actual owner must wait its actual child")
+                self.assertEqual(pathlib.Path(root,"actual-close").read_text(),"closed")
+                import json
+                receipt=json.loads(pathlib.Path(root,"owner-runtime-recovery.json").read_text())
+                self.assertTrue(receipt["actualExitObserved"])
+                self.assertEqual(receipt["runtimeChildExit"],"terminal_exited_zero")
+                self.assertEqual(receipt["runtimePID"],children[0].pid)
+                self.assertEqual(receipt["runtimeBirthAbsentObserved"],boundary!="birth")
+                if boundary=="birth":
+                    self.assertIsNone(receipt["runtimeBirth"])
+                    self.assertIsNone(receipt["runtimeChildStillLiveAfterClose"])
+                    self.assertEqual(receipt["outcome"],"exit_observed_birth_absence_unproven")
+                for child in children:
+                    child.stdout.stream.close() if boundary=="read" else child.stdout.close()
+
     def test_harness_records_closed_exit_and_adverse_audits_without_persisting_tokens(self):
         source = pathlib.Path(__file__).with_name("tui20-native-five-action.py").read_text(encoding="utf-8")
         ast.parse(source)
@@ -86,6 +132,7 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertIn('OwnedRuntimeAcquisitionFailure', source)
         self.assertNotIn('runtime.kill()', source)
         self.assertIn('owner-finalization-failure-proof.json', source)
+        self.assertIn('external-owner-finalization.json', source)
         self.assertIn('select.select([runtime.stdout],[],[],10)', source)
         self.assertIn('owner-runtime-recovery.json', source)
         self.assertIn('runtime.wait()', source)
@@ -139,7 +186,10 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
                              'core-parent-exit.json', 'external-owner-live.json',
                              'owner-death-recovery.json', 'operation-audit.json'):
             self.assertNotIn(private_name, uploaded)
-        self.assertIn("awk '\\''{print $22}'\\'' /proc/$$/stat", source)
+        self.assertIn("bash -euo pipefail <<'TUI20_PHASE'", source)
+        self.assertIn("awk '{print $22}' /proc/$$/stat", source)
+        self.assertIn('current="$(dirname "$current")"', source)
+        self.assertIn('            test ! -L "$current"', source)
         self.assertNotIn('awk "{print \\\\$22}"', source)
 
     def test_observer_keeps_lineage_private_then_closes_its_owned_runtime(self):
@@ -196,6 +246,294 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertEqual(actual["closedReason"], "leaf_release_failed")
         self.assertEqual(writes, [("native-exit-receipt.json", primary), ("native-cleanup-receipt.json", actual)])
 
+    @unittest.skipUnless(os.name == "posix", "requires POSIX held recovery directory")
+    def test_natural_darwin_cleanup_return_reaches_actual_owner_and_observer_gate(self):
+        # Controlled terminal/runtime behavior is not native acceptance. The
+        # actual main -> finalize -> Darwin release natural return and actual
+        # observer main gate run; retained filesystem recovery is inspected.
+        import io, json
+        harness=load_posix_harness()
+        observer=runpy.run_path(str(pathlib.Path(__file__).with_name("tui20-native-owner-observer.py")))
+        with tempfile.TemporaryDirectory() as root:
+            candidate=pathlib.Path(root,"candidate"); candidate.write_bytes(b"cleanup gate fixture")
+            directory=pathlib.Path(root,"protected"); directory.mkdir()
+            leaf=directory/"launch"; leaf.write_bytes(candidate.read_bytes())
+            recovery={"path":str(leaf),"directory":str(directory),"leafFD":os.open(leaf,os.O_RDONLY),"directoryFD":os.open(directory,os.O_RDONLY),"systemImmutable":0x20000}
+            birth={"platform":"fixture","startTime":"controlled"}
+            paths={"coreReadback":True,"uniqueOwnedPaths":["workspaceRoot","instanceRegistryPath","hostPortRegistryPath"],"runtimeInstanceBound":True}
+            pathlib.Path(root,"ready.json").write_text(json.dumps({"coreCommit":"b"*40,"runtimePathReceipt":paths}))
+            handoff={"url":"fixture","token":"fixture","deniedToken":"fixture","jwksPort":1,"_runtimePID":202,"_runtimeBirth":birth}
+            class Terminal:
+                def __init__(self,*_):
+                    self.exit_reason=None
+                    self.child=types.SimpleNamespace(pid=303,tui20_birth=birth,reaped_unowned=False,poll=lambda:None if self.exit_reason is None else 0)
+                def wait(self,*_): pass
+                def close(self): self.exit_reason="terminal_exited_zero"; return self.exit_reason
+            argv=["owner","--root",root,"--executable",str(candidate),"--source-commit","a"*40,"--core-commit","b"*40,"--external-runtime","--adverse-controller-crash","--controller-pid","404"]
+            chflags=[]
+            def denied_release(command,**_): chflags.append(command); return types.SimpleNamespace(returncode=1)
+            try:
+                with patch.object(sys,"argv",argv), patch.object(sys,"stdin",io.StringIO(json.dumps(handoff)+"\n")), patch.object(harness["subprocess"],"run",denied_release), patch.object(harness["urllib"].request,"urlopen",lambda *_args,**_kwargs:io.BytesIO(b"{}")), patch.dict(harness["main"].__globals__,{"Terminal":Terminal,"bound_execution":lambda *_:(recovery,recovery,{"platform":"darwin"}),"detail":lambda *_:None,"controller_failed":lambda *_:True,"request":lambda *_:{},"process_birth":lambda *_:birth}):
+                    harness["main"]()
+                primary=json.loads(pathlib.Path(root,"native-exit-receipt.json").read_text())
+                cleanup=json.loads(pathlib.Path(root,"native-cleanup-receipt.json").read_text())
+                finalization=json.loads(pathlib.Path(root,"external-owner-finalization.json").read_text())
+                self.assertEqual(primary["outcome"],"succeeded")
+                self.assertEqual(primary["terminals"][0]["exit"],"terminal_exited_zero")
+                self.assertEqual(cleanup,{"outcome":"failed","closedReason":"leaf_release_failed","recoveryRetained":True})
+                self.assertEqual(finalization["primaryOutcome"],"succeeded")
+                self.assertEqual(finalization["finalizationFailure"],"cleanup_failed")
+                self.assertEqual(chflags,[["sudo","-n","/usr/bin/chflags","noschg",str(leaf)]])
+                self.assertEqual(leaf.read_bytes(),candidate.read_bytes())
+                self.assertTrue(directory.is_dir())
+                os.fstat(recovery["leafFD"]); os.fstat(recovery["directoryFD"])
+                # Consume the real owner's receipt through the actual observer
+                # aggregate path. Child handles are explicit controlled fixtures.
+                owner=types.SimpleNamespace(pid=os.getpid(),stdin=io.StringIO(),stdout=io.StringIO(),stderr=io.StringIO(),wait=lambda:0)
+                runtime=types.SimpleNamespace(pid=202,tui20_birth=birth)
+                closed={"runtimeChildExit":"terminal_exited_zero","shutdownRequested":True,"actualExitObserved":True,"runtimeBirthAbsentObserved":True,"runtimeChildStillLiveAfterClose":False,"runtimeStdoutClosed":True,"runtimeStderrClosed":True}
+                def start(_args,retain): retain(runtime); return runtime,dict(handoff)
+                observer_argv=["observer","--owner","controlled-owner","--root",root,"--executable",str(candidate),"--source-commit","a"*40,"--core-commit","b"*40,"--runtime-script","controlled-runtime","--node","controlled-node"]
+                with patch.object(sys,"argv",observer_argv), patch.object(observer["subprocess"],"Popen",lambda *_args,**_kwargs:owner), patch.dict(observer["main"].__globals__,{"start_runtime":start,"process_birth":lambda *_:birth,"birth_absent":lambda *_:True,"close_runtime":lambda *_:closed}):
+                    with self.assertRaises(SystemExit) as denied: observer["main"]()
+                self.assertEqual(denied.exception.code,1)
+                projection=json.loads(pathlib.Path(root,"native-public-projection.json").read_text())
+                self.assertEqual(projection["result"],"failed")
+                self.assertFalse(projection["actionsPassed"])
+                self.assertTrue(projection["ownedRuntimeClosed"])
+                proof=json.loads(pathlib.Path(root,"owner-finalization-failure-proof.json").read_text())
+                self.assertEqual(proof["finalizationFailure"],"cleanup_failed")
+                self.assertEqual(json.loads(pathlib.Path(root,"native-exit-receipt.json").read_text()),primary)
+                self.assertTrue(leaf.exists(),"aggregate denial must retain failed cleanup recovery")
+            finally:
+                os.close(recovery["leafFD"]); os.close(recovery["directoryFD"])
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX descriptor cleanup and retained recovery directory")
+    def test_production_cleanup_receipt_io_failures_deny_actual_owner_observer_aggregate(self):
+        # Only terminal/API/birth/runtime behavior is controlled. Run actual
+        # main/finalize/default production write_json and actual observer main
+        # plus close_runtime. Fail natural file I/O, never a writer callback.
+        import builtins, io, json
+        for cleanup_kind in ("descriptor","darwin-retained"):
+            boundaries=("none","open","write","flush","fsync") if cleanup_kind=="descriptor" else ("open","write","flush","fsync")
+            for boundary in boundaries:
+                with self.subTest(cleanup=cleanup_kind,boundary=boundary), tempfile.TemporaryDirectory() as root:
+                    harness=load_posix_harness()
+                    observer=runpy.run_path(str(pathlib.Path(__file__).with_name("tui20-native-owner-observer.py")))
+                    candidate=pathlib.Path(root,"candidate"); candidate.write_bytes(b"mandatory cleanup receipt fixture")
+                    birth={"platform":"fixture","startTime":"controlled"}
+                    paths={"coreReadback":True,"uniqueOwnedPaths":["workspaceRoot","instanceRegistryPath","hostPortRegistryPath"],"runtimeInstanceBound":True}
+                    pathlib.Path(root,"ready.json").write_text(json.dumps({"coreCommit":"b"*40,"runtimePathReceipt":paths}))
+                    handoff={"url":"fixture","token":"fixture","deniedToken":"fixture","jwksPort":1,"_runtimePID":202,"_runtimeBirth":birth}
+                    recovery=None; execution_fd=None
+                    if cleanup_kind=="darwin-retained":
+                        directory=pathlib.Path(root,"protected"); directory.mkdir()
+                        leaf=directory/"launch"; leaf.write_bytes(candidate.read_bytes())
+                        recovery={"path":str(leaf),"directory":str(directory),"leafFD":os.open(leaf,os.O_RDONLY),"directoryFD":os.open(directory,os.O_RDONLY),"systemImmutable":0x20000}
+                        execution_fd=recovery
+                        expected_cleanup={"outcome":"failed","closedReason":"leaf_release_failed","recoveryRetained":True}
+                    else:
+                        execution_fd=os.open(candidate,os.O_RDONLY)
+                        expected_cleanup={"outcome":"succeeded","closedReason":"sealed_descriptor_closed","recoveryRetained":False}
+                    class Terminal:
+                        def __init__(self,*_):
+                            self.exit_reason=None
+                            self.child=types.SimpleNamespace(pid=303,tui20_birth=birth,reaped_unowned=False,poll=lambda:None if self.exit_reason is None else 0)
+                            harness["OWNED_TERMINALS"].append(self)
+                        def wait(self,*_): pass
+                        def close(self): self.exit_reason="terminal_exited_zero"; return self.exit_reason
+                    actual_open=builtins.open; actual_fsync=os.fsync
+                    cleanup_fds=set(); reached=[]; chflags=[]
+                    class CleanupStream:
+                        def __init__(self,stream): self.stream=stream
+                        def __enter__(self): self.stream.__enter__(); cleanup_fds.add(self.stream.fileno()); return self
+                        def __exit__(self,*args):
+                            cleanup_fds.discard(self.stream.fileno())
+                            return self.stream.__exit__(*args)
+                        def write(self,value):
+                            if boundary=="write": reached.append("write"); raise OSError("controlled cleanup file write failure")
+                            return self.stream.write(value)
+                        def flush(self):
+                            if boundary=="flush": reached.append("flush"); raise OSError("controlled cleanup file flush failure")
+                            return self.stream.flush()
+                        def fileno(self): return self.stream.fileno()
+                    def open_receipt(path,*args,**kwargs):
+                        if os.fspath(path)==str(pathlib.Path(root,"native-cleanup-receipt.json")) and args and args[0]=="w":
+                            if boundary=="open": reached.append("open"); raise OSError("controlled cleanup file open failure")
+                            return CleanupStream(actual_open(path,*args,**kwargs))
+                        return actual_open(path,*args,**kwargs)
+                    def fsync_receipt(fd):
+                        if fd in cleanup_fds and boundary=="fsync": reached.append("fsync"); raise OSError("controlled cleanup file fsync failure")
+                        return actual_fsync(fd)
+                    def deny_release(command,**_):
+                        chflags.append(command); return types.SimpleNamespace(returncode=1)
+                    owner_argv=["owner","--root",root,"--executable",str(candidate),"--source-commit","a"*40,"--core-commit","b"*40,"--external-runtime","--adverse-controller-crash","--controller-pid","404"]
+                    try:
+                        with patch.object(sys,"argv",owner_argv), patch.object(sys,"stdin",io.StringIO(json.dumps(handoff)+"\n")), patch.object(builtins,"open",open_receipt), patch.object(os,"fsync",fsync_receipt), patch.object(harness["subprocess"],"run",deny_release), patch.object(harness["urllib"].request,"urlopen",lambda *_args,**_kwargs:io.BytesIO(b"{}")), patch.dict(harness["main"].__globals__,{"Terminal":Terminal,"bound_execution":lambda *_:(execution_fd,recovery,{"platform":cleanup_kind}),"detail":lambda *_:None,"controller_failed":lambda *_:True,"request":lambda *_:{},"process_birth":lambda *_:birth}):
+                            harness["main"]()
+                        primary_bytes=pathlib.Path(root,"native-exit-receipt.json").read_bytes()
+                        primary=json.loads(primary_bytes)
+                        finalization=json.loads(pathlib.Path(root,"external-owner-finalization.json").read_text())
+                        self.assertEqual(primary["outcome"],"succeeded")
+                        self.assertEqual(primary["terminals"],[{"terminal":"controller-failure-recovery","exit":"terminal_exited_zero"}])
+                        self.assertNotIn("finalizationFailure",primary)
+                        self.assertEqual(finalization["primaryOutcome"],"succeeded")
+                        self.assertFalse(finalization["liveTuiChildRetained"])
+                        self.assertEqual(reached,[] if boundary=="none" else [boundary],"production writer must reach the requested natural I/O seam")
+                        self.assertEqual(finalization["finalizationFailure"],None if boundary=="none" else "cleanup_receipt_persistence_failed")
+                        if boundary!="none": self.assertEqual(finalization["cleanupOutcome"],expected_cleanup)
+                        if cleanup_kind=="descriptor":
+                            with self.assertRaises(OSError): os.fstat(execution_fd)
+                            if boundary=="none": self.assertEqual(json.loads(pathlib.Path(root,"native-cleanup-receipt.json").read_text()),expected_cleanup)
+                        else:
+                            self.assertEqual(chflags,[["sudo","-n","/usr/bin/chflags","noschg",str(leaf)]])
+                            self.assertEqual(leaf.read_bytes(),candidate.read_bytes())
+                            os.fstat(recovery["leafFD"]); os.fstat(recovery["directoryFD"])
+                        # Feed the actual owner tuple and successful natural q
+                        # receipt to the real observer; exercise its real runtime
+                        # close/write/wait/stream-closure path with owned fixtures.
+                        owner_waits=[]; runtime_waits=[]; shutdown=[]
+                        owner=types.SimpleNamespace(pid=os.getpid(),stdin=io.StringIO(),stdout=io.StringIO(),stderr=io.StringIO(),wait=lambda:owner_waits.append("wait") or 0)
+                        class RuntimeInput(io.StringIO):
+                            def write(self,value): shutdown.append(value); return super().write(value)
+                        runtime=types.SimpleNamespace(pid=202,tui20_birth=birth,stdin=RuntimeInput(),stdout=io.StringIO(),stderr=io.StringIO(),returncode=None)
+                        def wait_runtime(): runtime_waits.append("wait"); runtime.returncode=0; return 0
+                        runtime.wait=wait_runtime
+                        def start(_args,retain): retain(runtime); return runtime,dict(handoff)
+                        observer_argv=["observer","--owner","controlled-owner","--root",root,"--executable",str(candidate),"--source-commit","a"*40,"--core-commit","b"*40,"--runtime-script","controlled-runtime","--node","controlled-node"]
+                        with patch.object(sys,"argv",observer_argv), patch.object(observer["subprocess"],"Popen",lambda *_args,**_kwargs:owner), patch.dict(observer["main"].__globals__,{"start_runtime":start,"process_birth":lambda *_:birth,"birth_absent":lambda *_:True}):
+                            if boundary=="none": observer["main"]()
+                            else:
+                                with self.assertRaises(SystemExit) as denied: observer["main"]()
+                                self.assertEqual(denied.exception.code,1)
+                        projection=json.loads(pathlib.Path(root,"native-public-projection.json").read_text())
+                        self.assertEqual(projection["result"],"succeeded" if boundary=="none" else "failed")
+                        self.assertEqual(projection["actionsPassed"],boundary=="none")
+                        self.assertTrue(projection["ownedRuntimeClosed"])
+                        self.assertEqual(shutdown,["close\n"]); self.assertEqual(runtime_waits,["wait"])
+                        self.assertEqual(len(owner_waits),2)
+                        for process in (owner,runtime):
+                            self.assertTrue(process.stdin.closed); self.assertTrue(process.stdout.closed); self.assertTrue(process.stderr.closed)
+                        closure=json.loads(pathlib.Path(root,"owner-private-closed.json").read_text())
+                        self.assertTrue(closure["actualExitObserved"]); self.assertTrue(closure["runtimeBirthAbsentObserved"])
+                        if boundary!="none":
+                            proof=json.loads(pathlib.Path(root,"owner-finalization-failure-proof.json").read_text())
+                            self.assertEqual(proof["finalizationFailure"],"cleanup_receipt_persistence_failed")
+                            self.assertEqual(proof["cleanupOutcome"],expected_cleanup)
+                            self.assertTrue(proof["actualExitObserved"])
+                            self.assertEqual(closure["reason"],"owner_finalization_failed")
+                        self.assertEqual(pathlib.Path(root,"native-exit-receipt.json").read_bytes(),primary_bytes)
+                        if recovery is not None: self.assertTrue(leaf.exists()); self.assertTrue(directory.is_dir())
+                    finally:
+                        if recovery is not None:
+                            os.close(recovery["leafFD"]); os.close(recovery["directoryFD"])
+
+    @unittest.skipUnless(sys.platform == "linux", "requires actual Linux sealed bytes and pwrite")
+    def test_actual_replacement_probe_separates_inode_and_digest_and_restores_mutated_bytes(self):
+        harness = load_posix_harness()
+        with tempfile.TemporaryDirectory() as root:
+            candidate=pathlib.Path(root,"candidate")
+            original=b"actual mutable source bytes for contract regression"
+            candidate.write_bytes(original)
+            held,identity,inode=harness["hold_candidate"](str(candidate),"a"*40)
+            sealed,_=harness["linux_sealed_execution"](held,identity)
+            observations=[]
+            # Only terminal rendering is controlled here. The actual probe
+            # replaces the path and mutates/restores the real held source inode;
+            # every launch verifies the actual kernel-sealed copy's bytes.
+            class ObservedTerminal:
+                def __init__(self,launch,executable,profile,env):
+                    self_case.assertEqual(harness["sha256_fd"](launch),identity["binarySHA256"])
+                    self_case.assertEqual((os.fstat(held).st_dev,os.fstat(held).st_ino),inode)
+                    observations.append(harness["sha256_fd"](held))
+                def wait(self,need,seconds): pass
+                def close(self,expected): return harness["terminal_exit_reason"](expected)
+            self_case=self
+            try:
+                with patch.dict(harness["bound_replacement_probe"].__globals__,{"Terminal":ObservedTerminal}):
+                    results=harness["bound_replacement_probe"](sealed,held,str(candidate),inode,identity,"missing",{})
+                self.assertEqual([item["attack"] for item in results],["rename","reparse","inplace-content-mutation"])
+                self.assertEqual(observations[:2],[identity["binarySHA256"]]*2)
+                self.assertNotEqual(observations[2],identity["binarySHA256"])
+                self.assertEqual(candidate.read_bytes(),original)
+                self.assertEqual(harness["sha256_fd"](held),identity["binarySHA256"])
+                self.assertFalse(os.path.lexists(pathlib.Path(root,".tui20-held-original")))
+                with patch.dict(harness["bound_replacement_probe"].__globals__,{"Terminal":ObservedTerminal}):
+                    repeated=harness["bound_replacement_probe"](sealed,held,str(candidate),inode,identity,"missing",{})
+                self.assertEqual(len(repeated),3)
+                self.assertEqual(candidate.read_bytes(),original)
+                self.assertFalse(os.path.lexists(pathlib.Path(root,".tui20-held-original")))
+                class FailingMutationTerminal(ObservedTerminal):
+                    def wait(self,need,seconds):
+                        if observations[-1]!=identity["binarySHA256"]: raise RuntimeError("controlled mutation launch assertion")
+                with patch.dict(harness["bound_replacement_probe"].__globals__,{"Terminal":FailingMutationTerminal}):
+                    with self.assertRaisesRegex(RuntimeError,"controlled mutation launch assertion"):
+                        harness["bound_replacement_probe"](sealed,held,str(candidate),inode,identity,"missing",{})
+                self.assertEqual(candidate.read_bytes(),original,"actual source byte must restore even when the mutation launch assertion fails")
+                self.assertEqual(harness["sha256_fd"](held),identity["binarySHA256"])
+                self.assertFalse(os.path.lexists(pathlib.Path(root,".tui20-held-original")))
+                for failure_at in (1,2):
+                    class FailingReplacementTerminal(ObservedTerminal):
+                        count=0
+                        def wait(self,need,seconds):
+                            type(self).count+=1
+                            if self.count==failure_at: raise RuntimeError("controlled replacement interruption")
+                    with patch.dict(harness["bound_replacement_probe"].__globals__,{"Terminal":FailingReplacementTerminal}):
+                        with self.assertRaisesRegex(RuntimeError,"controlled replacement interruption"):
+                            harness["bound_replacement_probe"](sealed,held,str(candidate),inode,identity,"missing",{})
+                    self.assertEqual(candidate.read_bytes(),original)
+                    self.assertEqual((candidate.stat().st_dev,candidate.stat().st_ino),inode)
+                    self.assertFalse(os.path.lexists(pathlib.Path(root,".tui20-held-original")))
+                    self.assertFalse(os.path.lexists(pathlib.Path(root,".tui20-untrusted-replacement")))
+                staged=pathlib.Path(root,".tui20-untrusted-replacement.link")
+                actual_replace=os.replace
+                for substitute in (False,True):
+                    reached=[]
+                    foreign_staged=pathlib.Path(root,"foreign-staged-link")
+                    if substitute: os.symlink("foreign target must remain",foreign_staged)
+                    def fail_staged_rename(source,target):
+                        if str(source)==str(staged):
+                            self.assertTrue(staged.is_symlink(),"failure must occur after actual staged symlink creation")
+                            reached.append(os.lstat(staged).st_ino)
+                            if substitute: actual_replace(foreign_staged,staged)
+                            raise OSError("controlled staged rename failure")
+                        return actual_replace(source,target)
+                    with patch.dict(harness["bound_replacement_probe"].__globals__,{"Terminal":ObservedTerminal}), patch.object(os,"replace",fail_staged_rename):
+                        with self.assertRaisesRegex(OSError,"controlled staged rename failure"):
+                            harness["bound_replacement_probe"](sealed,held,str(candidate),inode,identity,"missing",{})
+                    self.assertEqual(len(reached),1)
+                    self.assertEqual(candidate.read_bytes(),original)
+                    self.assertEqual((candidate.stat().st_dev,candidate.stat().st_ino),inode)
+                    self.assertFalse(os.path.lexists(pathlib.Path(root,".tui20-held-original")))
+                    self.assertFalse(os.path.lexists(pathlib.Path(root,".tui20-untrusted-replacement")))
+                    if substitute:
+                        self.assertTrue(staged.is_symlink())
+                        self.assertEqual(os.readlink(staged),"foreign target must remain")
+                        with self.assertRaisesRegex(RuntimeError,"probe paths already exist"):
+                            harness["bound_replacement_probe"](sealed,held,str(candidate),inode,identity,"missing",{})
+                        # This is the test-created foreign fixture, never probe cleanup.
+                        staged.unlink()
+                    else:
+                        self.assertFalse(os.path.lexists(staged))
+                        with patch.dict(harness["bound_replacement_probe"].__globals__,{"Terminal":ObservedTerminal}):
+                            repeated=harness["bound_replacement_probe"](sealed,held,str(candidate),inode,identity,"missing",{})
+                        self.assertEqual(len(repeated),3)
+                        self.assertEqual(candidate.read_bytes(),original)
+                        self.assertFalse(os.path.lexists(staged))
+                        self.assertFalse(os.path.lexists(pathlib.Path(root,".tui20-held-original")))
+                foreign=pathlib.Path(root,"foreign-alias")
+                foreign.write_bytes(b"unowned replacement alias must remain")
+                class ForeignAliasTerminal(ObservedTerminal):
+                    def wait(self,need,seconds):
+                        os.replace(foreign,pathlib.Path(root,".tui20-held-original"))
+                        raise RuntimeError("controlled foreign alias substitution")
+                with patch.dict(harness["bound_replacement_probe"].__globals__,{"Terminal":ForeignAliasTerminal}):
+                    with self.assertRaisesRegex(RuntimeError,"original alias identity changed"):
+                        harness["bound_replacement_probe"](sealed,held,str(candidate),inode,identity,"missing",{})
+                self.assertEqual(pathlib.Path(root,".tui20-held-original").read_bytes(),b"unowned replacement alias must remain")
+            finally:
+                os.close(sealed); os.close(held)
+
     def test_cleanup_receipt_writer_failure_cannot_replace_primary_outcome(self):
         harness = load_posix_harness()
         writes = []
@@ -204,8 +542,10 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
             writes.append((pathlib.Path(path).name, value))
             if path.endswith("native-cleanup-receipt.json"): raise OSError("controlled recorder failure")
         cleanup = lambda *_: {"outcome":"failed","closedReason":"protected_artifact_removal_failed","recoveryRetained":True}
-        actual = harness["finalize_native_outcome"]("controlled-root", primary, None, object(), -1, cleanup=cleanup, writer=record)
-        self.assertEqual(actual["recoveryRetained"], True)
+        with self.assertRaises(harness["CleanupReceiptPersistenceFailure"]) as failed:
+            harness["finalize_native_outcome"]("controlled-root", primary, None, object(), -1, cleanup=cleanup, writer=record)
+        self.assertEqual(failed.exception.cleanup_outcome,{"outcome":"failed","closedReason":"protected_artifact_removal_failed","recoveryRetained":True})
+        self.assertIsInstance(failed.exception.__cause__,OSError)
         self.assertEqual(writes[0], ("native-exit-receipt.json", primary))
 
     def test_injected_cleanup_failure_can_be_observed_without_rewriting_primary(self):

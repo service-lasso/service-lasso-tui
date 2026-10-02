@@ -2,6 +2,29 @@
 
 Status: active
 
+## Issue20 final042 source repair contract
+
+TUI-ACCEPTANCE-001/002/003 and TUI-DISTRIBUTION-002 jointly require all six
+final042 findings to be repaired before new execution admission:
+F1: actual fresh native phase retains explicit empty GOFLAGS and GOWORK=off
+and admits effective Go environment/module immediately before native build.
+F2: register a fully initialized terminal immediately after fork, before birth
+observation; unknown birth remains owned/unproven until actual child wait.
+F3: actual Windows reconnect caller supplies the pinned source SHA and digest
+of the extracted executable; the Python held identity spans direct constructor
+and ConPTY without reacquisition. F4: authentic reconnect success requires the
+closed candidateIdentity and matching directConstructor, bound to caller input;
+identity-free, foreign and unexpected fields deny success. F5: native writer
+accepts the closed direct-constructor stage, and Node attempts independent exit
+persistence even when helper persistence fails, retaining primary and both sink
+failures. F6: q success in both Windows read helpers requires actual wait with
+observed zero; nonzero/signaled/unknown are closed failure categories.
+Actual phase/post-fork/entrypoint/producer-consumer/native-writer/q-outcome
+regressions are required. All remain UNEXECUTED pending DIFFERENT fresh ENTIRE
+SOURCE GO and NEW complete-input ROOT admission. Preserve all earlier 5+2+3
+repairs and Issue18 SPEC002 publisher controls; no native/operator/Core1553,
+published-byte, release or full-delivery acceptance is implied.
+
 ## TUI-CONNECTION
 
 The client validates an HTTP(S) runtime URL, retrieves `/api/health`, and clearly
@@ -120,6 +143,24 @@ binary digest and byte size must agree with build-output and public-projection.
 All GitHub Actions used by CI and candidate publication are
 committed SHA references, with their human version labels retained only in
 comments.
+Issue #20 native input custody uses a quoted shell heredoc for the fresh
+environment boundary so literal next commands retain dollar expressions and
+semicolons without outer-shell execution. The actual tool producer emits tab
+separated name/path/SHA256/size records; the Python consumer splits real tabs.
+TUI and Core Git commits and trees are exactly 40 lowercase hexadecimal Git
+object identities, independently of the 64 hexadecimal SHA256 digest contract
+for dirty state, inventory and executable bytes. Actual producer/consumer and
+real Git tree regressions are required. This source repair addresses all three
+inherited pipeline findings together; execution remains prohibited until fresh
+entire SOURCE GO and a new complete-input ROOT admission. It grants no native
+five-action or published-byte acceptance and preserves Issue #18 publication.
+The same producer must terminate ancestor traversal at `/` using real parent
+paths and check every ancestor including root for links; stripping a final
+slash component to an empty string is not a valid root traversal.
+The host birth selection uses an ordinary shell case with per-platform command
+substitutions, preserving Linux awk and Darwin ps identities under the native
+macOS Bash parser. Natural d1beda9 macOS guard failure is retained separately;
+it does not justify any local execution or a native acceptance claim.
 Each native run also mutates the
 source inode in place after the immutable execution object exists and proves
 the launch still reaches the verified object; it restores the source byte
@@ -282,8 +323,10 @@ handle live, and creates that root and both receipt files relative to held
 directory handles. It rejects reparse points during construction, applies an
 owner-only DACL, and keeps the owner non-delete- and non-write-shareable while
 the receipt is live. Native fixtures must prove replacement of the attempt
-root, parent, and grandparent is refused during acquisition. Node asks that writer to replace
-the helper record with its bounded helper-exit state before cleanup. Every
+root, parent, and grandparent is refused during acquisition. Node asks that
+writer to persist the helper result and independently persist its bounded
+helper-exit state in the separate Node sink before cleanup. Both attempts are
+required even if the helper sink rejects. Every
 receipt enum and response schema is closed; a receipt sink failure preserves
 the original probe failure. Until a handle-relative owned deletion operation is
 implemented, Windows native attempt roots are retained as evidence rather than
@@ -312,3 +355,110 @@ constructor outcome and candidate identity so it proves both paths used the
 same binary. A direct assertion failure is a bounded build-domain suspect; it
 does not rerun, replace the failed candidate, or relabel a generic failure as
 the typed API boundary.
+
+Issue #20 final9f entire-review findings require two coherent source repairs:
+record OS-observed Bash producer and Python writer PID/PPID/birth/image tuples,
+with the live parent directly observing and binding its actual writer child;
+and retain mandatory external-owner finalization outcome for the durable
+observer to combine with its actual held Core child shutdown/wait/absence.
+Missing, malformed or crashed ownership receipts fail closed. Actual producer
+and controller-to-observer-to-external-owner regressions are required.
+All prior five producer repairs and Issue #18 nine-mutation/six-held-asset
+publisher safeguards remain required. Source and regressions stay UNEXECUTED
+until fresh ENTIRE independent SOURCE GO and NEW complete-input ROOT admission.
+Issue #20 final87ad entire SOURCE NO-GO requires all three coherent repairs:
+explicit source inode tuple and candidate digest inputs to the actual mutation
+probe with restored-byte regression; observer ownership from runtime spawn
+through every acquisition/owner launch/birth/persistence/handoff failure, actual
+child waits and birth-absence proof before closed failure projection; private
+FIFO peer-aware rendezvous with truthful parent-owned writer waits on death
+before ready and shell failure before observation. Retain all earlier producer,
+finalization, immutable execution and Issue #18 publisher protections. New
+regressions remain UNEXECUTED until fresh ENTIRE SOURCE GO and NEW ROOT admission.
+
+## PR25 final9d five-finding source successor (issues18 and20)
+Issue18 / SPEC002 AC5 and AC6: retain the first admitted manifest bytes and
+require exact equality with the acquired held manifest before ANY provider
+access. Regress coherent manifest plus inventory replacement at acquisition.
+Issue20 / SPEC001 TUI-ACCEPTANCE-001/002/003 and TUI-DISTRIBUTION-002:
+F2 retains the actual direct-owned runtime immediately after spawn, before
+birth/select/read/parse, and closes/waits with unknown birth remaining unknown.
+F3 preserves primary reconnect spawn failure plus independent Node/native sink
+rejection without inventing a helper receipt. F4 identity-guards restoration
+and removal of only the positively bound redundant original hardlink alias;
+repeat and interrupted rename/symlink/mutation regressions remain required.
+F5 targets the actual observer owner command for launch/handoff faults and
+records the reached boundary; Darwin /bin/ps remains outside those faults.
+All five form one SOURCE-ONLY bundle. Prior6+5+2+3 assertions, provider policy,
+private held-byte gates, Core authority, TLS and secrecy stay mandatory.
+All new regressions are UNEXECUTED until DIFFERENT fresh ENTIRE SOURCE GO plus
+NEW complete-input ROOT admission. No native or full-delivery claim is made.
+## Issue20 PR25 current1102 two repairs and parser evidence preparation
+
+SPEC001 TUI-ACCEPTANCE-002/003 and TUI-DISTRIBUTION-002 require identity-bound
+cleanup of an actual staged reparse link after failed rename, with actual
+post-symlink failure, repeat restoration and foreign-substitution regressions;
+and bounded cleanup of the real build's positively owned private HOME module
+cache without changing persisted GOFLAGS or foreign GOWORK assertions.
+The mandatory actual Darwin producer failure remains UNRESOLVED. Prepare
+private caller/parser path/version/hash, exact source bytes, argv and environment
+binding before parsing through the actual producer test seam. Preserve primary
+syntax diagnostics, real tuple/tool/Git/FIFO assertions and mandatory Darwin
+execution. This is diagnostic preparation, not a causal source repair or pass.
+Entire scope remains SOURCE-ONLY and regressions UNEXECUTED until DIFFERENT
+fresh ENTIRE SOURCE GO and NEW complete-input ROOT admission. Preserve all
+prior cumulative protections, Issue18 SPEC002 AC1..7 and every full-delivery gate.
+## Issue20 PR25 exact2e5a two-finding successor
+SPEC001 TUI-ACCEPTANCE-002/003 and TUI-DISTRIBUTION-002 require a closed
+safe BEFORE-invocation parser/caller/workflow/full-producer/fed-source tuple
+and AFTER-invocation stage/result/diagnostic-sink disposition through existing
+test output. Full environment, argv, paths and raw version/results stay private;
+no upload authority is created. Select the existing parser at both seams and
+preserve fed bytes. Darwin line99 tools cause remains UNRESOLVED and the actual
+producer is mandatory. Returned natural Darwin cleanup failure must reach the
+mandatory external-owner finalization and observer aggregate gate, preserving
+primary success and retained recovery. Actual natural-return/main/observer gate
+regression is required alongside the existing exception vector. Source-only,
+UNEXECUTED until DIFFERENT fresh ENTIRE review and NEW complete-input ROOT
+admission; all earlier repairs, Core authority and Issue18 protections remain.
+## Issue20 PR25 exact67b5 bounded parser differential preparation
+SPEC001 TUI-ACCEPTANCE-002/003 and TUI-DISTRIBUTION-002 permit a source-only
+paired parse diagnostic after the unchanged mandatory actual producer. Bind the
+same selected parser image, exact fed bytes, fresh environment and existing
+-euo pipefail options; add only -n, comparing stdin with -c input routes.
+Hypothesis: the fed bytes are rejected independently of parser input route.
+Unequal results falsify route independence; paired zero results falsify intrinsic
+parse rejection only. Neither proves expansion/runtime success, original caller
+equivalence or a Darwin cause. Keep private argv/environment/raw output fsynced
+before each route and emit only closed outcomes/hashes. Original invocation and
+assertions remain primary. All prior repairs and full delivery gates remain;
+DIFFERENT entire source review and NEW complete-input ROOT admission precede
+execution. No diagnostic has run locally and no source causal repair is claimed.
+## Issue20 PR25 da17 mandatory cleanup receipt persistence successor
+SPEC001 TUI-ACCEPTANCE-002/003 requires mandatory cleanup receipt durability
+independently of the primary outcome and actual OS cleanup result. A natural
+open/write/flush/fsync OSError at the production cleanup writer must propagate
+as cleanup_receipt_persistence_failed through the real owner finalization and
+observer denial. Preserve the successful primary, true cleanup disposition and
+retained Darwin recovery; receipt failure must not relabel OS cleanup failed.
+Actual main/finalize/production writer and observer regressions cover successful
+cleanup and natural retained Darwin cleanup failure with later receipts live.
+Source-only; all regressions UNEXECUTED pending DIFFERENT ENTIRE source review
+and NEW complete-input ROOT admission. F3 actual Darwin producer is unresolved;
+paired parse-only zero results identify no runtime cause. Prior F1/F2/P2 and all
+5+6+5+2+3, Issue18 AC1..7/Core authority/native/full-delivery gates remain.
+## Issue20 PR25 F3 accepted explicit-FIFO descriptor source proposal
+SPEC001 TUI-ACCEPTANCE-003 retains the mandatory actual native producer and
+its selected Bash/parser/quoted heredoc/options. The parent accepted replacing
+read -r -t 1 writer_ready <&9 with read -r -t 1 -u 9 writer_ready so peer-ready
+FIFO consumption does not redirect script-input fd0. GNU/Apple published text
+supports descriptor isolation, not an exact source-to-Darwin-image binding or
+causal defect. Seekback/undo counterevidence is retained. Preserve status/variable,
+actual jobs-alive policy/$! identity/reciprocal FIFO birth-image-PPID checks,
+failed-frame/EOF/overflow denial/trap actual wait/private fsync/success wait.
+Existing actual producer plus writer-death/producer-failure adversaries remain
+primary and bind the new operation. Original da17 runtime failure remains FAILED;
+paired -n stdin/-c zero results do not prove runtime success or causal repair.
+Proposal remains UNQUALIFIED until exact new candidate natural mandatory Darwin
+producer succeeds. DIFFERENT ENTIRE review and NEW ROOT admission precede local
+execution; all R1 and prior native/publisher/full-delivery requirements remain.

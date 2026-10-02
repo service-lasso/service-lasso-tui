@@ -8,7 +8,9 @@ const publicKinds = new Set(["tui20-native-binary-digest", "tui20-native-input-c
 const receiptFiles = readdirSync(root, { recursive: true }).filter(file => file.endsWith(".json"));
 const exact = (value, keys) => value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).sort().join(",") === [...keys].sort().join(",");
 const hash = value => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
-const commit = value => typeof value === "string" && /^[a-f0-9]{40}$/.test(value);
+// These repositories produce SHA1 Git objects; SHA256 byte digests are separate.
+const gitObject = value => typeof value === "string" && /^[a-f0-9]{40}$/.test(value);
+const commit = gitObject;
 const size = value => Number.isSafeInteger(value) && value > 0;
 const fail = message => { throw new Error(message); };
 const forbiddenKey = /(?:^|[A-Z_])(?:path|pid|ppid|birth|private|image|tool|literalcommand)(?:$|[A-Z_])|(?:PID|PPID)$/;
@@ -21,13 +23,13 @@ const inspect = value => {
 const read = file => { const value = JSON.parse(readFileSync(file, "utf8")); inspect(value); return value; };
 const assertInputCustody = value => {
   if (!exact(value, ["schemaVersion", "kind", "source", "core", "ownership", "verification"]) || value.schemaVersion !== 1 || value.kind !== "tui20-native-input-custody") fail("invalid input custody schema");
-  if (!exact(value.source, ["tuiCommit", "tuiTree", "tuiDirtyHash", "tuiInventoryHash"]) || !commit(value.source.tuiCommit) || !hash(value.source.tuiTree) || !hash(value.source.tuiDirtyHash) || !hash(value.source.tuiInventoryHash)) fail("invalid input custody source");
+  if (!exact(value.source, ["tuiCommit", "tuiTree", "tuiDirtyHash", "tuiInventoryHash"]) || !commit(value.source.tuiCommit) || !gitObject(value.source.tuiTree) || !hash(value.source.tuiDirtyHash) || !hash(value.source.tuiInventoryHash)) fail("invalid input custody source");
   if (!exact(value.core, ["requestedCommit"]) || !commit(value.core.requestedCommit)) fail("invalid input custody Core binding");
   if (!exact(value.ownership, ["threeDistinctPaths", "allParentsNonLink", "registriesInitiallyAbsent"]) || Object.values(value.ownership).some(item => item !== true)) fail("invalid input custody ownership");
   if (!exact(value.verification, ["freshEnvironment", "requiredToolsVerified"]) || value.verification.freshEnvironment !== true || !Array.isArray(value.verification.requiredToolsVerified) || !value.verification.requiredToolsVerified.length || new Set(value.verification.requiredToolsVerified).size !== value.verification.requiredToolsVerified.length || value.verification.requiredToolsVerified.some(item => typeof item !== "string" || !/^[a-z0-9-]+$/.test(item))) fail("invalid input custody verification");
 };
 const assertCoreBinding = value => {
-  if (!exact(value, ["schemaVersion", "kind", "coreCommit", "coreTree", "coreDirtyHash"]) || value.schemaVersion !== 1 || value.kind !== "tui20-native-core-source-binding" || !commit(value.coreCommit) || !hash(value.coreTree) || !hash(value.coreDirtyHash)) fail("invalid Core binding schema");
+  if (!exact(value, ["schemaVersion", "kind", "coreCommit", "coreTree", "coreDirtyHash"]) || value.schemaVersion !== 1 || value.kind !== "tui20-native-core-source-binding" || !commit(value.coreCommit) || !gitObject(value.coreTree) || !hash(value.coreDirtyHash)) fail("invalid Core binding schema");
 };
 const assertBinaryDigest = value => {
   if (!exact(value, ["schemaVersion", "kind", "sha256", "size"]) || value.schemaVersion !== 1 || value.kind !== "tui20-native-binary-digest" || !hash(value.sha256) || !size(value.size)) fail("invalid binary digest schema");

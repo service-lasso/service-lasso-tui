@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { assertDraftReleaseReceipt, assertExistingCandidateRecovery, assertManifest, assertPreflight, assertPublicationDirectory, assertReleaseReceipt, assertTransportPolicy, candidateIdentity, readBoundedRegularLocalAsset, verifyPublicAssetBytes } from "./verify-candidate-publication.mjs";
-import { uploadVerifiedCandidateAssets } from "./upload-verified-candidate-assets.mjs";
+
 
 const identity = candidateIdentity({ sourceRef: "refs/heads/develop", sourceCommit: "0123456789abcdef0123456789abcdef01234567", version: "2026.10.1-0123456", tag: "candidate-2026.10.1-0123456" });
 const names = ["service-lasso-tui-2026.10.1-0123456-win32-amd64.zip", "service-lasso-tui-2026.10.1-0123456-linux-amd64.tar.gz", "service-lasso-tui-2026.10.1-0123456-darwin-amd64.tar.gz", "service-lasso-tui-2026.10.1-0123456-darwin-arm64.tar.gz", "SHA256SUMS.txt", "candidate-manifest.json"];
@@ -161,31 +161,93 @@ test("rejects an external same-size file swapped in through a symlink", async ()
   } finally { await rm(directory, { recursive: true, force: true }); await rm(external, { recursive: true, force: true }); }
 });
 
-test("uploads and draft-verifies the original held bytes while dropping auth on every redirect", async () => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "candidate-held-upload-")); const previousRepository = process.env.GITHUB_REPOSITORY; const previousToken = process.env.GH_TOKEN; const uploaded = [];
+import { publishCandidate } from "./publish-candidate.mjs";
+
+function publisherProvider({ existing = false, orphan = false, annotated = false, malformed = false, cycle = false, mismatch = false, changeAt = 0, policyUnavailable = false, draftMismatch = false, publicMismatch = false, createCollision = false, draftRedirect = false, replaceLocal = false } = {}) {
+  const calls = []; const state = { directory: null }; let writes = 0; let policyReads = 0; let releaseReads = 0; let created = existing; let tagExists = existing || orphan;
+  const tagSHA = "a".repeat(40);
+  const record = draft => ({ ...release, id: 123, draft, immutable: !draft, assets: draft && writes === 2 ? [] : release.assets });
+  const fetchImpl = async (url, options) => {
+    const parsed = new URL(url); calls.push({ url: String(url), method: options.method, headers: options.headers });
+    const json = value => response(200, {}, Buffer.from(JSON.stringify(value)));
+    if (parsed.hostname === "uploads.github.com") { if (replaceLocal && writes === 2) await Promise.all(names.map(name => writeFile(path.join(state.directory, name), Buffer.from(`replacement-${name}`)))); writes++; assert.deepEqual(options.body, localBodies[parsed.searchParams.get("name")]); return response(201); }
+    if (options.method === "POST" && parsed.pathname.endsWith("/git/refs")) { writes++; tagExists = true; return response(201, {}, Buffer.from("{}")); }
+    if (options.method === "POST") { writes++; created = true; return response(201, {}, Buffer.from(JSON.stringify(record(true)))); }
+    if (options.method === "PATCH") { writes++; return json(record(false)); }
+    if (parsed.pathname.endsWith("/immutable-releases")) { policyReads++; if (policyUnavailable && policyReads > 1) return response(403); return json({ enabled: true }); }
+    if (parsed.pathname.endsWith("/environments/development-candidate")) return json({ ...preflight.environment, ...(changeAt && policyReads >= changeAt ? { protection_rules: [{ type: "wait_timer", wait_timer: 11 }] } : {}) });
+    if (parsed.pathname.endsWith("/branches/develop/protection")) return json(preflight.branchProtection);
+    if (parsed.pathname.includes("/git/ref/tags/")) {
+      if (!tagExists) return response(404);
+      return json({ ref: `refs/tags/${identity.tag}`, object: malformed ? { type: "blob", sha: tagSHA } : { type: annotated || cycle ? "tag" : "commit", sha: annotated || cycle ? tagSHA : mismatch ? "b".repeat(40) : identity.sourceCommit } });
+    }
+    if (parsed.pathname.includes("/git/tags/")) return json({ sha: tagSHA, object: { type: cycle ? "tag" : "commit", sha: cycle ? tagSHA : mismatch ? "b".repeat(40) : identity.sourceCommit } });
+    if (parsed.pathname.includes("/releases/tags/")) { releaseReads++; if (createCollision && releaseReads === 2) return json(record(false)); return created ? json(record(false)) : response(404); }
+    if (parsed.pathname.endsWith("/releases/123")) return json({ ...record(true), ...(draftMismatch ? { assets: release.assets.slice(1) } : {}) });
+    if (parsed.pathname.includes("/releases/assets/")) { const name = release.assets.find(asset => asset.url === String(url)).name; return draftRedirect ? response(302, { location: signedRedirect(name) }) : response(200, {}, localBodies[name]); }
+    if (parsed.hostname === "release-assets.githubusercontent.com") { assert.deepEqual(options.headers, {}); const name = decodeURIComponent(parsed.pathname.split("/").at(-1)); return response(200, {}, localBodies[name]); }
+    if (parsed.hostname === "github.com") { assert.deepEqual(options.headers, {}); const name = decodeURIComponent(parsed.pathname.split("/").at(-1)); return response(200, {}, publicMismatch ? Buffer.alloc(localBodies[name].length) : localBodies[name]); }
+    throw new Error("unexpected fixture endpoint");
+  };
+  return { fetchImpl, calls, state, writes: () => writes, policyReads: () => policyReads };
+}
+async function runPublisher(provider, acquisitionFault) {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "complete-publisher-"));
   try {
     await Promise.all(names.map(name => writeFile(path.join(directory, name), localBodies[name])));
     await writeFile(path.join(directory, "candidate-local-assets.json"), JSON.stringify(localAssets));
-    process.env.GITHUB_REPOSITORY = "service-lasso/service-lasso-tui"; process.env.GH_TOKEN = "test-token";
-    const draft = { ...release, draft: true, immutable: false };
-    const calls = [];
-    await uploadVerifiedCandidateAssets({ assetDirectory: directory, localAssets: path.join(directory, "candidate-local-assets.json"), identity, releaseID: "123", fetchImpl: async (url, options) => {
-      calls.push({ url: String(url), options }); const parsed = new URL(url);
-      if (options.method === "POST") { if (uploaded.length === 0) await Promise.all(names.map(name => writeFile(path.join(directory, name), Buffer.from(`replacement-${name}`, "utf8")))); uploaded.push(Buffer.from(options.body)); return response(201); }
-      if (parsed.pathname === "/repos/service-lasso/service-lasso-tui/releases/123") return response(200, { "content-length": String(Buffer.byteLength(JSON.stringify(draft))) }, Buffer.from(JSON.stringify(draft)));
-      if (parsed.hostname === "api.github.com") return response(302, { location: signedRedirect(draft.assets.find(asset => asset.url === String(url)).name) });
-      const name = decodeURIComponent(parsed.pathname.split("/").at(-1)); return response(200, { "content-length": String(localBodies[name].length) }, localBodies[name]);
-    } });
-    assert.deepEqual(uploaded, names.map(name => localBodies[name]));
-    const redirected = calls.filter(call => new URL(call.url).hostname === "release-assets.githubusercontent.com");
-    assert.equal(redirected.length, 6); assert.ok(redirected.every(call => Object.keys(call.options.headers).length === 0));
-  } finally { previousRepository === undefined ? delete process.env.GITHUB_REPOSITORY : process.env.GITHUB_REPOSITORY = previousRepository; previousToken === undefined ? delete process.env.GH_TOKEN : process.env.GH_TOKEN = previousToken; await rm(directory, { recursive: true, force: true }); }
+    provider.state.directory = directory;
+    return await publishCandidate({ assetDirectory: directory, identity, token: "fixture-token", fetchImpl: provider.fetchImpl, beforeHeldAcquisition: acquisitionFault ? () => acquisitionFault(directory) : undefined });
+  } finally { await rm(directory, { recursive: true, force: true }); }
+}
+test("complete publisher creates once, verifies private inventory, publishes once, and resolves annotated source", async () => {
+  const provider = publisherProvider({ annotated: true }); const result = await runPublisher(provider);
+  assert.equal(result.recovered, false); assert.equal(result.receipt.verified.length, 6); assert.equal(result.receipt.tagProof.chain.length, 2);
+  assert.equal(provider.writes(), 9); assert.equal(provider.policyReads(), 10);
+  assert.equal(provider.calls.filter(call => call.method === "PATCH").length, 1);
 });
 
-test("keeps the draft patch after the failing draft receipt gate", async () => {
-  const workflow = await readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
-  const gate = workflow.indexOf("node scripts/upload-verified-candidate-assets.mjs");
-  const patch = workflow.indexOf('gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" -f draft=false');
-  assert.ok(gate >= 0 && patch > gate);
-  assert.match(workflow.slice(workflow.lastIndexOf("set -euo pipefail", gate), patch), /set -euo pipefail/u);
+test("coherent manifest and inventory replacement at held acquisition denies ALL provider access", async () => {
+  for (const foreign of [true, false]) {
+    const provider = publisherProvider(); let boundaryReached = false;
+    await assert.rejects(() => runPublisher(provider, async directory => {
+      boundaryReached = true;
+      const replacement = foreign ? { ...manifest, source: { ...manifest.source, commit: "b".repeat(40) } } : manifest;
+      // Even a semantically equal representation must be the admitted bytes.
+      const bytes = Buffer.from(JSON.stringify(replacement, null, 2));
+      const inventory = { ...localAssets, "candidate-manifest.json": { sha256: createHash("sha256").update(bytes).digest("hex"), size: bytes.length } };
+      await writeFile(path.join(directory, "candidate-manifest.json"), bytes);
+      await writeFile(path.join(directory, "candidate-local-assets.json"), JSON.stringify(inventory));
+    }), /held candidate manifest differs from admitted bytes/u);
+    assert.equal(boundaryReached, true);
+    assert.deepEqual(provider.calls, []);
+    assert.equal(provider.writes(), 0);
+  }
+});
+test("complete publisher exact immutable recovery is read-only for lightweight and annotated tags", async () => {
+  for (const annotated of [false, true]) { const provider = publisherProvider({ existing: true, annotated }); assert.equal((await runPublisher(provider)).recovered, true); assert.equal(provider.writes(), 0); }
+});
+test("complete publisher refuses orphan, mismatched, malformed, cyclic and read-only release collisions before writes", async () => {
+  for (const options of [{ orphan: true }, { orphan: true, annotated: true }, { existing: true, mismatch: true }, { existing: true, annotated: true, mismatch: true }, { orphan: true, malformed: true }, { orphan: true, cycle: true }, { createCollision: true }]) {
+    const provider = publisherProvider(options); await assert.rejects(() => runPublisher(provider)); assert.equal(provider.writes(), 0);
+  }
+});
+test("policy changes or denial midphase stop before the next mutation", async () => {
+  for (const [options, writes] of [[{ changeAt: 2 }, 0], [{ changeAt: 3 }, 1], [{ changeAt: 10 }, 8], [{ policyUnavailable: true }, 0]]) {
+    const provider = publisherProvider(options); await assert.rejects(() => runPublisher(provider), /policy|provider/u); assert.equal(provider.writes(), writes);
+  }
+});
+test("private complete-byte gate denies publish and final public mismatch denies acceptance", async () => {
+  const draft = publisherProvider({ draftMismatch: true }); await assert.rejects(() => runPublisher(draft)); assert.equal(draft.writes(), 8);
+  const final = publisherProvider({ publicMismatch: true }); await assert.rejects(() => runPublisher(final)); assert.equal(final.writes(), 9);
+});
+
+
+
+
+test("complete publisher uploads held bytes after path replacement and private redirect drops all auth", async () => {
+  const provider = publisherProvider({ replaceLocal: true, draftRedirect: true });
+  await assert.rejects(() => runPublisher(provider), /actual local/u);
+  assert.equal(provider.writes(), 9);
+  assert.equal(provider.calls.filter(call => new URL(call.url).hostname === "release-assets.githubusercontent.com").length, 6);
 });

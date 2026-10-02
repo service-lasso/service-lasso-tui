@@ -181,12 +181,12 @@ async function reserveUnavailableLoopbackURL() {
   };
 }
 
-export function parseProbe(stdout, mode) {
+export function parseProbe(stdout, mode, expectedIdentity) {
   try {
     const result = JSON.parse(stdout.trim());
     const expectedKeys = mode === "unavailable"
       ? ["directConstructor", "exit", "mode", "ok", "receipt"]
-      : ["exit", "mode", "narrowResize", "navigation", "ok", "receipt", "reconnect"];
+      : ["directConstructor", "exit", "mode", "narrowResize", "navigation", "ok", "receipt", "reconnect"];
     const actualKeys = Object.keys(result ?? {}).sort();
     const successReceipt = result?.receipt;
     if (
@@ -194,7 +194,7 @@ export function parseProbe(stdout, mode) {
       actualKeys.length === expectedKeys.length && actualKeys.every((key, index) => key === expectedKeys[index]) &&
       mode === "unavailable" && result.exit === "q" &&
       validateReceipt(successReceipt).stage === "exit" && successReceipt.outcome === "normal" && successReceipt.closedReason === "completed" &&
-      validCandidateIdentity(successReceipt.candidateIdentity) &&
+      matchesCandidateIdentity(successReceipt.candidateIdentity, expectedIdentity) &&
       validDirectConstructor(result.directConstructor, successReceipt.candidateIdentity)
     ) return result;
     if (
@@ -204,7 +204,9 @@ export function parseProbe(stdout, mode) {
       result.reconnect === "r" && Array.isArray(result.navigation) && result.navigation.length === 2 &&
       result.navigation[0] === "d" && result.navigation[1] === "?" &&
       result.narrowResize === "help-screen-rendered-after-50-columns" && result.exit === "q" &&
-      validateReceipt(successReceipt).stage === "exit" && successReceipt.outcome === "normal" && successReceipt.closedReason === "completed"
+      validateReceipt(successReceipt).stage === "exit" && successReceipt.outcome === "normal" && successReceipt.closedReason === "completed" &&
+      matchesCandidateIdentity(successReceipt.candidateIdentity, expectedIdentity) &&
+      validDirectConstructor(result.directConstructor, successReceipt.candidateIdentity)
     ) return result;
     const failureKeys = Object.keys(result ?? {}).sort();
     const hasDirectConstructor = Object.hasOwn(result ?? {}, "directConstructor");
@@ -236,7 +238,13 @@ export function validateReceipt(receipt) {
 
 function validCandidateIdentity(identity) {
   return identity && Object.keys(identity).length === 2 &&
+    typeof identity.sourceCommit === "string" && typeof identity.binarySHA256 === "string" &&
     /^[a-f0-9]{40}$/u.test(identity.sourceCommit) && /^[a-f0-9]{64}$/u.test(identity.binarySHA256);
+}
+
+function matchesCandidateIdentity(identity, expected) {
+  return validCandidateIdentity(identity) && (expected === undefined ||
+    validCandidateIdentity(expected) && identity.sourceCommit === expected.sourceCommit && identity.binarySHA256 === expected.binarySHA256);
 }
 
 function validDirectConstructor(directConstructor, candidateIdentity) {
@@ -373,25 +381,39 @@ function helperReceiptFromOutput(stdout) {
   } catch { return undefined; }
 }
 
-export async function finalizeReconnectExit(receiptSinks, code, signal, stdout, { persist = persistNodeExitReceipt } = {}) {
-  let receiptFailure;
+export async function finalizeReconnectExit(receiptSinks, code, signal, stdout, { persist = persistNodeExitReceipt, candidateIdentity } = {}) {
+  const receiptFailures = [];
   try {
     const helperReceipt = helperReceiptFromOutput(stdout);
     if (helperReceipt) await publishReceipt(receiptSinks.helper, helperReceipt);
-    await persist(receiptSinks.node, code, signal);
   } catch (error) {
-    receiptFailure = error;
+    receiptFailures.push(error);
   }
+  // Node owns this independent observation even if the helper sink rejects.
+  try { await persist(receiptSinks.node, code, signal); }
+  catch (error) { receiptFailures.push(error); }
   // A receipt-sink failure must never replace the helper's primary result.
-  if (code !== 0) throw new Error("release-asset ConPTY reconnect probe failed");
-  if (receiptFailure) throw receiptFailure;
-  return parseProbe(stdout, "reconnect");
+  let result; let primaryError;
+  try {
+    if (code !== 0 || signal) throw new Error("release-asset ConPTY reconnect probe failed");
+    result = parseProbe(stdout, "reconnect", candidateIdentity);
+  } catch (error) { primaryError = error; }
+  if (primaryError) {
+    if (receiptFailures.length) primaryError.receiptFailures = receiptFailures;
+    throw primaryError;
+  }
+  if (receiptFailures.length) throw new AggregateError(receiptFailures, "reconnect receipt persistence failed");
+  return result;
 }
 
-function startReconnectProbe(executable, apiURL, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath, shutdownToken, receiptSinks) {
-  const child = spawn("python", [
+export function startReconnectProbe(executable, apiURL, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath, shutdownToken, receiptSinks, candidateIdentity, { spawnProcess = spawn } = {}) {
+  if (!validCandidateIdentity(candidateIdentity)) throw new Error("reconnect candidate identity invalid");
+  const heldIdentity = Object.freeze({ ...candidateIdentity });
+  const child = spawnProcess("python", [
     helper,
     "--executable", executable,
+    "--source-commit", heldIdentity.sourceCommit,
+    "--expected-executable-sha256", heldIdentity.binarySHA256,
     "--mode", "reconnect",
     "--api-url", apiURL,
     "--ready-file", readyPath,
@@ -410,11 +432,13 @@ function startReconnectProbe(executable, apiURL, readyPath, reconnectPath, shutd
       spawnFailed = true;
       // Preserve the original spawn error.  The independent Node receipt
       // records this terminal state without fabricating a helper result.
-      persistNodeExitReceipt(receiptSinks.node, null, null, true).catch(() => undefined).finally(() => reject(error));
+      Promise.resolve().then(() => persistNodeExitReceipt(receiptSinks.node, null, null, true)).catch(receiptFailure => {
+        error.receiptFailures = [...(error.receiptFailures ?? []), receiptFailure];
+      }).finally(() => reject(error));
     });
     child.once("close", async (code, signal) => {
       try {
-        if (!spawnFailed) resolve(await finalizeReconnectExit(receiptSinks, code, signal, stdout));
+        if (!spawnFailed) resolve(await finalizeReconnectExit(receiptSinks, code, signal, stdout, { candidateIdentity: heldIdentity }));
       } catch (error) {
         reject(error);
       }
@@ -541,13 +565,17 @@ async function main() {
     const executable = path.join(extractRoot, candidate.executable);
     await stat(executable);
     assertExtractedCandidateBuildMetadata((await run("go", ["version", "-m", executable])).stdout);
+    // Bind once to the actual extracted bytes. Python independently verifies
+    // this digest through its non-write/delete-shared handle and retains that
+    // same identity across the direct constructor and ConPTY journey.
+    const extractedIdentity = Object.freeze({ sourceCommit: candidate.sourceCommit, binarySHA256: sha256(await readFile(executable)) });
     stage = "unavailable";
     unavailable = await reserveUnavailableLoopbackURL();
     const readyPath = path.join(tempRoot, "probe-unavailable-ready");
     const reconnectPath = path.join(tempRoot, "probe-reconnect");
     const shutdownRequestPath = path.join(tempRoot, "probe-shutdown-request");
     const shutdownAcknowledgementPath = path.join(tempRoot, "probe-shutdown-acknowledgement");
-    probe = startReconnectProbe(executable, unavailable.url, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath, randomUUID(), receiptSinks);
+    probe = startReconnectProbe(executable, unavailable.url, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath, randomUUID(), receiptSinks, extractedIdentity);
     await waitForFile(readyPath);
     const loopbackPort = unavailable.port;
     await unavailable.close(); unavailable = undefined;

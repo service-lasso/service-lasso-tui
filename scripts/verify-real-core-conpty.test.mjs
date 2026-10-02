@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { admittedGoEnvironment, assertAmd64Evidence, assertCleanBuildMetadata, buildAdmittedTUI, isAmd64Architecture } from "./verify-real-core-conpty.mjs";
+import { admittedGoEnvironment, assertAmd64Evidence, assertCleanBuildMetadata, buildAdmittedTUI, isAmd64Architecture, parseProbe } from "./verify-real-core-conpty.mjs";
+
+test("real Core consumer requires genuine closed q completion receipt", () => {
+  const result = { ok: true, mode: "connected", navigation: "help", exit: "q", receipt: { stage: "exit", outcome: "normal", closedReason: "completed" } };
+  assert.deepEqual(parseProbe(JSON.stringify(result), "connected"), result);
+  for (const reason of ["terminal_exit_code_1", "terminal_exit_code_2", "terminal_exited_nonzero", "terminal_signaled", "terminal_unknown"]) {
+    assert.throws(() => parseProbe(JSON.stringify({ ...result, receipt: { ...result.receipt, closedReason: reason } }), "connected"), /bounded assertions/u);
+  }
+  const missing = { ...result }; delete missing.receipt;
+  assert.throws(() => parseProbe(JSON.stringify(missing), "connected"), /bounded assertions/u);
+});
 
 test("recognizes the Windows AMD64 spellings used by host and helper", () => {
   assert.equal(isAmd64Architecture("AMD64"), true);

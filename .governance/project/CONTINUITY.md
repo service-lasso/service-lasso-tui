@@ -124,3 +124,29 @@ unavailable ConPTY probe for the same built executable and preserves the
 typed direct configuration exit. This does not resolve the hosted
 source/runtime contradiction. Fresh natural CI and independent review remain
 the next actions; release, publication, deployment, and GA are not authorised.
+
+## 2026-10-03: PR25 mandatory cleanup receipt persistence recovery
+Explicit sole-writer recovery continues the existing fix/18-tag-policy-write-gates
+from clean da17/tree d308 against provider develop6d357. All inherited tracked
+source is retained; no new branch or main input. Issue20/SPEC001 successor fixes
+mandatory cleanup receipt persistence independently of true OS cleanup and primary
+results. Actual regressions remain unexecuted; fresh entire review and NEW ROOT
+admission are mandatory. F3 failed Darwin runtime producer remains unresolved;
+parent will disposition the separate read-only input investigation before freeze.
+No local imports/execution/parser/tests/compiler/helpers/install/ACL/lifecycle,
+rerun/dispatch/settings/safety weakening or retained-state cleanup is authorized.
+## Issue20 PR25 F3 accepted explicit-FIFO descriptor source proposal
+SPEC001 TUI-ACCEPTANCE-003 retains the mandatory actual native producer and
+its selected Bash/parser/quoted heredoc/options. The parent accepted replacing
+read -r -t 1 writer_ready <&9 with read -r -t 1 -u 9 writer_ready so peer-ready
+FIFO consumption does not redirect script-input fd0. GNU/Apple published text
+supports descriptor isolation, not an exact source-to-Darwin-image binding or
+causal defect. Seekback/undo counterevidence is retained. Preserve status/variable,
+actual jobs-alive policy/$! identity/reciprocal FIFO birth-image-PPID checks,
+failed-frame/EOF/overflow denial/trap actual wait/private fsync/success wait.
+Existing actual producer plus writer-death/producer-failure adversaries remain
+primary and bind the new operation. Original da17 runtime failure remains FAILED;
+paired -n stdin/-c zero results do not prove runtime success or causal repair.
+Proposal remains UNQUALIFIED until exact new candidate natural mandatory Darwin
+producer succeeds. DIFFERENT ENTIRE review and NEW ROOT admission precede local
+execution; all R1 and prior native/publisher/full-delivery requirements remain.

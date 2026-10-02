@@ -262,7 +262,7 @@ async function streamResponse(response, destination, expectedSize) {
   return { size, sha256: hash.digest("hex") };
 }
 
-async function fetchPublicAsset(initialURL, expectedSize, destination, fetchImpl) {
+async function fetchPublicAssetUnbounded(initialURL, expectedSize, destination, fetchImpl) {
   let url = initialURL;
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
     assertTransportPolicy({ uploadURL: "https://uploads.github.com/", downloadURL: url, authorization: "Bearer", redirect: redirects > 0 });
@@ -284,7 +284,7 @@ function assertDraftAssetAPIURL(value, id) {
   return url;
 }
 
-async function fetchDraftAsset(asset, expectedSize, destination, token, fetchImpl) {
+async function fetchDraftAssetUnbounded(asset, expectedSize, destination, token, fetchImpl) {
   let url = assertDraftAssetAPIURL(asset.url, asset.id); let authenticated = true;
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
     const headers = authenticated ? { Accept: "application/octet-stream", Authorization: `Bearer ${token}` } : {};
@@ -300,6 +300,15 @@ async function fetchDraftAsset(asset, expectedSize, destination, token, fetchImp
   fail("draft asset download redirect limit exceeded");
 }
 
+// Deadline spans fetch and streamed body, including all redirects.
+async function boundedDownload(operation, fetchImpl) {
+  const controller = new AbortController(); let timer;
+  try {
+    return await Promise.race([operation(async (url, options) => { try { return await fetchImpl(url, { ...options, signal: controller.signal }); } catch { fail("candidate transport denied"); } }), new Promise((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error("candidate download deadline exceeded")); }, 30000); })]);
+  } finally { clearTimeout(timer); controller.abort(); }
+}
+async function fetchPublicAsset(url, size, destination, fetchImpl) { return boundedDownload(fetcher => fetchPublicAssetUnbounded(url, size, destination, fetcher), fetchImpl); }
+async function fetchDraftAsset(asset, size, destination, token, fetchImpl) { return boundedDownload(fetcher => fetchDraftAssetUnbounded(asset, size, destination, token, fetcher), fetchImpl); }
 export async function verifyDraftAssetBytes({ release, manifest, localAssets, heldBytes, downloadDir, token, fetchImpl = fetch }) {
   if (typeof token !== "string" || token.length < 1) fail("draft release read authority is invalid");
   const receipt = assertDraftReleaseReceipt(release, manifest, localAssets);

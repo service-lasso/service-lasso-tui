@@ -21,3 +21,25 @@ Run behavior-focused Node controls for preflight, manifest schema, recomputed lo
 ## Non-goals
 
 Do not dispatch a candidate, mutate GitHub settings, modify existing releases, promote, deploy, or claim GA.
+
+Issue #18 source repair binds actual Git tag refs and recursively resolved annotated objects to the exact candidate SHA. Orphan, malformed, cyclic and mismatched tags deny all writes. The publisher retains validated provider policy and re-reads identical policy immediately before every create, asset upload and publish mutation; changed or unavailable policy denies further writes. Source-only implementation and regressions remain UNEXECUTED pending entire independent SOURCE GO and new complete-input ROOT admission. Full native five-action/keyboard/error/cancel and three-OS same-byte Core acceptance remain pending.
+
+AC-5/AC-6: After proving no existing release or tag, create one lightweight ref at the full source SHA, resolve it through the actual Git ref API, then create the private release. Each mutation has its own immediate retained-policy read. Failure retains any newly created ref/draft as an unrecoverable collision unless a later read-only complete immutable receipt succeeds; never delete, retag or retry writes. Annotated existing refs are dereferenced recursively with bounded depth, identity and cycle checks. The public receipt checks the same tag chain before and after all six bytes.
+
+## PR25 final9d five-finding source successor (issues18 and20)
+Issue18 / SPEC002 AC5 and AC6: retain the first admitted manifest bytes and
+require exact equality with the acquired held manifest before ANY provider
+access. Regress coherent manifest plus inventory replacement at acquisition.
+Issue20 / SPEC001 TUI-ACCEPTANCE-001/002/003 and TUI-DISTRIBUTION-002:
+F2 retains the actual direct-owned runtime immediately after spawn, before
+birth/select/read/parse, and closes/waits with unknown birth remaining unknown.
+F3 preserves primary reconnect spawn failure plus independent Node/native sink
+rejection without inventing a helper receipt. F4 identity-guards restoration
+and removal of only the positively bound redundant original hardlink alias;
+repeat and interrupted rename/symlink/mutation regressions remain required.
+F5 targets the actual observer owner command for launch/handoff faults and
+records the reached boundary; Darwin /bin/ps remains outside those faults.
+All five form one SOURCE-ONLY bundle. Prior6+5+2+3 assertions, provider policy,
+private held-byte gates, Core authority, TLS and secrecy stay mandatory.
+All new regressions are UNEXECUTED until DIFFERENT fresh ENTIRE SOURCE GO plus
+NEW complete-input ROOT admission. No native or full-delivery claim is made.

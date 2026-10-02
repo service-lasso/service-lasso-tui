@@ -408,3 +408,16 @@ execution. This is diagnostic preparation, not a causal source repair or pass.
 Entire scope remains SOURCE-ONLY and regressions UNEXECUTED until DIFFERENT
 fresh ENTIRE SOURCE GO and NEW complete-input ROOT admission. Preserve all
 prior cumulative protections, Issue18 SPEC002 AC1..7 and every full-delivery gate.
+## Issue20 PR25 exact2e5a two-finding successor
+SPEC001 TUI-ACCEPTANCE-002/003 and TUI-DISTRIBUTION-002 require a closed
+safe BEFORE-invocation parser/caller/workflow/full-producer/fed-source tuple
+and AFTER-invocation stage/result/diagnostic-sink disposition through existing
+test output. Full environment, argv, paths and raw version/results stay private;
+no upload authority is created. Select the existing parser at both seams and
+preserve fed bytes. Darwin line99 tools cause remains UNRESOLVED and the actual
+producer is mandatory. Returned natural Darwin cleanup failure must reach the
+mandatory external-owner finalization and observer aggregate gate, preserving
+primary success and retained recovery. Actual natural-return/main/observer gate
+regression is required alongside the existing exception vector. Source-only,
+UNEXECUTED until DIFFERENT fresh ENTIRE review and NEW complete-input ROOT
+admission; all earlier repairs, Core authority and Issue18 protections remain.

@@ -143,19 +143,38 @@ test("actual workflow custody producer preserves literals and consumes every rea
     const environment = { ...process.env, CI_SOURCE_SHA: commit, CORE_COMMIT: commit };
     const freshEnvironment = { PATH: environment.PATH, HOME: environment.HOME, LANG: environment.LANG || "C.UTF-8", LC_ALL: environment.LC_ALL || "C.UTF-8", GOFLAGS: "", GOWORK: "off", CI_SOURCE_SHA: commit, CORE_COMMIT: commit, PHASE: selectedPhase, SERVICE_LASSO_WORKSPACE_ROOT: path.join(selectedPhase, "workspace"), SERVICE_LASSO_INSTANCE_REGISTRY_PATH: path.join(selectedPhase, "registry/instances.json"), SERVICE_LASSO_HOST_PORT_REGISTRY_PATH: path.join(selectedPhase, "registry/ports.json") };
     const args = ["-euo", "pipefail", "-c", callerSource.toString("utf8")];
+    // Only closed versions, hashes and result categories enter existing test
+    // output. Raw paths/version text/argv/environment remain owner-private.
+    const parserVersionNumber = /^GNU bash, version ([0-9]+(?:\.[0-9]+)+(?:\([0-9]+\))?)/.exec(parserVersion)?.[1] || "unclassified";
+    const safeBinding = { schemaVersion: 1, kind: "tui20-parser-diagnostic", invocation: invocation,
+      platform: process.platform, parser: { sha256: digest(parserBytes), size: parserBytes.length, version: parserVersionNumber, versionSHA256: digest(Buffer.from(parserVersion)) },
+      node: { version: /^v[0-9]+\.[0-9]+\.[0-9]+$/.test(process.version) ? process.version : "unclassified", imageSHA256: digest(await readFile(process.execPath)), sourceSHA256: digest(await readFile(fileURLToPath(import.meta.url))) },
+      workflowSHA256: digest(await readFile(path.join(scripts, "../.github/workflows/ci.yml"))), callerSourceSHA256: digest(callerSource), producerSourceSHA256: digest(Buffer.from(selectedProducer)), fedSourceSHA256: digest(fedSource), fedSourceSize: fedSource.length };
+    t.diagnostic(JSON.stringify({ ...safeBinding, stage: "before-invocation", result: "pending" }));
     // Private exact bytes/environment are fsynced BEFORE parsing can fail.
     // None of these files is a public receipt or an uploaded artifact.
-    await persist(`${name}-caller.source`, callerSource);
-    await persist(`${name}-producer.source`, Buffer.from(selectedProducer));
-    await persist(`${name}-fed.source`, fedSource);
-    await persist(`${name}-binding.json`, JSON.stringify({ classification: "owner-private-parser-diagnostic", platform: process.platform, parser: { path: parser, sha256: digest(parserBytes), size: parserBytes.length, version: parserVersion }, caller: { path: process.execPath, version: process.version, sha256: digest(await readFile(process.execPath)), sourceSHA256: digest(await readFile(fileURLToPath(import.meta.url))) }, workflowSHA256: digest(await readFile(path.join(scripts, "../.github/workflows/ci.yml"))), extraction: "LF normalization; env-i through pre-Core git init; remove ten-space YAML prefix; append closing delimiter", cwd: source, argv: args, innerArgv: ["-euo", "pipefail"], environment, freshEnvironment, callerSourceSHA256: digest(callerSource), fedSourceSHA256: digest(fedSource), fedSourceSize: fedSource.length }));
+    try {
+      await persist(`${name}-caller.source`, callerSource);
+      await persist(`${name}-producer.source`, Buffer.from(selectedProducer));
+      await persist(`${name}-fed.source`, fedSource);
+      await persist(`${name}-binding.json`, JSON.stringify({ classification: "owner-private-parser-diagnostic", platform: process.platform, parser: { path: parser, sha256: digest(parserBytes), size: parserBytes.length, version: parserVersion }, caller: { path: process.execPath, version: process.version, sha256: digest(await readFile(process.execPath)), sourceSHA256: digest(await readFile(fileURLToPath(import.meta.url))) }, workflowSHA256: digest(await readFile(path.join(scripts, "../.github/workflows/ci.yml"))), extraction: "LF normalization; env-i through pre-Core git init; remove ten-space YAML prefix; append closing delimiter", cwd: source, argv: args, innerArgv: ["-euo", "pipefail"], environment, freshEnvironment, callerSourceSHA256: digest(callerSource), fedSourceSHA256: digest(fedSource), fedSourceSize: fedSource.length }));
+    } catch {
+      t.diagnostic(JSON.stringify({ ...safeBinding, stage: "private-preflight-persistence", result: "failed", invocationReached: false }));
+      throw new Error("private parser diagnostic preflight persistence failed");
+    }
     const result = spawnSync(parser, args, { cwd: source, env: environment, encoding: "utf8", ...(timeout === undefined ? {} : { timeout }) });
     result.diagnosticFailures = [];
-    for (const [suffix, bytes] of [["stdout.private", result.stdout || ""], ["stderr.private", result.stderr || ""], ["result.json", JSON.stringify({ status: result.status, signal: result.signal, errorCode: result.error?.code || null })]]) {
+    for (const [suffix, bytes] of [["stdout.private", result.stdout || ""], ["stderr.private", result.stderr || ""], ["result.json", JSON.stringify({ status: result.status, signal: result.signal, errorCode: result.error?.code || null, error: result.error ? { name: result.error.name, message: result.error.message, stack: result.error.stack, code: result.error.code } : null })]]) {
       try { await persist(`${name}-${suffix}`, bytes); }
-      catch (error) { result.diagnosticFailures.push({ sink: suffix, code: error.code || "unknown" }); }
+      catch { result.diagnosticFailures.push({ sink: suffix, code: "persistence_failed" }); }
     }
-    t.diagnostic(`private parser binding ${name}: ${process.platform}, parser SHA256 ${digest(parserBytes)}, fed SHA256 ${digest(fedSource)}; primary producer result retained`);
+    let parserReadback = "unavailable";
+    try { parserReadback = digest(await readFile(parser)) === safeBinding.parser.sha256 ? "matched" : "changed"; }
+    catch { result.diagnosticFailures.push({ sink: "parser-image-readback", code: "readback_failed" }); }
+    if (parserReadback === "changed") result.diagnosticFailures.push({ sink: "parser-image-readback", code: "image_changed" });
+    t.diagnostic(JSON.stringify({ ...safeBinding, stage: "after-invocation", invocationReached: true,
+      result: result.error ? "spawn_failed" : result.signal ? "signaled" : result.status === 0 ? "exited_zero" : Number.isInteger(result.status) ? "exited_nonzero" : "exit_unknown",
+      exitStatus: Number.isInteger(result.status) ? result.status : null, parserImageReadback: parserReadback, diagnosticFailures: result.diagnosticFailures }));
     return result;
   };
   // Execute the complete actual pre-fetch producer, including fresh env,

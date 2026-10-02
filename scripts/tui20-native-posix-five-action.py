@@ -610,7 +610,8 @@ def main():
         live_child=any(owned.child.poll() is None for owned in OWNED_TERMINALS)
         try:
             cleanup=lambda *values: (_ for _ in ()).throw(RuntimeError("injected native finalization cleanup failure")) if args.inject_finalization_cleanup_failure else cleanup_execution(*values)
-            finalize_native_outcome(args.root,outcome,launch_fd,darwin_protected,held,live_child,primary_persisted,outcome.get("recoveryObservation"),cleanup=cleanup)
+            cleanup_outcome=finalize_native_outcome(args.root,outcome,launch_fd,darwin_protected,held,live_child,primary_persisted,outcome.get("recoveryObservation"),cleanup=cleanup)
+            if cleanup_outcome["outcome"]!="succeeded": finalization_failure="cleanup_failed"
         except Exception as error:
             finalization_failure="injected_cleanup_failure" if args.inject_finalization_cleanup_failure else "finalization_failure"
             outcome["finalizationFailure"]=finalization_failure

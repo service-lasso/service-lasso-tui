@@ -120,7 +120,7 @@ def main():
                 if not isinstance(live,dict): live=None; raise RuntimeError("owner live custody invalid")
             with open(os.path.join(args.root,"external-owner-finalization.json"),encoding="utf-8") as stream: finalization=json.load(stream)
             expected={"externalOwnerPID":owner.pid,"ownerBirth":owner_birth,"runtimePID":runtime.pid,"runtimeBirth":runtime_birth,"sourceCommit":args.source_commit,"binarySHA256":binary_sha256}
-            if set(finalization)!=set(expected)|{"finalizationFailure","liveTuiChildRetained","primaryOutcome"} or any(finalization.get(key)!=value for key,value in expected.items()) or finalization["liveTuiChildRetained"] is not False or finalization["finalizationFailure"] not in (None,"injected_cleanup_failure","finalization_failure") or finalization["primaryOutcome"] not in ("succeeded","failed","unresolved"): raise RuntimeError("owner finalization custody invalid")
+            if set(finalization)!=set(expected)|{"finalizationFailure","liveTuiChildRetained","primaryOutcome"} or any(finalization.get(key)!=value for key,value in expected.items()) or finalization["liveTuiChildRetained"] is not False or finalization["finalizationFailure"] not in (None,"injected_cleanup_failure","finalization_failure","cleanup_failed") or finalization["primaryOutcome"] not in ("succeeded","failed","unresolved"): raise RuntimeError("owner finalization custody invalid")
         except Exception:
             custody_failure="owner_finalization_receipt_invalid_or_missing"
         if not owner_birth_absent: custody_failure="owner_birth_absence_unproven"

@@ -1,5 +1,13 @@
 # Service Lasso TUI project intent
 
+Issue20 / SPEC001 TUI-ACCEPTANCE-003 adds one failure-only Darwin observational
+secondary -x/-v replay in the retained private fixture, with identical fed bytes
+and a distinct phase. Preserve the original mandatory invocation/assertion and
+production workflow. Project only closed lexical command/role/line/depth facts
+and hashes/sizes/persistence observations; raw trace stays private. This is
+diagnostic source preparation, not a causal repair or successful receipt.
+DIFFERENT ENTIRE review and NEW complete-input ROOT admission precede execution.
+
 Issue20 final042 maps F1 native Go admission, F2 immediate terminal ownership,
 F3 mandatory reconnect caller identity, F4 authentic closed reconnect schema,
 F5 native writer enum plus independent Node persistence, and F6 observed-zero q
@@ -160,3 +168,6 @@ six original held assets, private draft and headerless public byte checks remain
 Source regression is UNEXECUTED pending DIFFERENT fresh ENTIRE SOURCE GO and NEW
 complete-input ROOT admission. No secret/settings/identity is provisioned here;
 mandatory native/Darwin/Core and same-byte publication gates remain unmet.
+
+
+PR27 coherent F1/F2/F3 successor: SPEC001 PR27 source contract above and SPEC002 AC2/AC3/AC7 bind untrusted lexical markers, fixed preallocation/private held-readback quotas and LF/CRLF-equivalent credential assertions. All new regressions UNEXECUTED; original mandatory failure preserved. DIFFERENT ENTIRE SOURCE GO and NEW complete-input ROOT admission required; native/full-delivery and protected scoped publication/same-byte Core gates unmet.

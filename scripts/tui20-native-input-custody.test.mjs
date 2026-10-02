@@ -60,26 +60,35 @@ test("private held trace readback treats forged PS4 argv ENV verbose and stderr 
   complete = true;
 });
 
-test("private trace quotas reject huge raw files before reads and bound line conversion and counts", async t => {
+test("private trace quotas reject actual oversize before reads and bound line conversion and counts", async t => {
   const root = await mkdtemp(path.join(await realpath(tmpdir()), "tui20-private-trace-quota-"));
   let complete = false;
   t.after(() => complete ? rm(root, { recursive: true, force: true }) : undefined);
   const filename = path.join(root, "oversized.private");
   const file = await open(filename, "wx+", 0o600);
   try {
-    // A real sparse huge input cannot be admitted to readFile/UTF8/split.
-    await file.truncate(2_147_483_648);
+    // Actual quota+1 bytes deny before readback; no huge disk allocation or sparse claim.
+    await file.truncate(PRIVATE_TRACE_MAX_BYTES + 1);
     let reads = 0;
     const held = { sync: () => file.sync(), stat: options => file.stat(options),
       read: () => { reads++; throw new Error("oversize must deny before any read/allocation based on its size"); } };
     const observed = await inspectPrivateTrace(held, true);
     assert.equal(reads, 0);
-    assert.equal(observed.stream.sizeBeforeRead, 2_147_483_648);
+    assert.equal(observed.stream.sizeBeforeRead, PRIVATE_TRACE_MAX_BYTES + 1);
     assert.equal(observed.stream.completeness, "incomplete");
     assert.equal(observed.stream.capture, "incomplete-byte-quota");
     assert.ok(!Object.hasOwn(observed.stream, "sha256"));
     assert.equal(observed.projection.capture, "incomplete-byte-quota");
-    assert.equal((await stat(filename)).size, 2_147_483_648, "quota never truncates/deletes retained raw failure evidence");
+    assert.equal((await stat(filename)).size, PRIVATE_TRACE_MAX_BYTES + 1, "quota never truncates/deletes retained raw failure evidence");
+    // Explicit metadata-only surrogate for a huge size, never physical allocation
+    // or actual huge-file/native no-OOM proof. Real quota+1 IO control above remains.
+    const actualStat = await file.stat({ bigint: true });
+    const hugeStat = Object.assign(Object.create(Object.getPrototypeOf(actualStat)), actualStat, { size: 2_147_483_648n });
+    const huge = await inspectPrivateTrace({ ...held, stat: async () => hugeStat }, true);
+    assert.equal(reads, 0, "huge-size metadata surrogate denies before read");
+    assert.equal(huge.stream.sizeBeforeRead, 2_147_483_648);
+    assert.equal(huge.stream.capture, "incomplete-byte-quota");
+    assert.ok(!Object.hasOwn(huge.stream, "sha256"));
     await file.truncate(PRIVATE_TRACE_MAX_BYTES);
     const boundary = await inspectPrivateTrace(file, true);
     assert.equal(boundary.stream.completeness, "complete-bounded-observation");

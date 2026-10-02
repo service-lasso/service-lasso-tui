@@ -139,3 +139,14 @@ paired -n stdin/-c zero results do not prove runtime success or causal repair.
 Proposal remains UNQUALIFIED until exact new candidate natural mandatory Darwin
 producer succeeds. DIFFERENT ENTIRE review and NEW ROOT admission precede local
 execution; all R1 and prior native/publisher/full-delivery requirements remain.
+## Issue18 scoped development publisher credential wiring
+SPEC-002 AC-2/AC-3/AC-7 requires DEVELOPMENT_CANDIDATE_TOKEN from a genuinely
+repository-scoped credential with Contents write, Actions read and Administration
+read. Bind GH_TOKEN only to the actual publisher step; no github.token fallback,
+credential in argv/logs, or inheritance by checkout/build/download actions.
+The built-in workflow token retains Contents read. Missing authority fails closed
+before the publisher. All nine mutation gates, repeated policy reads, exact tags,
+six original held assets, private draft and headerless public byte checks remain.
+Source regression is UNEXECUTED pending DIFFERENT fresh ENTIRE SOURCE GO and NEW
+complete-input ROOT admission. No secret/settings/identity is provisioned here;
+mandatory native/Darwin/Core and same-byte publication gates remain unmet.

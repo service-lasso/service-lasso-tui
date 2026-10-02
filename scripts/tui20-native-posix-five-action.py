@@ -91,8 +91,8 @@ def darwin_execve_child(launch,argv,env,master,slave):
         os.write(2,b"held Darwin execve failed\n")
     finally: os._exit(127)
 class Terminal:
-    def __init__(self, held, executable, profile, env, log):
-        self.master,self.slave=pty.openpty(); self.log=log
+    def __init__(self, held, executable, profile, env):
+        self.master,self.slave=pty.openpty()
         args=[executable,"--profile",profile]
         if sys_platform()=="linux": self.child=fexecve_child(held,args,env,self.master,self.slave)
         elif sys_platform()=="darwin":
@@ -105,8 +105,9 @@ class Terminal:
         if ready:
             try: chunk=os.read(self.master,65536).decode("utf-8","replace")
             except OSError: chunk=""
+            # Terminal bytes are required in memory for the bounded interaction
+            # assertions, but are never written to a receipt, artifact, or log.
             self.text+=chunk
-            with open(self.log,"a",encoding="utf-8",newline="") as out: out.write(chunk)
     def wait(self,need,seconds,start=0):
         until=time.monotonic()+seconds
         while time.monotonic()<until:
@@ -287,7 +288,7 @@ def bound_execution(held,identity,root):
     if sys_platform()=="darwin":
         launch,binding=darwin_system_immutable_execution(held,identity,root); return launch,launch,binding
     raise RuntimeError("native immutable execution unavailable on this platform")
-def bound_replacement_probe(launch_fd,held,executable,identity,profile,env,log):
+def bound_replacement_probe(launch_fd,held,executable,identity,profile,env):
     """Prove pathname replacement and mutable source bytes cannot alter the sealed launch."""
     directory=os.path.dirname(executable); original=os.path.join(directory,".tui20-held-original"); replacement=os.path.join(directory,".tui20-untrusted-replacement")
     if os.path.exists(original) or os.path.lexists(replacement): raise RuntimeError("bound-launch probe paths already exist")
@@ -303,7 +304,7 @@ def bound_replacement_probe(launch_fd,held,executable,identity,profile,env,log):
             named=os.lstat(executable)
             held_stat=os.fstat(held)
             if (held_stat.st_dev,held_stat.st_ino)!=(identity[0],identity[1]) or (not reparse and (named.st_dev,named.st_ino)==identity): raise RuntimeError("held executable binding changed")
-            term=Terminal(launch_fd,executable,profile,env,log); term.wait(('connection profile "missing" credential is unavailable',),30); exit_value=term.close(2)
+            term=Terminal(launch_fd,executable,profile,env); term.wait(('connection profile "missing" credential is unavailable',),30); exit_value=term.close(2)
             results.append({"attack":name,"heldCandidateLaunch":True,"terminalExit":exit_value})
             os.replace(original,executable); os.link(executable,original)
         modifier=os.open(executable,os.O_RDWR)
@@ -312,7 +313,7 @@ def bound_replacement_probe(launch_fd,held,executable,identity,profile,env,log):
             if len(original_byte)!=1: raise RuntimeError("source candidate mutation probe unavailable")
             os.pwrite(modifier,bytes([original_byte[0]^0x01]),0); os.fsync(modifier)
             if sha256_fd(held)==identity["binarySHA256"]: raise RuntimeError("source candidate mutation probe did not alter held inode")
-            term=Terminal(launch_fd,executable,profile,env,log); term.wait(('connection profile "missing" credential is unavailable',),30); exit_value=term.close(2)
+            term=Terminal(launch_fd,executable,profile,env); term.wait(('connection profile "missing" credential is unavailable',),30); exit_value=term.close(2)
             results.append({"attack":"inplace-content-mutation","heldCandidateLaunch":True,"terminalExit":exit_value,"sourceDigestChanged":True})
         finally:
             if 'original_byte' in locals(): os.pwrite(modifier,original_byte,0); os.fsync(modifier)
@@ -482,10 +483,9 @@ def main():
         env={key:os.environ[key] for key in ALLOWED_ENV if os.environ.get(key)}; env.update({"TERM":"xterm-256color","SERVICE_LASSO_API_TOKEN":token,"SERVICE_LASSO_DENIED_TOKEN":denied,"SERVICE_LASSO_INVALID_TOKEN":"tui20-invalid-token","SERVICE_LASSO_CONNECTIONS_CONFIG":os.path.join(args.root,"connections.json")})
         held,identity,held_inode=hold_candidate(args.executable,args.source_commit); outcome["candidateIdentity"]=identity
         if runtime is not None: write_owner_birth(args,runtime,identity)
-        log=os.path.join(args.root,"native-terminal.txt")
         launch_fd,darwin_protected,binding=bound_execution(held,identity,args.root); outcome["heldExecutableBinding"]=binding
         if args.adverse_controller_crash:
-            term=Terminal(launch_fd,args.executable,"native",env,log); term.wait(("Runtime identity:",),30); detail(term)
+            term=Terminal(launch_fd,args.executable,"native",env); term.wait(("Runtime identity:",),30); detail(term)
             runtime_pid=runtime.pid if runtime is not None else runtime_handoff["_runtimePID"]; runtime_birth=runtime.tui20_birth if runtime is not None else runtime_handoff["_runtimeBirth"]
             write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"coreRuntimePID":runtime_pid,"runtimeBirth":runtime_birth,"tuiChildPID":term.child.pid,"tuiChildBirth":term.child.tui20_birth,"sourceCommit":identity["sourceCommit"],"binarySHA256":identity["binarySHA256"],"phase":"controller_failure_live","immutableExecutionHeld":True,"ptyHeld":True})
             deadline=time.monotonic()+15
@@ -501,7 +501,7 @@ def main():
             write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"coreRuntimePID":runtime_pid,"runtimeBirth":runtime_birth,"tuiChildPID":term.child.pid,"tuiChildBirth":term.child.tui20_birth,"sourceCommit":identity["sourceCommit"],"binarySHA256":identity["binarySHA256"],"phase":"normal_q_exit","immutableExecutionHeld":True,"ptyHeld":False})
             return
         if args.adverse_owner_death:
-            term=Terminal(launch_fd,args.executable,"native",env,log); term.wait(("Runtime identity:",),30); detail(term)
+            term=Terminal(launch_fd,args.executable,"native",env); term.wait(("Runtime identity:",),30); detail(term)
             runtime_pid=runtime.pid if runtime is not None else runtime_handoff["_runtimePID"]; runtime_birth=runtime.tui20_birth if runtime is not None else runtime_handoff["_runtimeBirth"]
             write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"coreRuntimePID":runtime_pid,"runtimeBirth":runtime_birth,"tuiChildPID":term.child.pid,"tuiChildBirth":term.child.tui20_birth,"sourceCommit":identity["sourceCommit"],"binarySHA256":identity["binarySHA256"],"phase":"owner_death_live","immutableExecutionHeld":True,"ptyHeld":True})
             # This is an adverse owner death while the production TUI is live.
@@ -512,14 +512,14 @@ def main():
         for profile,label,expected,audit_expected in (("missing","missing-credential",2,0),("invalid","invalid-credential",0,0),("denied","scope-denied",0,5)):
             count=len(operations(url,token)); audit=audit_count(url,token)
             if profile=="missing":
-                outcome["heldExecutableBinding"]["replacementProbe"]=bound_replacement_probe(launch_fd,held,args.executable,held_inode,profile,env,log)
-                term=Terminal(launch_fd,args.executable,profile,env,log); term.wait(('connection profile "missing" credential is unavailable',),30)
+                outcome["heldExecutableBinding"]["replacementProbe"]=bound_replacement_probe(launch_fd,held,args.executable,held_inode,profile,env)
+                term=Terminal(launch_fd,args.executable,profile,env); term.wait(('connection profile "missing" credential is unavailable',),30)
             else:
-                term=Terminal(launch_fd,args.executable,profile,env,log); term.wait(("Runtime identity:",),30); detail(term); term.write("i"); term.wait(("Runtime API unavailable:",),30)
+                term=Terminal(launch_fd,args.executable,profile,env); term.wait(("Runtime identity:",),30); detail(term); term.write("i"); term.wait(("Runtime API unavailable:",),30)
             outcome["terminals"].append({"terminal":label,"exit":term.close(expected)})
             after=len(operations(url,token)); audit_after=audit_count(url,token); adverse.append({"case":label,"beforeOperationCount":count,"afterOperationCount":after,"noOperation":after==count,"coreDeniedAuditBefore":audit,"coreDeniedAuditAfter":audit_after,"coreDeniedAuditDelta":audit_after-audit})
             if after!=count or audit_after-audit!=audit_expected: raise RuntimeError("adverse lifecycle receipt invalid")
-        term=Terminal(launch_fd,args.executable,"native",env,log); term.wait(("Runtime identity:",),30); detail(term)
+        term=Terminal(launch_fd,args.executable,"native",env); term.wait(("Runtime identity:",),30); detail(term)
         action_readbacks=[]; known_ids={record.get("operationId") for record in operations(url,token)}
         expected_by_ui={"install":"service_install","config":"service_configure","start":"service_start","stop":"service_stop","restart":"service_restart"}
         for key,name in (("i","install"),("c","config"),("s","start"),("x","stop"),("R","restart")):
@@ -532,7 +532,7 @@ def main():
         outcome["terminals"].append({"terminal":"allowed","exit":term.close()})
         runtime_pid=runtime.pid if runtime is not None else runtime_handoff["_runtimePID"]; runtime_birth=runtime.tui20_birth if runtime is not None else runtime_handoff["_runtimeBirth"]
         write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"coreRuntimePID":runtime_pid,"runtimeBirth":runtime_birth,"tuiChildPID":term.child.pid,"tuiChildBirth":term.child.tui20_birth,"sourceCommit":identity["sourceCommit"],"binarySHA256":identity["binarySHA256"],"phase":"normal_q_exit","immutableExecutionHeld":True,"ptyHeld":False})
-        term=Terminal(launch_fd,args.executable,"native",env,log); term.wait(("Runtime identity:",),30); detail(term); outcome["terminals"].append({"terminal":"reconnect","exit":term.close()})
+        term=Terminal(launch_fd,args.executable,"native",env); term.wait(("Runtime identity:",),30); detail(term); outcome["terminals"].append({"terminal":"reconnect","exit":term.close()})
         records=[{key:record.get(key) for key in ("operationId","action","targetIds","status","outcome","cancellationSupported")} for record in operations(url,token) if record.get("targetIds")==["tui20-fixture"]]
         expected=["service_restart","service_stop","service_start","service_configure","service_install"]
         operation_ids=[item["operationId"] for item in records]

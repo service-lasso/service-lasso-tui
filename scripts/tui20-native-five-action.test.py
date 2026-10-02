@@ -23,7 +23,8 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         source = pathlib.Path(__file__).with_name("tui20-native-five-action.py").read_text(encoding="utf-8")
         ast.parse(source)
         self.assertIn('("reload is unavailable",)', source)
-        self.assertIn('append_terminal(path,label,chunk)', source)
+        self.assertIn('bounded renderer assertion consumes terminal bytes in memory only', source)
+        self.assertNotIn('append_terminal', source)
         self.assertIn('"targetIds","status","outcome","cancellationSupported"', source)
         self.assertIn('"completedOperationNoReplay":True', source)
         self.assertIn('connection profile "missing" credential is unavailable', source)
@@ -100,24 +101,51 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertIn('"blocked_core_1553_no_adapter"', source)
         self.assertNotIn("private-token.json", source)
 
-    def test_native_workflow_records_exclusive_input_custody_before_core_import(self):
+    def test_native_workflow_records_private_actual_custody_and_closed_public_receipts_before_core_fetch(self):
         workflow = pathlib.Path(__file__).parents[1] / ".github" / "workflows" / "ci.yml"
         source = workflow.read_text(encoding="utf-8")
         start = source.index("prepare_phase()")
-        custody = source.index('> "$phase/input-custody.json"', start)
+        private_custody = source.index('TUI20_PRIVATE_CUSTODY="$phase/private-input-custody.json"', start)
+        public_custody = source.index('TUI20_PUBLIC_CUSTODY="$phase/input-custody.json"', start)
         core_import = source.index('git -C "$phase/core-source" init -q', start)
-        self.assertLess(custody, core_import)
+        core_binding = source.index('TUI20_CORE_BINDING="$phase/core-source-binding.json"', start)
+        core_dependencies = source.index('(cd "$phase/core-source" && npm ci && npm run build)', start)
+        self.assertLess(private_custody, core_import)
+        self.assertLess(public_custody, core_import)
+        self.assertLess(core_binding, core_dependencies)
         for required in (
             'env -i PATH="$PATH"',
             'SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace"',
             'SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json"',
             'SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json"',
             'test ! -e "$instances" && test ! -e "$ports"',
-            'test ! -L "$phase" && test ! -L "$workspace" && test ! -L "$phase/registry"',
-            'tuiTree', 'tuiDirtyHash', 'tuiInventoryHash', 'plannedCommand', 'compilers',
-            'coreTree', 'coreDirtyHash', 'nativeBinary',
+            'while test "$current" != "/"; do test ! -L "$current"',
+            'bash dirname mkdir env git sha256sum cut xargs awk wc uname ps readlink node npm go python3',
+            'go-compile', 'literalCommands', 'allParentsNonLink', 'registriesInitiallyAbsent',
+            'git -C $phase/core-source init -q', 'go build -mod=readonly -buildvcs=true -trimpath',
+            'kind":"tui20-native-input-custody', 'kind":"tui20-native-core-source-binding',
+            'kind":"tui20-native-build-output', 'write_fsync', 'os.fsync',
         ):
             self.assertIn(required, source)
+        uploaded = source[source.index('name: tui20-native-${{ matrix.name }}-lifecycle-${{ env.CI_SOURCE_SHA }}'):]
+        self.assertIn('input-custody.json', uploaded)
+        self.assertIn('core-source-binding.json', uploaded)
+        self.assertIn('build-output.json', uploaded)
+        self.assertNotIn('private-input-custody.json', uploaded)
+        self.assertNotIn('head-tree.json', uploaded)
+        self.assertNotIn('native-terminal.txt', uploaded)
+
+    def test_native_pty_bytes_never_persist_to_a_file(self):
+        posix = pathlib.Path(__file__).with_name("tui20-native-posix-five-action.py").read_text(encoding="utf-8")
+        windows = pathlib.Path(__file__).with_name("tui20-native-five-action.py").read_text(encoding="utf-8")
+        self.assertIn('Terminal bytes are required in memory', posix)
+        self.assertIn('self.text+=chunk', posix)
+        self.assertNotIn('native-terminal.txt', posix)
+        self.assertNotIn('self.log', posix)
+        self.assertNotIn('with open(self.log', posix)
+        self.assertIn('bounded renderer assertion consumes terminal bytes in memory only', windows)
+        self.assertNotIn('native-terminal.txt', windows)
+        self.assertNotIn('append_terminal', windows)
 
     @unittest.skipUnless(sys.platform == "linux", "requires Linux memfd seals")
     def test_linux_kernel_seal_rejects_an_in_place_write(self):

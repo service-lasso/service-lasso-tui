@@ -166,6 +166,17 @@ is live; an observed negative wait status is recorded as `terminal_signaled`.
 A missing seal/flag readback, denied-write probe, or native-host
 receipt is **Blocked**.
 
+Every phase records its clean TUI source facts and requested Core revision
+before it fetches Core, installs dependencies, builds, or imports runtime code.
+The owner-private custody record preserves actual path, process, image, tool,
+and literal-command details with fsync durability, but is never uploaded. The
+public artifact uses separate closed input, Core-source-binding, and build
+output schemas. It contains only source identities, ownership predicates, and
+verified tool names. PTY bytes remain memory-only assertion input and are never
+written to a terminal transcript or artifact. Existing private failure evidence
+is preserved under its existing authority; this workflow does not create a new
+private artifact permission.
+
 The mechanisms are constrained by their native operating systems, rather than
 by advisory process behavior: Linux documents sealing for `memfd_create` and
 its `F_SEAL_WRITE` restriction in [memfd_create(2)](https://man7.org/linux/man-pages/man2/memfd_create.2.html),

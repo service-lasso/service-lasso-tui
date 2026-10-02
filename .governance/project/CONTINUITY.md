@@ -72,6 +72,25 @@ the same owner/controller architecture is shared by both. Local source checks
 are only guards. Exact-head hosted Linux and macOS receipts remain required
 before native acceptance can be claimed.
 
+## 2026-10-02: PR #22 closed public evidence checkpoint
+
+The prior native artifact list uploaded raw `native-terminal.txt`, and its
+pre-fetch `input-custody.json` combined public source facts with owner-private
+absolute paths, process lineage, birth values, image locations, and tool
+locations. The corrected workflow keeps raw PTY chunks only in process memory;
+it does not delete any previously retained private failure evidence. Each
+phase now fsyncs an owner-private actual-custody record before Core fetch,
+dependency work, build, or import. That record contains the literal command
+sequence and actual tool records, including the shell, Git, hash and text
+utilities, Node/npm, Go/compiler, and Python. It is deliberately not an
+uploaded artifact because this workflow has no typed private-artifact
+permission. The public artifact set instead contains separate closed-schema
+input, pre-`npm ci` Core-source-binding, and post-build-output receipts. No
+host path, PID/PPID, birth value, image location, tool path, raw terminal
+content, URL, token, or error payload is public evidence. Hosted run results
+remain pending direct Linux/macOS evidence; source guards do not change that
+classification.
+
 ## 2026-10-01: PR #15 exact-head and unavailable observation checkpoint
 
 Natural PR run `36766315178` built and retained source `d51d1c82d884aa3bc5fa3e1707860c914634b64e`, a provider-generated merge commit, because the workflow used the default pull-request checkout. Its retained executable SHA-256 is `a34f4475ad5ea5bcb134dd8329986c1187710187082018485ddb0c8f2bceb05c`. The direct invalid-URL assertion passed for those held bytes; the following ConPTY unavailable probe returned only the closed `startup` / `timeout` / `timed_out` receipt. A controlled local replay of that same digest found the visible unavailable/retry frame and a clean `q` exit; its `q quit` footer was clipped from the terminal capture and was not a valid readiness predicate. The repaired bounded probe requires visible unavailable/retry labels and `q` exit; the TUI's retry transition remains covered by its state tests because this terminal renderer does not emit a separately readable redraw for an equivalent retry outcome. No terminal text, token, nonce, URL, or exception was retained. Repair scope is explicit head checkout and provenance binding, plus this retained executable replay before any rebuild. This preserves the failure and does not establish runtime acceptance, candidate qualification, release, deployment, or GA.

@@ -129,6 +129,20 @@ adverse live-child recovery and an externally reaped child. The volatile
  the owner, observe normal `q` terminal exit, and only then permit owner-driven
  dependency cleanup. A source-only or Linux-only toy process exercise cannot
  substitute for this production-path proof.
+Before its first Core fetch, dependency install, build, or import, each native
+phase fsyncs a fresh input-custody record that binds the requested Core commit,
+clean TUI source identity, all three distinct owned Core paths, their non-link
+parent chains, initially absent registries, process identity, actual invoked
+tool identities, and literal next commands. Host paths, process identifiers,
+birth values, executable locations, and tool locations are owner-private
+custody only. The uploaded public receipt has a separate closed schema with
+only public source identities, ownership predicates, and verified-tool names;
+it never carries owner-private fields. Core source binding is independently
+fsync-persisted after checkout and before `npm ci`, while binary output is a
+separate post-build receipt. Raw PTY chunks remain in process memory solely for
+bounded interaction assertions and are never written or uploaded. Existing
+private failure evidence remains preserved under its existing authority; this
+workflow creates no new private artifact channel or permission claim.
 It labels the result `win32-amd64` only after the Windows host, Node process,
 and Python/ConPTY helper report AMD64. This remains local direct-only evidence:
 bounded Windows CI dependency installation changes the pinned Core checkout,

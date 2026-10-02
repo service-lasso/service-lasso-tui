@@ -51,13 +51,17 @@ export async function resolveCandidateTag({ identity, read }) {
   fail("candidate tag unresolved");
 }
 
-export async function publishCandidate({ assetDirectory, identity, token, fetchImpl = fetch }) {
+export async function publishCandidate({ assetDirectory, identity, token, fetchImpl = fetch, beforeHeldAcquisition }) {
   candidateIdentity(identity);
   if (!token) fail("publisher authority missing");
-  const manifest = assertManifest(JSON.parse((await readBoundedRegularLocalAsset(assetDirectory, "candidate-manifest.json", 1048576)).toString("utf8")), identity);
+  const admittedManifestBytes = await readBoundedRegularLocalAsset(assetDirectory, "candidate-manifest.json", 1048576);
+  const manifest = assertManifest(JSON.parse(admittedManifestBytes.toString("utf8")), identity);
+  // Instrument the actual acquisition boundary without replacing any validator.
+  if (beforeHeldAcquisition) await beforeHeldAcquisition();
   const inventory = JSON.parse((await readBoundedRegularLocalAsset(assetDirectory, "candidate-local-assets.json", 1048576)).toString("utf8"));
   await assertPublicationDirectory(assetDirectory, manifest);
   const held = await holdVerifiedLocalAssets({ assetDirectory, manifest, localAssets: inventory });
+  if (!held.bytes["candidate-manifest.json"].equals(admittedManifestBytes)) fail("held candidate manifest differs from admitted bytes");
   const read = (route, options) => providerJSON(fetchImpl, token, route, options);
   const policy = async () => {
     const value = { immutableReleases: await read("/immutable-releases"), environment: await read("/environments/development-candidate"), branchProtection: await read("/branches/develop/protection") };

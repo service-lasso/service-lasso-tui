@@ -375,3 +375,21 @@ FIFO peer-aware rendezvous with truthful parent-owned writer waits on death
 before ready and shell failure before observation. Retain all earlier producer,
 finalization, immutable execution and Issue #18 publisher protections. New
 regressions remain UNEXECUTED until fresh ENTIRE SOURCE GO and NEW ROOT admission.
+
+## PR25 final9d five-finding source successor (issues18 and20)
+Issue18 / SPEC002 AC5 and AC6: retain the first admitted manifest bytes and
+require exact equality with the acquired held manifest before ANY provider
+access. Regress coherent manifest plus inventory replacement at acquisition.
+Issue20 / SPEC001 TUI-ACCEPTANCE-001/002/003 and TUI-DISTRIBUTION-002:
+F2 retains the actual direct-owned runtime immediately after spawn, before
+birth/select/read/parse, and closes/waits with unknown birth remaining unknown.
+F3 preserves primary reconnect spawn failure plus independent Node/native sink
+rejection without inventing a helper receipt. F4 identity-guards restoration
+and removal of only the positively bound redundant original hardlink alias;
+repeat and interrupted rename/symlink/mutation regressions remain required.
+F5 targets the actual observer owner command for launch/handoff faults and
+records the reached boundary; Darwin /bin/ps remains outside those faults.
+All five form one SOURCE-ONLY bundle. Prior6+5+2+3 assertions, provider policy,
+private held-byte gates, Core authority, TLS and secrecy stay mandatory.
+All new regressions are UNEXECUTED until DIFFERENT fresh ENTIRE SOURCE GO plus
+NEW complete-input ROOT admission. No native or full-delivery claim is made.

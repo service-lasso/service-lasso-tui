@@ -302,7 +302,7 @@ def bound_execution(held,identity,root):
 def bound_replacement_probe(launch_fd,held,executable,inode_identity,digest_identity,profile,env):
     """Prove pathname replacement and mutable source bytes cannot alter the sealed launch."""
     directory=os.path.dirname(executable); original=os.path.join(directory,".tui20-held-original"); replacement=os.path.join(directory,".tui20-untrusted-replacement")
-    if os.path.exists(original) or os.path.lexists(replacement): raise RuntimeError("bound-launch probe paths already exist")
+    if os.path.lexists(original) or os.path.lexists(replacement) or os.path.lexists(replacement+".link"): raise RuntimeError("bound-launch probe paths already exist")
     os.link(executable,original)
     results=[]
     try:
@@ -332,7 +332,16 @@ def bound_replacement_probe(launch_fd,held,executable,inode_identity,digest_iden
         if sha256_fd(held)!=digest_identity["binarySHA256"]: raise RuntimeError("source candidate mutation restoration failed")
     finally:
         if os.path.lexists(replacement): os.unlink(replacement)
-        if os.path.lexists(original): os.replace(original,executable)
+        if os.path.lexists(original):
+            alias=os.lstat(original)
+            if (alias.st_dev,alias.st_ino)!=inode_identity or not stat.S_ISREG(alias.st_mode): raise RuntimeError("bound-launch original alias identity changed")
+            named=os.lstat(executable) if os.path.lexists(executable) else None
+            if named is not None and stat.S_ISREG(named.st_mode) and (named.st_dev,named.st_ino)==inode_identity:
+                # Renaming two names for one inode is a no-op on POSIX.
+                # Remove only our positively bound redundant alias.
+                os.unlink(original)
+            else:
+                os.replace(original,executable)
     return results
 def detail(term): term.write("/tui20-fixture\r"); term.wait(("tui20-fixture",),20); term.write("\r"); term.wait(("Lifecycle:","tui20-fixture"),20)
 def action(term,key,name):
@@ -421,13 +430,15 @@ def process_birth(pid):
 def write_owner_birth(args,runtime,identity):
     """The live resource owner records only identities it directly holds."""
     write_json(os.path.join(args.root,"owner-birth.json"),{"recoveryOwnerPID":os.getpid(),"recoveryOwnerBirth":process_birth(os.getpid()),"runtimePID":runtime.pid,"runtimeBirth":process_birth(runtime.pid),"nativeSHA256":identity["binarySHA256"],"ownerStarted":True})
-def start_owned_runtime(args):
+def start_owned_runtime(args,retain):
     """Start the actual Core/JWKS process under this durable resource owner."""
     command=[args.node,args.runtime_script,"--root",args.root,"--core-commit",args.core_commit]
     if args.invalid_ready_receipt: command.append("--invalid-ready-receipt")
     if args.runtime_ready_mode: command += ["--ready-mode",args.runtime_ready_mode]
     if args.shutdown_pipe_failure: command.append("--shutdown-pipe-failure")
     runtime=subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
+    retain(runtime)
+    runtime.tui20_birth=None
     runtime.tui20_birth=process_birth(runtime.pid)
     # A runtime that never hands off its line must not trap the owner at a
     # blocking readline.  It remains an owned child for recovery below.
@@ -443,16 +454,24 @@ def start_owned_runtime(args):
     return runtime,ready
 def stop_owned_runtime(runtime):
     """Retain the owner handle through a natural, directly observed close."""
-    if runtime.poll() is not None: return terminal_exit_reason(runtime.returncode),False
-    requested=True
-    try:
-        runtime.stdin.write("close\n"); runtime.stdin.flush()
-    except Exception:
-        # A failed control pipe is unresolved, not authority to kill or abandon
-        # the actual Core/JWKS child.  Keep its parent and wait handle alive.
-        requested=False
+    requested=False
+    if runtime.poll() is None:
+        try:
+            runtime.stdin.write("close\n"); runtime.stdin.flush(); requested=True
+        except Exception:
+            # EOF is the existing graceful path; never abandon the owned wait.
+            pass
+    try: runtime.stdin.close()
+    except (OSError,ValueError): pass
     runtime.wait()
     return terminal_exit_reason(runtime.returncode),requested
+
+def owned_runtime_birth_absent(runtime):
+    birth=getattr(runtime,"tui20_birth",None)
+    if birth is None: return False
+    try: return process_birth(runtime.pid)!=birth
+    except (FileNotFoundError,ProcessLookupError,subprocess.CalledProcessError): return True
+    except (OSError,RuntimeError,ValueError): return False
 def controller_failed(pid):
     try: os.kill(pid,0)
     except ProcessLookupError: return True
@@ -476,6 +495,9 @@ def main():
     if args.adverse_controller_crash and not args.controller_pid: raise RuntimeError("adverse controller proof requires controller identity")
     paths={"coreReadback":True,"uniqueOwnedPaths":["workspaceRoot","instanceRegistryPath","hostPortRegistryPath"],"runtimeInstanceBound":True}
     runtime=None; held=None; launch_fd=None; darwin_protected=None; term=None; primary_persisted=False; finalization_failure=None
+    def retain_runtime(child):
+        nonlocal runtime
+        runtime=child
     with open(args.executable,"rb") as source_binary: binary_sha256=hashlib.file_digest(source_binary,"sha256").hexdigest()
     outcome={"outcome":"failed","coreCommit":args.core_commit,"runtimePathReceipt":paths,"terminals":[]}
     try:
@@ -487,7 +509,7 @@ def main():
             except Exception as error: raise RuntimeError("external runtime handoff unavailable") from error
             if not all(isinstance(runtime_handoff.get(key),str) and runtime_handoff[key] for key in ("url","token","deniedToken")) or not isinstance(runtime_handoff.get("jwksPort"),int) or not isinstance(runtime_handoff.get("_runtimePID"),int) or not isinstance(runtime_handoff.get("_runtimeBirth"),dict): raise RuntimeError("external runtime handoff invalid")
         else:
-            runtime,runtime_handoff=start_owned_runtime(args)
+            runtime,runtime_handoff=start_owned_runtime(args,retain_runtime)
         if args.shutdown_pipe_failure: raise RuntimeError("controlled post-handoff runtime pipe failure")
         with open(os.path.join(args.root,"ready.json"),encoding="utf-8") as stream: ready=json.load(stream)
         if ready.get("coreCommit")!=args.core_commit or ready.get("runtimePathReceipt")!=paths: raise RuntimeError("Core fixture receipt invalid")
@@ -592,7 +614,8 @@ def main():
             # never strand the real owner child once no TUI child remains live.
             if runtime is not None and not live_child:
                 runtime_exit,shutdown_requested=stop_owned_runtime(runtime)
-                write_json(os.path.join(args.root,"owner-runtime-recovery.json"),{"outcome":"observed_closed","runtimePID":runtime.pid,"runtimeBirth":runtime.tui20_birth,"runtimeChildExit":runtime_exit,"shutdownRequested":shutdown_requested,"actualExitObserved":True})
+                birth_absent=owned_runtime_birth_absent(runtime)
+                write_json(os.path.join(args.root,"owner-runtime-recovery.json"),{"outcome":"observed_closed" if birth_absent else "exit_observed_birth_absence_unproven","runtimePID":runtime.pid,"runtimeBirth":runtime.tui20_birth,"runtimeChildExit":runtime_exit,"shutdownRequested":shutdown_requested,"actualExitObserved":True,"runtimeBirthAbsentObserved":birth_absent,"runtimeChildStillLiveAfterClose":False if birth_absent else None})
                 if args.invalid_ready_receipt:
                     write_json(os.path.join(args.root,"owner-preflight-cleanup.json"),{"outcome":"failed","preflight":"runtime_receipt_invalid","ownerDrivenRuntimeShutdown":shutdown_requested,"runtimeChildExit":runtime_exit,"retainedOwnedRuntime":False,"actualExitObserved":True})
                 if finalization_failure is not None:

@@ -19,6 +19,52 @@ def load_posix_harness():
 
 
 class NativeFiveActionHarnessTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform in ("linux","darwin"), "requires actual POSIX runtime child and wait")
+    def test_actual_direct_owner_entrypoint_retains_runtime_on_every_acquisition_error(self):
+        # Core/JWKS behavior is a fixture; main/start_owned_runtime/finalization,
+        # the real child handle and real wait are the production ownership path.
+        harness=load_posix_harness()
+        for boundary in ("birth","select","read","parse","shape"):
+            with self.subTest(boundary=boundary), tempfile.TemporaryDirectory() as root:
+                candidate=pathlib.Path(root,"candidate"); candidate.write_bytes(b"preflight fixture never activated")
+                script=pathlib.Path(root,"runtime.py")
+                line="not-json" if boundary=="parse" else "[]" if boundary=="shape" else '{"event":"ready","url":"fixture","token":"fixture","deniedToken":"fixture","jwksPort":1}'
+                script.write_text("import sys,pathlib\nprint("+repr(line)+",flush=True)\nfor line in sys.stdin:\n    if line=='close\\n': break\npathlib.Path("+repr(str(pathlib.Path(root,"actual-close")))+").write_text('closed')\n",encoding="utf-8")
+                actual_popen=harness["subprocess"].Popen; children=[]
+                class FailedRead:
+                    def __init__(self,stream): self.stream=stream
+                    def fileno(self): return self.stream.fileno()
+                    def readline(self): raise OSError("controlled runtime read error")
+                def launch(*args,**kwargs):
+                    child=actual_popen(*args,**kwargs)
+                    command=args[0] if args else kwargs.get("args",[])
+                    is_runtime=isinstance(command,(list,tuple)) and len(command)>1 and command[1]==str(script)
+                    if is_runtime: children.append(child)
+                    if is_runtime and boundary=="read": child.stdout=FailedRead(child.stdout)
+                    return child
+                def failed_birth(pid): raise OSError("controlled runtime birth error")
+                def failed_select(*args): raise OSError("controlled runtime select error")
+                argv=["owner","--root",root,"--executable",str(candidate),"--source-commit","a"*40,"--core-commit","b"*40,"--node",sys.executable,"--runtime-script",str(script)]
+                with patch.object(sys,"argv",argv), patch.object(harness["subprocess"],"Popen",launch):
+                    with patch.dict(harness["main"].__globals__,{"process_birth":failed_birth} if boundary=="birth" else {}), patch.object(harness["select"],"select",failed_select if boundary=="select" else harness["select"].select):
+                        failure=OSError if boundary in ("birth","select","read") else harness["OwnedRuntimeAcquisitionFailure"] if boundary=="parse" else AttributeError
+                        with self.assertRaises(failure): harness["main"]()
+                self.assertEqual(len(children),1)
+                self.assertEqual(children[0].returncode,0,"actual owner must wait its actual child")
+                self.assertEqual(pathlib.Path(root,"actual-close").read_text(),"closed")
+                import json
+                receipt=json.loads(pathlib.Path(root,"owner-runtime-recovery.json").read_text())
+                self.assertTrue(receipt["actualExitObserved"])
+                self.assertEqual(receipt["runtimeChildExit"],"terminal_exited_zero")
+                self.assertEqual(receipt["runtimePID"],children[0].pid)
+                self.assertEqual(receipt["runtimeBirthAbsentObserved"],boundary!="birth")
+                if boundary=="birth":
+                    self.assertIsNone(receipt["runtimeBirth"])
+                    self.assertIsNone(receipt["runtimeChildStillLiveAfterClose"])
+                    self.assertEqual(receipt["outcome"],"exit_observed_birth_absence_unproven")
+                for child in children:
+                    child.stdout.stream.close() if boundary=="read" else child.stdout.close()
+
     def test_harness_records_closed_exit_and_adverse_audits_without_persisting_tokens(self):
         source = pathlib.Path(__file__).with_name("tui20-native-five-action.py").read_text(encoding="utf-8")
         ast.parse(source)
@@ -229,6 +275,12 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
                 self.assertNotEqual(observations[2],identity["binarySHA256"])
                 self.assertEqual(candidate.read_bytes(),original)
                 self.assertEqual(harness["sha256_fd"](held),identity["binarySHA256"])
+                self.assertFalse(os.path.lexists(pathlib.Path(root,".tui20-held-original")))
+                with patch.dict(harness["bound_replacement_probe"].__globals__,{"Terminal":ObservedTerminal}):
+                    repeated=harness["bound_replacement_probe"](sealed,held,str(candidate),inode,identity,"missing",{})
+                self.assertEqual(len(repeated),3)
+                self.assertEqual(candidate.read_bytes(),original)
+                self.assertFalse(os.path.lexists(pathlib.Path(root,".tui20-held-original")))
                 class FailingMutationTerminal(ObservedTerminal):
                     def wait(self,need,seconds):
                         if observations[-1]!=identity["binarySHA256"]: raise RuntimeError("controlled mutation launch assertion")
@@ -237,6 +289,30 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
                         harness["bound_replacement_probe"](sealed,held,str(candidate),inode,identity,"missing",{})
                 self.assertEqual(candidate.read_bytes(),original,"actual source byte must restore even when the mutation launch assertion fails")
                 self.assertEqual(harness["sha256_fd"](held),identity["binarySHA256"])
+                self.assertFalse(os.path.lexists(pathlib.Path(root,".tui20-held-original")))
+                for failure_at in (1,2):
+                    class FailingReplacementTerminal(ObservedTerminal):
+                        count=0
+                        def wait(self,need,seconds):
+                            type(self).count+=1
+                            if self.count==failure_at: raise RuntimeError("controlled replacement interruption")
+                    with patch.dict(harness["bound_replacement_probe"].__globals__,{"Terminal":FailingReplacementTerminal}):
+                        with self.assertRaisesRegex(RuntimeError,"controlled replacement interruption"):
+                            harness["bound_replacement_probe"](sealed,held,str(candidate),inode,identity,"missing",{})
+                    self.assertEqual(candidate.read_bytes(),original)
+                    self.assertEqual((candidate.stat().st_dev,candidate.stat().st_ino),inode)
+                    self.assertFalse(os.path.lexists(pathlib.Path(root,".tui20-held-original")))
+                    self.assertFalse(os.path.lexists(pathlib.Path(root,".tui20-untrusted-replacement")))
+                foreign=pathlib.Path(root,"foreign-alias")
+                foreign.write_bytes(b"unowned replacement alias must remain")
+                class ForeignAliasTerminal(ObservedTerminal):
+                    def wait(self,need,seconds):
+                        os.replace(foreign,pathlib.Path(root,".tui20-held-original"))
+                        raise RuntimeError("controlled foreign alias substitution")
+                with patch.dict(harness["bound_replacement_probe"].__globals__,{"Terminal":ForeignAliasTerminal}):
+                    with self.assertRaisesRegex(RuntimeError,"original alias identity changed"):
+                        harness["bound_replacement_probe"](sealed,held,str(candidate),inode,identity,"missing",{})
+                self.assertEqual(pathlib.Path(root,".tui20-held-original").read_bytes(),b"unowned replacement alias must remain")
             finally:
                 os.close(sealed); os.close(held)
 

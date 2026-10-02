@@ -191,13 +191,13 @@ function publisherProvider({ existing = false, orphan = false, annotated = false
   };
   return { fetchImpl, calls, state, writes: () => writes, policyReads: () => policyReads };
 }
-async function runPublisher(provider) {
+async function runPublisher(provider, acquisitionFault) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "complete-publisher-"));
   try {
     await Promise.all(names.map(name => writeFile(path.join(directory, name), localBodies[name])));
     await writeFile(path.join(directory, "candidate-local-assets.json"), JSON.stringify(localAssets));
     provider.state.directory = directory;
-    return await publishCandidate({ assetDirectory: directory, identity, token: "fixture-token", fetchImpl: provider.fetchImpl });
+    return await publishCandidate({ assetDirectory: directory, identity, token: "fixture-token", fetchImpl: provider.fetchImpl, beforeHeldAcquisition: acquisitionFault ? () => acquisitionFault(directory) : undefined });
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
 test("complete publisher creates once, verifies private inventory, publishes once, and resolves annotated source", async () => {
@@ -205,6 +205,24 @@ test("complete publisher creates once, verifies private inventory, publishes onc
   assert.equal(result.recovered, false); assert.equal(result.receipt.verified.length, 6); assert.equal(result.receipt.tagProof.chain.length, 2);
   assert.equal(provider.writes(), 9); assert.equal(provider.policyReads(), 10);
   assert.equal(provider.calls.filter(call => call.method === "PATCH").length, 1);
+});
+
+test("coherent manifest and inventory replacement at held acquisition denies ALL provider access", async () => {
+  for (const foreign of [true, false]) {
+    const provider = publisherProvider(); let boundaryReached = false;
+    await assert.rejects(() => runPublisher(provider, async directory => {
+      boundaryReached = true;
+      const replacement = foreign ? { ...manifest, source: { ...manifest.source, commit: "b".repeat(40) } } : manifest;
+      // Even a semantically equal representation must be the admitted bytes.
+      const bytes = Buffer.from(JSON.stringify(replacement, null, 2));
+      const inventory = { ...localAssets, "candidate-manifest.json": { sha256: createHash("sha256").update(bytes).digest("hex"), size: bytes.length } };
+      await writeFile(path.join(directory, "candidate-manifest.json"), bytes);
+      await writeFile(path.join(directory, "candidate-local-assets.json"), JSON.stringify(inventory));
+    }), /held candidate manifest differs from admitted bytes/u);
+    assert.equal(boundaryReached, true);
+    assert.deepEqual(provider.calls, []);
+    assert.equal(provider.writes(), 0);
+  }
 });
 test("complete publisher exact immutable recovery is read-only for lightweight and annotated tags", async () => {
   for (const annotated of [false, true]) { const provider = publisherProvider({ existing: true, annotated }); assert.equal((await runPublisher(provider)).recovered, true); assert.equal(provider.writes(), 0); }

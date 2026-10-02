@@ -412,6 +412,48 @@ test("actual reconnect caller reaches the real Python entrypoint with both bound
   } finally { await rm(tempRoot, { recursive: true, force: true }); }
 });
 
+test("actual reconnect spawn error retains independent sink failure and never invents helper output", async () => {
+  const root = path.join(os.tmpdir(), `tui-spawn-error-${process.pid}-${Date.now()}`);
+  await mkdir(root, { recursive: true });
+  const primary = []; const sinkFailure = new Error("controlled independent receipt sink rejection"); let helperWrites = 0;
+  const probe = startReconnectProbe("inert", "http://127.0.0.1:1", "ready", "reconnect", "shutdown", "ack", "token", {
+    helper: { writeFile: async () => { helperWrites++; }, sync: async () => undefined },
+    node: { writeFile: async () => { throw sinkFailure; }, sync: async () => undefined },
+  }, { sourceCommit: "a".repeat(40), binarySHA256: "b".repeat(64) }, {
+    spawnProcess(_program, _args, options) {
+      const child = spawn(path.join(root, "nonexistent-helper"), [], options);
+      child.once("error", error => primary.push(error));
+      return child;
+    },
+  });
+  try {
+    await assert.rejects(probe.completed, error => error === primary[0] && error.code === "ENOENT" && error.receiptFailures.length === 1 && error.receiptFailures[0] === sinkFailure);
+    await probe.exited;
+    assert.equal(helperWrites, 0);
+    assert.equal(probe.completedSuccessfully, false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("Windows reconnect spawn error preserves actual native writer rejection", { skip: process.platform !== "win32" }, async () => {
+  const root = path.join(os.tmpdir(), `tui-native-spawn-error-${process.pid}-${Date.now()}`);
+  await mkdir(root, { recursive: true });
+  const sinks = await createReceiptSinks(root);
+  const probe = startReconnectProbe("inert", "http://127.0.0.1:1", "ready", "reconnect", "shutdown", "ack", "token", {
+    helper: sinks.helper, node: { writer: sinks.node.writer, sink: "rejected-node" },
+  }, { sourceCommit: "a".repeat(40), binarySHA256: "b".repeat(64) }, {
+    spawnProcess(_program, _args, options) { return spawn(path.join(root, "nonexistent-helper.exe"), [], options); },
+  });
+  try {
+    await assert.rejects(probe.completed, error => error.code === "ENOENT" && error.receiptFailures.length === 1 && /native receipt writer/u.test(error.receiptFailures[0].message));
+    await probe.exited;
+  } finally {
+    await closeReceiptSinks(sinks);
+    assert.equal((await readFile(path.join(sinks.root, "helper-outcome.json"))).length, 0, "a helper which never started cannot publish a receipt");
+    assert.equal((await readFile(path.join(sinks.root, "node-exit-outcome.json"))).length, 0, "the rejected actual native write remains a failure");
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("actual Python reconnect producer payload reaches the closed Node consumer", async () => {
   const output = await new Promise((resolve, reject) => execFile("python", [path.join(repoRoot, "scripts/reconnect-protocol-fixture.py")], { windowsHide: true }, (error, stdout) => error ? reject(error) : resolve(stdout)));
   const produced = JSON.parse(output);

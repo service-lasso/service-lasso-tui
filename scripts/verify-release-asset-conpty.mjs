@@ -432,7 +432,9 @@ export function startReconnectProbe(executable, apiURL, readyPath, reconnectPath
       spawnFailed = true;
       // Preserve the original spawn error.  The independent Node receipt
       // records this terminal state without fabricating a helper result.
-      persistNodeExitReceipt(receiptSinks.node, null, null, true).catch(() => undefined).finally(() => reject(error));
+      Promise.resolve().then(() => persistNodeExitReceipt(receiptSinks.node, null, null, true)).catch(receiptFailure => {
+        error.receiptFailures = [...(error.receiptFailures ?? []), receiptFailure];
+      }).finally(() => reject(error));
     });
     child.once("close", async (code, signal) => {
       try {

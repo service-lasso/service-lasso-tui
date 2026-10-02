@@ -64,6 +64,99 @@ API state. It retains only closed-schema, metadata-only results and removes all
 temporary state. It does not autostart a managed Core service, persist operator
 credentials, perform a lifecycle mutation, or establish cross-platform, release,
 deployment, or GA acceptance.
+
+`TUI-ACCEPTANCE-002`: Linux and macOS lifecycle acceptance builds the TUI in a
+clean native checkout and builds the exact Core source
+`2633c07be25512d0a84f9bfa28de6be5edff35e8` with `npm ci` and `npm run build`.
+Before every Core Node invocation it sets distinct owned workspace, instance
+registry, and host-port registry paths. A real POSIX PTY drives install,
+config, start, stop, and restart through the guarded Core API, confirms the
+frozen preview once, and reconnects only to read a completed operation. It
+retains true terminal exit classifications, exact binary VCS provenance,
+Core-owned path readback, zero-operation adverse receipts and direct audit
+counts, and an unchanged named unrelated-service state. It does not replace
+Core with a mock, cross-compile a binary, derive persistent identity from a
+profile or credential, or claim pending reconciliation while Core #1553 lacks
+its reviewed adapter. Hosted runner availability remains direct native evidence
+only when the complete workflow succeeds; any unavailable or failed receipt is
+classified Blocked.
+The executable bytes used by the PTY must be a platform-enforced immutable
+object, not merely a readable descriptor. On Linux, the harness copies the
+verified descriptor bytes into a `memfd`, verifies the copy digest, applies
+the write, grow, shrink, and seal seals, verifies those seals, and executes
+only that sealed object with `fexecve`. On macOS, it copies the verified bytes
+to a leaf in an owned staging directory and requires the OS-reported
+`SF_IMMUTABLE` system flag on both the leaf and its parent before execution.
+The Darwin leaf is flagged and read back first; the harness retains a writable
+leaf descriptor from before activation and requires its post-activation
+in-place write to be denied, then hashes that immutable leaf against the held
+candidate digest before flagging and reading back the parent.
+The PTY child retains the staging-directory descriptor, changes directory
+through that held descriptor, verifies the leaf identity relative to it, and
+uses Darwin's pathname `execve` on that relative leaf; it does not execute
+`/dev/fd/N`. Activation and later removal require a non-interactive privileged
+helper. User immutable flags, chmod, ACLs, descriptor retention, and a
+same-user promise are insufficient. The metadata-only primary receipt records
+only the mechanism, flag readback, denied in-place-write probe, and existing
+digest identity before teardown. If leaf activation succeeds but parent
+activation or readback fails, its held cleanup descriptor is carried into the
+primary-before-cleanup finalization; any unproven rollback retains recovery
+material and records only that closed result. A separate closed cleanup receipt
+records its outcome and whether recovery material remains; it cannot replace
+the primary child outcome. A bounded `q` observation never kills an owned
+child: an unresolved live child retains its PTY and execution object for
+recovery, while an observed negative wait status is `terminal_signaled`.
+
+`TUI-ACCEPTANCE-003`: The retained native public artifact is a closed metadata
+receipt. Before upload, the workflow validates every selected file against its
+exact schema and rejects host paths, process identifiers, birth data, private
+custody labels, images, tool records, and literal command data. The binary
+receipt records only its digest and byte size; it never uses a pathname-bearing
+checksum format. Each phase directory contains exactly one complete five-record
+set; foreign public records and partial or duplicate sibling sets fail closed.
+Within that set, the input-custody, build-output, and public-projection TUI
+commits must agree; input-custody and Core binding commits must agree; and the
+binary digest and byte size must agree with build-output and public-projection.
+All GitHub Actions used by CI and candidate publication are
+committed SHA references, with their human version labels retained only in
+comments.
+Each native run also mutates the
+source inode in place after the immutable execution object exists and proves
+the launch still reaches the verified object; it restores the source byte
+before proceeding. If a platform cannot establish and read back that mechanism,
+the lifecycle result is Blocked.
+When bounded terminal observation expires, the helper must not exit while it
+still owns the PTY, immutable execution object, or Core/JWKS parent lifecycle.
+It writes only a closed unresolved receipt and transfers no descriptor-based
+claim across a process boundary. A live external recovery parent retains those
+objects and the Core/JWKS parent until it directly observes the child exit,
+then writes the final child and cleanup receipts. `waitpid` ownership loss
+(`ECHILD`/`ChildProcessError`) is an unowned, reaped, unresolved outcome; it
+is never a successful terminal exit and must not overwrite the primary
+receipt. The native harness test guard and native workflow both exercise an
+adverse live-child recovery and an externally reaped child. The volatile
+ JavaScript acceptance controller must not itself host Core or JWKS. A distinct
+ external POSIX resource owner starts the actual Core/JWKS runtime as its child
+ and retains that process identity together with the PTY and immutable launch
+ object. The native Linux and macOS workflows kill that actual controller only
+ after a real TUI child is live, read back live Core and JWKS dependencies from
+ the owner, observe normal `q` terminal exit, and only then permit owner-driven
+ dependency cleanup. A source-only or Linux-only toy process exercise cannot
+ substitute for this production-path proof.
+Before its first Core fetch, dependency install, build, or import, each native
+phase fsyncs a fresh input-custody record that binds the requested Core commit,
+clean TUI source identity, all three distinct owned Core paths, their non-link
+parent chains, initially absent registries, process identity, actual invoked
+tool identities, and literal next commands. Host paths, process identifiers,
+birth values, executable locations, and tool locations are owner-private
+custody only. The uploaded public receipt has a separate closed schema with
+only public source identities, ownership predicates, and verified-tool names;
+it never carries owner-private fields. Core source binding is independently
+fsync-persisted after checkout and before `npm ci`, while binary output is a
+separate post-build receipt. Raw PTY chunks remain in process memory solely for
+bounded interaction assertions and are never written or uploaded. Existing
+private failure evidence remains preserved under its existing authority; this
+workflow creates no new private artifact channel or permission claim.
 It labels the result `win32-amd64` only after the Windows host, Node process,
 and Python/ConPTY helper report AMD64. This remains local direct-only evidence:
 bounded Windows CI dependency installation changes the pinned Core checkout,

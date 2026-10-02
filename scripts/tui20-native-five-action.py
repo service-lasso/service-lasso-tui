@@ -7,8 +7,6 @@ from winpty.ptyprocess import PtyProcess
 ALLOWED_ENV=("APPDATA","COMSPEC","LOCALAPPDATA","PATHEXT","PATH","SYSTEMROOT","TEMP","TMP","USERPROFILE","WINDIR")
 def write_json(path,value):
     with open(path,"w",encoding="utf-8",newline="") as f: json.dump(value,f,separators=(",",":"))
-def append_terminal(path,label,chunk):
-    with open(path,"a",encoding="utf-8",newline="") as f: f.write("\n--- "+label+" ---\n"+chunk)
 def hold_candidate(executable,source):
     if len(source)!=40: raise RuntimeError("candidate source identity invalid")
     executable=os.path.abspath(executable); meta=os.lstat(executable)
@@ -35,26 +33,27 @@ def terminal_exit(process):
     if isinstance(exit_status,int) and not isinstance(exit_status,bool):
         return "terminal_exited_zero" if exit_status==0 else "terminal_exit_code_1" if exit_status==1 else "terminal_exit_code_2" if exit_status==2 else "terminal_exited_nonzero"
     return "terminal_unknown"
-def drain(process,transcript,path,label):
+def drain(process,transcript):
     try: chunk=process.read()
     except EOFError: return None
-    append_terminal(path,label,chunk); transcript[0]+=chunk; return chunk
-def wait_for(process,expected,timeout,transcript,path,label,start=0):
+    # The bounded renderer assertion consumes terminal bytes in memory only.
+    transcript[0]+=chunk; return chunk
+def wait_for(process,expected,timeout,transcript,start=0):
     end=time.monotonic()+timeout
     while time.monotonic()<end:
         if all(x in transcript[0][start:] for x in expected): return
         readable,_,_=select.select([process],[],[],.1)
-        if readable and drain(process,transcript,path,label) is None:
+        if readable and drain(process,transcript) is None:
             reason=terminal_exit(process)
             if reason is not None: raise RuntimeError("terminal exited before expected state: "+reason)
             time.sleep(.05)
     raise RuntimeError("missing terminal state")
-def close_terminal(process,transcript,path,label,expected="terminal_exited_zero"):
+def close_terminal(process,transcript,expected="terminal_exited_zero"):
     if process.isalive(): process.write("q")
     end=time.monotonic()+10
     while time.monotonic()<end:
         readable,_,_=select.select([process],[],[],.1)
-        if readable: drain(process,transcript,path,label)
+        if readable: drain(process,transcript)
         reason=terminal_exit(process)
         if reason is not None:
             if reason!=expected: raise RuntimeError("unexpected terminal exit: "+reason)
@@ -79,10 +78,10 @@ def audit_events(url,token):
 def denial_audit_count(url,token):
     events=audit_events(url,token)
     return sum(1 for event in events if isinstance(event,dict) and event.get("action")=="mcp.action.denied" and event.get("actor")=="tui20-native-operator")
-def detail(p,t,path,label):
-    p.write("/"); p.write("tui20-fixture"); p.write("\r"); wait_for(p,("tui20-fixture",),20,t,path,label); p.write("\r"); wait_for(p,("Lifecycle:","tui20-fixture"),20,t,path,label)
-def action(p,t,path,key,name):
-    start=len(t[0]); p.write(key); wait_for(p,("Core preview: "+name,"Confirm "+name),45,t,path,"allowed",start); frozen=t[0]; p.write("rj?q"); time.sleep(.3)
+def detail(p,t):
+    p.write("/"); p.write("tui20-fixture"); p.write("\r"); wait_for(p,("tui20-fixture",),20,t); p.write("\r"); wait_for(p,("Lifecycle:","tui20-fixture"),20,t)
+def action(p,t,key,name):
+    start=len(t[0]); p.write(key); wait_for(p,("Core preview: "+name,"Confirm "+name),45,t,start); frozen=t[0]; p.write("rj?q"); time.sleep(.3)
     if "Confirm "+name not in t[0] or "Core preview: "+name not in t[0]: raise RuntimeError("confirmation changed by blocked input")
     p.write("y"); p.write("r")
     # A restart can temporarily take the API connection down after Core has
@@ -94,7 +93,7 @@ def action(p,t,path,key,name):
         if "Runtime API unavailable:" in t[0][start:]:
             p.write("r")
         readable,_,_=select.select([p],[],[],.1)
-        if readable and drain(p,t,path,"allowed") is None:
+        if readable and drain(p,t) is None:
             raise RuntimeError("terminal closed during retained operation readback")
     else: raise RuntimeError("retained operation readback unavailable")
     if t[0].count("Core operation")<frozen.count("Core operation")+1: raise RuntimeError("operation result was not rendered")
@@ -107,24 +106,24 @@ def main():
     if not token or not denied or not url: raise RuntimeError("owned in-memory credential handoff unavailable")
     with open(os.path.join(args.root,"connections.json"),encoding="utf-8") as f: connections=json.load(f)
     env={key:os.environ[key] for key in ALLOWED_ENV if os.environ.get(key)}; env.update({"TERM":"xterm-256color","SERVICE_LASSO_API_TOKEN":token,"SERVICE_LASSO_DENIED_TOKEN":denied,"SERVICE_LASSO_INVALID_TOKEN":"tui20-invalid-token","SERVICE_LASSO_CONNECTIONS_CONFIG":os.path.join(args.root,"connections.json")})
-    executable,held,identity=hold_candidate(args.executable,args.source_commit); transcript_path=os.path.join(args.root,"native-terminal.txt"); outcome={"outcome":"failed","candidateIdentity":identity,"coreCommit":args.core_commit,"runtimePathReceipt":paths,"terminals":[]}; open_processes=[]
+    executable,held,identity=hold_candidate(args.executable,args.source_commit); outcome={"outcome":"failed","candidateIdentity":identity,"coreCommit":args.core_commit,"runtimePathReceipt":paths,"terminals":[]}; open_processes=[]
     def launch(profile,label):
         p=PtyProcess.spawn([executable,"--profile",profile],cwd=os.path.dirname(executable),env=env,dimensions=(44,150),backend=Backend.ConPTY); open_processes.append(p); return p,[""]
     def finish(p,t,label,expected="terminal_exited_zero"):
-        outcome["terminals"].append({"terminal":label,"exit":close_terminal(p,t,transcript_path,label,expected)}); open_processes.remove(p)
+        outcome["terminals"].append({"terminal":label,"exit":close_terminal(p,t,expected)}); open_processes.remove(p)
     try:
         before_unrelated=unrelated_snapshot(url,token); adverse=[]
-        p,t=launch("missing","missing-credential"); before=len(records(url,token)); audit_before=denial_audit_count(url,token); wait_for(p,('connection profile "missing" credential is unavailable',),30,t,transcript_path,"missing-credential"); finish(p,t,"missing-credential","terminal_exit_code_2"); after=len(records(url,token)); audit_after=denial_audit_count(url,token); adverse.append({"case":"missing-credential","beforeOperationCount":before,"afterOperationCount":after,"noOperation":after==before,"coreDeniedAuditBefore":audit_before,"coreDeniedAuditAfter":audit_after,"coreDeniedAuditDelta":audit_after-audit_before})
+        p,t=launch("missing","missing-credential"); before=len(records(url,token)); audit_before=denial_audit_count(url,token); wait_for(p,('connection profile "missing" credential is unavailable',),30,t); finish(p,t,"missing-credential","terminal_exit_code_2"); after=len(records(url,token)); audit_after=denial_audit_count(url,token); adverse.append({"case":"missing-credential","beforeOperationCount":before,"afterOperationCount":after,"noOperation":after==before,"coreDeniedAuditBefore":audit_before,"coreDeniedAuditAfter":audit_after,"coreDeniedAuditDelta":audit_after-audit_before})
         for profile,label in (("invalid","invalid-credential"),("denied","scope-denied")):
-            p,t=launch(profile,label); before=len(records(url,token)); audit_before=denial_audit_count(url,token); wait_for(p,("Runtime identity:",),30,t,transcript_path,label); detail(p,t,transcript_path,label); p.write("i"); wait_for(p,("Runtime API unavailable:",),30,t,transcript_path,label); finish(p,t,label); after=len(records(url,token)); audit_after=denial_audit_count(url,token); adverse.append({"case":label,"beforeOperationCount":before,"afterOperationCount":after,"noOperation":after==before,"coreDeniedAuditBefore":audit_before,"coreDeniedAuditAfter":audit_after,"coreDeniedAuditDelta":audit_after-audit_before})
+            p,t=launch(profile,label); before=len(records(url,token)); audit_before=denial_audit_count(url,token); wait_for(p,("Runtime identity:",),30,t); detail(p,t); p.write("i"); wait_for(p,("Runtime API unavailable:",),30,t); finish(p,t,label); after=len(records(url,token)); audit_after=denial_audit_count(url,token); adverse.append({"case":label,"beforeOperationCount":before,"afterOperationCount":after,"noOperation":after==before,"coreDeniedAuditBefore":audit_before,"coreDeniedAuditAfter":audit_after,"coreDeniedAuditDelta":audit_after-audit_before})
         expected_denials={"missing-credential":0,"invalid-credential":0,"scope-denied":5}
         if not all(x["noOperation"] and x["coreDeniedAuditDelta"]==expected_denials[x["case"]] for x in adverse): raise RuntimeError("adverse lifecycle receipt invalid")
-        p,t=launch("native","allowed"); wait_for(p,("Runtime identity:",),30,t,transcript_path,"allowed"); detail(p,t,transcript_path,"allowed")
-        for key,name in (("i","install"),("c","config"),("s","start"),("x","stop"),("R","restart")): action(p,t,transcript_path,key,name)
-        before_reload=records(url,token); p.write("l"); wait_for(p,("reload is unavailable",),15,t,transcript_path,"allowed")
+        p,t=launch("native","allowed"); wait_for(p,("Runtime identity:",),30,t); detail(p,t)
+        for key,name in (("i","install"),("c","config"),("s","start"),("x","stop"),("R","restart")): action(p,t,key,name)
+        before_reload=records(url,token); p.write("l"); wait_for(p,("reload is unavailable",),15,t)
         if len(records(url,token))!=len(before_reload) or "z cancel" in t[0]: raise RuntimeError("reload or cancellation contract changed")
-        p.write("r"); wait_for(p,("Lifecycle:",),20,t,transcript_path,"allowed"); finish(p,t,"allowed")
-        p,t=launch("native","reconnect"); wait_for(p,("Runtime identity:",),30,t,transcript_path,"reconnect"); detail(p,t,transcript_path,"reconnect"); finish(p,t,"reconnect")
+        p.write("r"); wait_for(p,("Lifecycle:",),20,t); finish(p,t,"allowed")
+        p,t=launch("native","reconnect"); wait_for(p,("Runtime identity:",),30,t); detail(p,t); finish(p,t,"reconnect")
         all_records=records(url,token); audit=[{key:r.get(key) for key in ("operationId","action","targetIds","status","outcome","cancellationSupported")} for r in all_records if r.get("targetIds")==["tui20-fixture"]]
         expected=["service_restart","service_stop","service_start","service_configure","service_install"]
         if len(audit)!=5 or sorted(x["action"] for x in audit)!=sorted(expected) or any(not x["operationId"] or x["cancellationSupported"] for x in audit) or len(all_records)!=len(before_reload): raise RuntimeError("durable action audit invalid")

@@ -19,6 +19,18 @@
 retained native fixture remains partial evidence and its restart readback
 failure has a causal Core-audit/registry diagnosis; pending reconciliation is
   separately blocked on Core #1553 and Linux/macOS native journeys remain open.
+- [ ] Run the Issue #20 Linux and macOS POSIX-PTY workflow against the clean,
+  pinned Core `2633c07be25512d0a84f9bfa28de6be5edff35e8`. The workflow must build
+  both source trees on its native host, set all three owned Core paths before
+  every Node invocation, retain closed terminal exits and metadata-only receipts,
+  and classify a missing hosted receipt as blocked rather than accepted.
+- [ ] Complete PR #22 external recovery ownership: a bounded live child must
+  stay under a live parent that retains its PTY, immutable execution object,
+  and Core/JWKS lifecycle until direct exit observation. A reaped/unowned
+  wait status is unresolved, not success; prove both adverse paths in the
+  wired native-harness guard. The implementation now makes the POSIX owner
+  start and supervise a separate real Core/JWKS process, while the JavaScript
+  controller is volatile; exact-head Linux and macOS evidence remains pending.
 - [x] Issue #7 verified Core `develop` GET routes for capability/setup metadata,
   authenticated runtime identity, inbox list, and service health history. The
   TUI consumes only bounded display fields and no inbox detail or mutation.
@@ -35,4 +47,7 @@ failure has a causal Core-audit/registry diagnosis; pending reconciliation is
 - [ ] Issue #18 requires owner-applied immutable release, protected
   `development-candidate` environment, and protected `develop` settings before
   any candidate write. Source controls are reviewable; provider readback is a
-  separate blocking prerequisite.
+  separate blocking prerequisite. Current `branches/develop/protection`
+  readback is `404`; the repository owner must apply the documented controls
+  and supply exact authenticated readback. No workflow is authorized to mutate
+  the provider controls.

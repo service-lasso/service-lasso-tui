@@ -106,8 +106,91 @@ and rerun.
 Windows direct lifecycle acceptance is therefore **partial and blocked**:
 source tests and the earlier bounded fixture exercise remain useful, while a
 successful secrecy-safe, same-handle, true-exit receipt remains required.
-Linux and macOS real-Core native journeys are also still unexecuted; hosted
-builds and cross-compilation are not replacements for those host journeys.
+Linux and macOS real-Core native journeys now have an executable native-host
+workflow on TUI PR #22. It obtains clean detached Core
+`2633c07be25512d0a84f9bfa28de6be5edff35e8`, runs `npm ci` and `npm run build`,
+and starts that actual Core source only after a fresh shell creates three
+distinct, non-link owned workspace/instance-registry/host-port-registry paths
+with both registries absent. Before Core import, dependency installation, or a
+build tool runs, that shell retains source tree and dirty hashes, its actual
+PID/PPID/birth/image, the planned command, and hash-and-size identities for the
+native compiler tools in `input-custody.json`. Each native host builds a
+clean VCS-stamped TUI binary, acquires a no-follow verified descriptor, and
+drives it through a POSIX PTY only from a platform-enforced immutable execution
+object (`fexecve` on a sealed Linux `memfd` and Darwin relative-pathname
+`execve` after `fchdir` through a held directory descriptor on a
+system-immutable object). Before acceptance actions, the
+harness replaces the executable pathname by rename and symlink attacks and
+mutates the original inode in place; each immutable-object launch must still
+reach the expected missing-credential boundary. The retained receipt contract includes binary
+  digest/size, source-tree heads and dirty hashes, Core path
+  materialization readback, true terminal exits, five accepted operations,
+adverse zero-operation/direct-audit counts, exactly one matching Core terminal
+success audit event per distinct operation ID, no-replay reconnect, and named
+  unrelated-service comparison. Preflight, five-action, injected-finalization,
+  and controller-loss phases retain separate attempt roots, binary hashes, and
+  owner birth/close records; no later phase may replace another phase's primary
+  or cleanup receipt. The injected cleanup-failure phase proves that a real
+  owner gracefully closes Core/JWKS after finalization cleanup has failed.
+  Core #1553 remains fail-closed for persistent
+reconciliation. Until the exact-head Linux and macOS jobs complete and their
+receipts are read back, this is an executable path and remains **Blocked**, not
+native acceptance; hosted builds and cross-compilation are not replacements.
+
+### Executable-byte binding
+
+The receipt must show that the exact bytes launched by the PTY are
+platform-enforced immutable. Linux uses a verified `memfd` with kernel readback
+of `F_SEAL_WRITE`, `F_SEAL_GROW`, `F_SEAL_SHRINK`, and `F_SEAL_SEAL`, then
+launches that anonymous object with `fexecve`. macOS requires a copied verified
+object with the OS-reported `SF_IMMUTABLE` system flag and executes through its
+held directory descriptor with relative pathname `execve`; the runner must be
+able to set and later clear that system flag through non-interactive privilege.
+It retains a writable leaf descriptor before leaf activation and requires the
+kernel to deny its post-activation in-place write, hashes the immutable leaf
+against the held candidate digest, then flags and reads back the parent. A user
+immutable flag, POSIX
+permissions, an ACL/DACL, a hash re-run, or an open read descriptor is not
+equivalent. The harness performs an adversarial in-place mutation of the source
+inode after Linux sealing and requires the sealed launch to succeed, while the
+Darwin system flag must deny both a new writable open and the pre-existing
+writable descriptor. The primary metadata-only exit receipt is fsync-persisted
+before immutable-object teardown; a separate closed cleanup receipt records
+cleanup outcome and recovery retention without replacing the primary child
+outcome. If leaf activation succeeds but parent activation/readback fails, the
+held cleanup descriptor reaches primary-before-cleanup finalization; rollback
+is attempted there and any unproven rollback truthfully retains recovery
+material without recording a filesystem path. A bounded `q` observation never
+force-kills its owned child or tears down its execution object while that child
+is live; an observed negative wait status is recorded as `terminal_signaled`.
+A missing seal/flag readback, denied-write probe, or native-host
+receipt is **Blocked**.
+
+Every phase records its clean TUI source facts and requested Core revision
+before it fetches Core, installs dependencies, builds, or imports runtime code.
+The owner-private custody record preserves actual path, process, image, tool,
+and literal-command details with fsync durability, but is never uploaded. The
+public artifact uses separate closed input, Core-source-binding, and build
+output schemas. It contains only source identities, ownership predicates, and
+verified tool names. PTY bytes remain memory-only assertion input and are never
+written to a terminal transcript or artifact. Existing private failure evidence
+is preserved under its existing authority; this workflow does not create a new
+private artifact permission.
+
+The uploaded executable receipt is a closed JSON digest-and-size schema, rather
+than `sha256sum` output that includes the runner-local binary path. The upload
+step parses every selected public receipt before transfer, requires its exact
+schema, and rejects paths, PID/PPID or birth fields, private custody labels,
+images, tool records, and literal commands. CI and candidate-publication
+Actions are resolved to verified committed SHA references; their version labels
+remain comments for auditability.
+
+The mechanisms are constrained by their native operating systems, rather than
+by advisory process behavior: Linux documents sealing for `memfd_create` and
+its `F_SEAL_WRITE` restriction in [memfd_create(2)](https://man7.org/linux/man-pages/man2/memfd_create.2.html),
+and `fexecve(3)` documents descriptor-selected execution. Apple documents that
+the owner may clear `UF_IMMUTABLE`, while only the superuser can set or clear
+`SF_IMMUTABLE`, in [chflags(2)](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/chflags.2.html).
 
 ## Remaining boundary
 

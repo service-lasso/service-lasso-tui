@@ -47,4 +47,7 @@ failure has a causal Core-audit/registry diagnosis; pending reconciliation is
 - [ ] Issue #18 requires owner-applied immutable release, protected
   `development-candidate` environment, and protected `develop` settings before
   any candidate write. Source controls are reviewable; provider readback is a
-  separate blocking prerequisite.
+  separate blocking prerequisite. Current `branches/develop/protection`
+  readback is `404`; the repository owner must apply the documented controls
+  and supply exact authenticated readback. No workflow is authorized to mutate
+  the provider controls.

@@ -15,4 +15,15 @@ an authenticated readback of the exact branch-protection, environment, and
 immutable-release responses. No source workflow may apply or infer those
 provider settings.
 
-The workflow never sends an authorization header to a download URL. It uses the workflow token only through GitHub's upload/API clients, and its testable transport policy permits headerless retrieval only from `github.com`, `github-releases.githubusercontent.com`, `objects.githubusercontent.com`, and `release-assets.githubusercontent.com` over HTTPS without URL credentials. The signed-object policy is deliberately closed: it accepts the retained bounded AWS release-asset grammar and the directly observed GitHub Azure grammar (`github-production-release-asset/<numeric>/<UUID>` with required bounded `sp`, `sv`, `se`, `sig`, and `jwt`, plus only named bounded Azure SAS/response keys). It does not admit arbitrary signed domains, paths, or query parameters.
+The workflow never sends an authorization header to a download URL. It uses the scoped publisher token only through GitHub's upload/API clients, and its testable transport policy permits headerless retrieval only from `github.com`, `github-releases.githubusercontent.com`, `objects.githubusercontent.com`, and `release-assets.githubusercontent.com` over HTTPS without URL credentials. The signed-object policy is deliberately closed: it accepts the retained bounded AWS release-asset grammar and the directly observed GitHub Azure grammar (`github-production-release-asset/<numeric>/<UUID>` with required bounded `sp`, `sv`, `se`, `sig`, and `jwt`, plus only named bounded Azure SAS/response keys). It does not admit arbitrary signed domains, paths, or query parameters.
+
+The publisher step alone binds `GH_TOKEN` to the repository/environment secret
+`DEVELOPMENT_CANDIDATE_TOKEN`. Provision a genuinely repository-scoped credential
+with Contents write, Actions read and Administration read; the built-in Actions
+token cannot perform mandatory Administration policy reads. Checkout, packaging,
+verification and artifact actions receive no scoped publisher credential, and
+built-in workflow/job Contents permissions remain read. An empty secret denies
+before publication, with no fallback to `github.token`. Never copy broad operator
+OAuth access into this secret or put credentials in arguments, logs or receipts.
+Credential provisioning and tag identity restrictions remain external prerequisites;
+source wiring alone proves no live permission, policy, native acceptance or release.

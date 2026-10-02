@@ -169,12 +169,11 @@ jobs:
     environment:
       name: development-candidate
     permissions:
-      contents: write
+      contents: read
     env:
       CANDIDATE_VERSION: ${{ needs.validate-source.outputs.version }}
       CANDIDATE_TAG: ${{ needs.validate-source.outputs.tag }}
       CANDIDATE_SHA: ${{ needs.validate-source.outputs.sha }}
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -198,9 +197,12 @@ jobs:
           set -euo pipefail
           node scripts/verify-candidate-publication-cli.mjs --mode publication-assets --source-ref "$GITHUB_REF" --source-commit "$CANDIDATE_SHA" --version "$CANDIDATE_VERSION" --tag "$CANDIDATE_TAG" --manifest release-assets/candidate-manifest.json --local-assets release-assets/candidate-local-assets.json --asset-directory release-assets
       - name: Publish or recover through the complete protected state machine
+        env:
+          GH_TOKEN: ${{ secrets.DEVELOPMENT_CANDIDATE_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
+          test -n "$GH_TOKEN" || { printf 'candidate publisher authority missing\n' >&2; exit 1; }
           node scripts/publish-candidate.mjs --asset-directory release-assets --source-ref "$GITHUB_REF" --source-commit "$CANDIDATE_SHA" --version "$CANDIDATE_VERSION" --tag "$CANDIDATE_TAG" > publication-receipt.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

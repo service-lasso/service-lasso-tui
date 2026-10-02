@@ -109,8 +109,12 @@ successful secrecy-safe, same-handle, true-exit receipt remains required.
 Linux and macOS real-Core native journeys now have an executable native-host
 workflow on TUI PR #22. It obtains clean detached Core
 `2633c07be25512d0a84f9bfa28de6be5edff35e8`, runs `npm ci` and `npm run build`,
-and starts that actual Core source only after setting three distinct owned
-workspace/instance-registry/host-port-registry paths. Each native host builds a
+and starts that actual Core source only after a fresh shell creates three
+distinct, non-link owned workspace/instance-registry/host-port-registry paths
+with both registries absent. Before Core import, dependency installation, or a
+build tool runs, that shell retains source tree and dirty hashes, its actual
+PID/PPID/birth/image, the planned command, and hash-and-size identities for the
+native compiler tools in `input-custody.json`. Each native host builds a
 clean VCS-stamped TUI binary, acquires a no-follow verified descriptor, and
 drives it through a POSIX PTY only from a platform-enforced immutable execution
 object (`fexecve` on a sealed Linux `memfd` and Darwin relative-pathname
@@ -119,7 +123,7 @@ system-immutable object). Before acceptance actions, the
 harness replaces the executable pathname by rename and symlink attacks and
 mutates the original inode in place; each immutable-object launch must still
 reach the expected missing-credential boundary. The retained receipt contract includes binary
-  digest, source-tree heads, Core path
+  digest/size, source-tree heads and dirty hashes, Core path
   materialization readback, true terminal exits, five accepted operations,
 adverse zero-operation/direct-audit counts, exactly one matching Core terminal
 success audit event per distinct operation ID, no-replay reconnect, and named

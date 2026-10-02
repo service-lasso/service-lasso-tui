@@ -130,27 +130,41 @@ jobs:
           attempt="$RUNNER_TEMP/tui20-native-${{ matrix.name }}-$CI_SOURCE_SHA"
           prepare_phase() {
             phase="$1"
-            mkdir -p "$phase/core-source" "$phase/registry" "$phase/workspace"
-            SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json" true
-            git -C "$phase/core-source" init -q
-            git -C "$phase/core-source" remote add origin https://github.com/service-lasso/service-lasso.git
-            git -C "$phase/core-source" fetch --no-tags origin develop
-            git -C "$phase/core-source" merge-base --is-ancestor "$CORE_COMMIT" origin/develop
-            git -C "$phase/core-source" fetch --depth=1 origin "$CORE_COMMIT"
-            git -C "$phase/core-source" checkout --detach -q FETCH_HEAD
-            test "$(git -C "$phase/core-source" rev-parse HEAD)" = "$CORE_COMMIT"
-            test -z "$(git -C "$phase/core-source" status --porcelain)"
-            (
-              cd "$phase/core-source"
-              SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json" npm ci
-              SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json" npm run build
-            )
-            binary="$phase/service-lasso-tui"
-            SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json" go build -mod=readonly -buildvcs=true -trimpath -o "$binary" ./cmd/service-lasso-tui
-            go version -m "$binary" | grep -F "vcs.revision=$CI_SOURCE_SHA" >/dev/null
-            go version -m "$binary" | grep -F 'vcs.modified=false' >/dev/null
-            sha256sum "$binary" > "$phase/binary.sha256"
-            node -e 'const fs=require("fs"); const path=process.argv[1]; fs.writeFileSync(path+"/head-tree.json", JSON.stringify({tuiCommit:process.env.CI_SOURCE_SHA,coreCommit:process.env.CORE_COMMIT,tuiClean:true,coreClean:true},null,2));' "$phase"
+            test ! -e "$phase"
+            mkdir -p "$(dirname "$phase")"
+            env -i PATH="$PATH" HOME="$HOME" LANG="${LANG:-C.UTF-8}" LC_ALL="${LC_ALL:-C.UTF-8}" CI_SOURCE_SHA="$CI_SOURCE_SHA" CORE_COMMIT="$CORE_COMMIT" PHASE="$phase" SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json" bash -euo pipefail -c '
+              phase="$PHASE"
+              workspace="$SERVICE_LASSO_WORKSPACE_ROOT"
+              instances="$SERVICE_LASSO_INSTANCE_REGISTRY_PATH"
+              ports="$SERVICE_LASSO_HOST_PORT_REGISTRY_PATH"
+              test ! -e "$phase" && test ! -e "$workspace" && test ! -e "$instances" && test ! -e "$ports"
+              mkdir -p "$phase/core-source" "$phase/registry" "$workspace"
+              test ! -L "$phase" && test ! -L "$workspace" && test ! -L "$phase/registry"
+              test ! -e "$instances" && test ! -e "$ports"
+              source_tree="$(git rev-parse HEAD^{tree})"
+              source_dirty="$(git status --porcelain | sha256sum | cut -d " " -f1)"
+              source_inventory="$(git ls-files -z | xargs -0 sha256sum | sha256sum | cut -d " " -f1)"
+              birth="$(case "$(uname -s)" in Linux) awk "{print \\$22}" /proc/$$/stat ;; Darwin) ps -o lstart= -p $$ | xargs ;; esac)"
+              tool_json() { tool="$1"; path="$(command -v "$tool")"; printf "{\\\"path\\\":\\\"%s\\\",\\\"sha256\\\":\\\"%s\\\",\\\"size\\\":%s}" "$path" "$(sha256sum "$path" | cut -d " " -f1)" "$(wc -c < "$path")"; }
+              printf "{\\\"phase\\\":\\\"%s\\\",\\\"tuiCommit\\\":\\\"%s\\\",\\\"tuiTree\\\":\\\"%s\\\",\\\"tuiDirtyHash\\\":\\\"%s\\\",\\\"tuiInventoryHash\\\":\\\"%s\\\",\\\"coreCommit\\\":\\\"%s\\\",\\\"ownedPaths\\\":{\\\"workspaceRoot\\\":\\\"%s\\\",\\\"instanceRegistryPath\\\":\\\"%s\\\",\\\"hostPortRegistryPath\\\":\\\"%s\\\"},\\\"registryInitiallyAbsent\\\":true,\\\"pid\\\":%s,\\\"ppid\\\":%s,\\\"birth\\\":\\\"%s\\\",\\\"image\\\":\\\"%s\\\",\\\"plannedCommand\\\":\\\"core-import,npm-ci,npm-build,go-build\\\",\\\"compilers\\\":{\\\"go\\\":%s,\\\"node\\\":%s,\\\"npm\\\":%s,\\\"python3\\\":%s}}\\n" "$phase" "$CI_SOURCE_SHA" "$source_tree" "$source_dirty" "$source_inventory" "$CORE_COMMIT" "$workspace" "$instances" "$ports" "$$" "$PPID" "$birth" "$(readlink -f /proc/$$/exe 2>/dev/null || command -v bash)" "$(tool_json go)" "$(tool_json node)" "$(tool_json npm)" "$(tool_json python3)" > "$phase/input-custody.json"
+              git -C "$phase/core-source" init -q
+              git -C "$phase/core-source" remote add origin https://github.com/service-lasso/service-lasso.git
+              git -C "$phase/core-source" fetch --no-tags origin develop
+              git -C "$phase/core-source" merge-base --is-ancestor "$CORE_COMMIT" origin/develop
+              git -C "$phase/core-source" fetch --depth=1 origin "$CORE_COMMIT"
+              git -C "$phase/core-source" checkout --detach -q FETCH_HEAD
+              test "$(git -C "$phase/core-source" rev-parse HEAD)" = "$CORE_COMMIT"
+              test -z "$(git -C "$phase/core-source" status --porcelain)"
+              (cd "$phase/core-source" && npm ci && npm run build)
+              binary="$phase/service-lasso-tui"
+              go build -mod=readonly -buildvcs=true -trimpath -o "$binary" ./cmd/service-lasso-tui
+              go version -m "$binary" | grep -F "vcs.revision=$CI_SOURCE_SHA" >/dev/null
+              go version -m "$binary" | grep -F "vcs.modified=false" >/dev/null
+              sha256sum "$binary" > "$phase/binary.sha256"
+              core_tree="$(git -C "$phase/core-source" rev-parse HEAD^{tree})"
+              core_dirty="$(git -C "$phase/core-source" status --porcelain | sha256sum | cut -d " " -f1)"
+              node -e "const fs=require(\"fs\"); const [path,coreTree,coreDirtyHash]=process.argv.slice(1); const input=JSON.parse(fs.readFileSync(path+\"/input-custody.json\",\"utf8\")); input.coreTree=coreTree; input.coreDirtyHash=coreDirtyHash; input.nativeBinary={sha256:fs.readFileSync(path+\"/binary.sha256\",\"utf8\").trim().split(/\\s+/)[0],size:fs.statSync(path+\"/service-lasso-tui\").size}; fs.writeFileSync(path+\"/head-tree.json\",JSON.stringify(input,null,2));" "$phase" "$core_tree" "$core_dirty"
+            '
           }
           prepare_phase "$attempt/preflight"
           prepare_phase "$attempt/five-actions"
@@ -228,6 +242,7 @@ jobs:
           name: tui20-native-${{ matrix.name }}-lifecycle-${{ env.CI_SOURCE_SHA }}
           path: |
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/binary.sha256
+            ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/input-custody.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/head-tree.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/ready.json
             ${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/native-terminal.txt

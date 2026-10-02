@@ -100,6 +100,25 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertIn('"blocked_core_1553_no_adapter"', source)
         self.assertNotIn("private-token.json", source)
 
+    def test_native_workflow_records_exclusive_input_custody_before_core_import(self):
+        workflow = pathlib.Path(__file__).parents[1] / ".github" / "workflows" / "ci.yml"
+        source = workflow.read_text(encoding="utf-8")
+        start = source.index("prepare_phase()")
+        custody = source.index('> "$phase/input-custody.json"', start)
+        core_import = source.index('git -C "$phase/core-source" init -q', start)
+        self.assertLess(custody, core_import)
+        for required in (
+            'env -i PATH="$PATH"',
+            'SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace"',
+            'SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json"',
+            'SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json"',
+            'test ! -e "$instances" && test ! -e "$ports"',
+            'test ! -L "$phase" && test ! -L "$workspace" && test ! -L "$phase/registry"',
+            'tuiTree', 'tuiDirtyHash', 'tuiInventoryHash', 'plannedCommand', 'compilers',
+            'coreTree', 'coreDirtyHash', 'nativeBinary',
+        ):
+            self.assertIn(required, source)
+
     @unittest.skipUnless(sys.platform == "linux", "requires Linux memfd seals")
     def test_linux_kernel_seal_rejects_an_in_place_write(self):
         harness = load_posix_harness()

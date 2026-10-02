@@ -1,5 +1,14 @@
 # Service Lasso TUI project intent
 
+Issue #20 source repair covers the complete inherited native custody pipeline:
+literal shell command preservation, real-tab tool inventory production/parsing,
+and 40-hex Git tree identity validation distinct from SHA256. All three require
+actual boundary regressions. Issue #18 publisher safeguards remain preserved;
+source execution and native acceptance require a fresh entire review and new
+complete-input ROOT admission.
+The related producer traversal defect also requires a terminating parent walk
+with every ancestor and root checked for links, without weakening ownership.
+
 Provide a standalone, keyboard-first terminal client for a running Service
 Lasso Core runtime. The TUI is an attached operator process: Core does not
 supervise, start, or manage an interactive terminal session.

@@ -8,10 +8,12 @@ import { fileURLToPath } from "node:url";
 
 const script = fileURLToPath(new URL("./verify-tui20-native-public-receipt.mjs", import.meta.url));
 const hash = "a".repeat(64), otherHash = "c".repeat(64), commit = "b".repeat(40), otherCommit = "d".repeat(40);
+// SHA1 Git trees have the same object identity width as commits, not SHA256.
+const tree = "e".repeat(40);
 const records = () => ({
   "binary-digest.json": { schemaVersion: 1, kind: "tui20-native-binary-digest", sha256: hash, size: 1 },
-  "input-custody.json": { schemaVersion: 1, kind: "tui20-native-input-custody", source: { tuiCommit: commit, tuiTree: hash, tuiDirtyHash: hash, tuiInventoryHash: hash }, core: { requestedCommit: commit }, ownership: { threeDistinctPaths: true, allParentsNonLink: true, registriesInitiallyAbsent: true }, verification: { freshEnvironment: true, requiredToolsVerified: ["git", "go"] } },
-  "core-source-binding.json": { schemaVersion: 1, kind: "tui20-native-core-source-binding", coreCommit: commit, coreTree: hash, coreDirtyHash: hash },
+  "input-custody.json": { schemaVersion: 1, kind: "tui20-native-input-custody", source: { tuiCommit: commit, tuiTree: tree, tuiDirtyHash: hash, tuiInventoryHash: hash }, core: { requestedCommit: commit }, ownership: { threeDistinctPaths: true, allParentsNonLink: true, registriesInitiallyAbsent: true }, verification: { freshEnvironment: true, requiredToolsVerified: ["git", "go"] } },
+  "core-source-binding.json": { schemaVersion: 1, kind: "tui20-native-core-source-binding", coreCommit: commit, coreTree: tree, coreDirtyHash: hash },
   "build-output.json": { schemaVersion: 1, kind: "tui20-native-build-output", tuiCommit: commit, nativeBinary: { sha256: hash, size: 1 } },
   "native-public-projection.json": { schemaVersion: 1, kind: "tui20-native-public-result", sourceCommit: commit, binarySHA256: hash, result: "succeeded", actionsPassed: true, ownedRuntimeClosed: true }
 });
@@ -24,6 +26,13 @@ test("native public receipt rejects private paths, PIDs, and birth evidence", ()
 test("native public receipt rejects mixed TUI commits", () => rejects((value, name) => name === "build-output.json" ? { ...value, tuiCommit: otherCommit } : value, /TUI commit mismatch/));
 test("native public receipt rejects mixed Core commits", () => rejects((value, name) => name === "core-source-binding.json" ? { ...value, coreCommit: otherCommit } : value, /Core commit mismatch/));
 test("native public receipt rejects mixed executable identities", () => rejects((value, name) => name === "native-public-projection.json" ? { ...value, binarySHA256: otherHash } : value, /native executable identity mismatch/));
+for (const invalidTree of [hash, tree.toUpperCase(), tree.slice(1), "g".repeat(40)]) {
+  test(`native public receipt rejects invalid TUI tree ${invalidTree}`, () => rejects((value, name) => { if (name === "input-custody.json") value.source.tuiTree = invalidTree; return value; }, /invalid input custody source/));
+  test(`native public receipt rejects invalid Core tree ${invalidTree}`, () => rejects((value, name) => name === "core-source-binding.json" ? { ...value, coreTree: invalidTree } : value, /invalid Core binding schema/));
+}
+for (const [record, field] of [["input-custody.json", "tuiDirtyHash"], ["input-custody.json", "tuiInventoryHash"], ["core-source-binding.json", "coreDirtyHash"], ["binary-digest.json", "sha256"]]) {
+  test(`native public receipt keeps SHA256 width for ${field}`, () => rejects((value, name) => { if (name === record) (name === "input-custody.json" ? value.source : value)[field] = tree; return value; }, /invalid .*schema|invalid input custody source/));
+}
 test("native public receipt rejects a missing sibling record", async () => { const root = await mkdtemp(path.join(tmpdir(), "tui20-public-")); try { const phase = await writeReceipt(root); await rm(path.join(phase, "build-output.json")); const result = verify(root); assert.notEqual(result.status, 0); assert.match(result.stderr.toString(), /set is incomplete/); } finally { await rm(root, { recursive: true, force: true }); } });
 test("native public receipt rejects a duplicate record in a separate sibling directory", async () => { const root = await mkdtemp(path.join(tmpdir(), "tui20-public-")); try { await writeReceipt(root); await mkdir(path.join(root, "duplicate")); await writeFile(path.join(root, "duplicate", "binary-digest.json"), JSON.stringify(records()["binary-digest.json"])); const result = verify(root); assert.notEqual(result.status, 0); assert.match(result.stderr.toString(), /set is incomplete/); } finally { await rm(root, { recursive: true, force: true }); } });
 test("native public receipt rejects a foreign public receipt record", async () => { const root = await mkdtemp(path.join(tmpdir(), "tui20-public-")); try { const phase = await writeReceipt(root); await writeFile(path.join(phase, "foreign.json"), JSON.stringify(records()["binary-digest.json"])); const result = verify(root); assert.notEqual(result.status, 0); assert.match(result.stderr.toString(), /foreign native public receipt/); } finally { await rm(root, { recursive: true, force: true }); } });

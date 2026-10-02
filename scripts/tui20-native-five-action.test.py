@@ -139,7 +139,10 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
                              'core-parent-exit.json', 'external-owner-live.json',
                              'owner-death-recovery.json', 'operation-audit.json'):
             self.assertNotIn(private_name, uploaded)
-        self.assertIn("awk '\\''{print $22}'\\'' /proc/$$/stat", source)
+        self.assertIn("bash -euo pipefail <<'TUI20_PHASE'", source)
+        self.assertIn("awk '{print $22}' /proc/$$/stat", source)
+        self.assertIn('current="$(dirname "$current")"', source)
+        self.assertIn('            test ! -L "$current"', source)
         self.assertNotIn('awk "{print \\\\$22}"', source)
 
     def test_observer_keeps_lineage_private_then_closes_its_owned_runtime(self):

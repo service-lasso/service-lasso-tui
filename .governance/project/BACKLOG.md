@@ -1,5 +1,14 @@
 # Backlog
 
+Issue #20 / SPEC-001 TUI-ACCEPTANCE-003 tracks all three inherited native
+pipeline source findings in PR25: shell literal custody, actual tab inventory
+producer/consumer, and genuine 40-hex Git trees with separate SHA256 digests.
+Source repair and regressions are unexecuted pending fresh entire SOURCE GO
+and new complete-input ROOT admission. Issue #18 / SPEC-002 AC-1..AC-7 remains
+in the same cumulative PR with all publisher safeguards preserved.
+The related Issue #20 producer finding (ancestor stripping reaches empty text
+instead of root) is included with terminating parent traversal and root checks.
+
 | Issue | Spec sections | State | Notes |
 | --- | --- | --- | --- |
 | [service-lasso-tui#6](https://github.com/service-lasso/service-lasso-tui/issues/6) | TUI-DISTRIBUTION, TUI-DISTRIBUTION-001, TUI-DISTRIBUTION-002 | In progress | Create develop-dispatched, checksummed Windows amd64, Linux amd64, macOS amd64, and macOS arm64 candidate archives for a later Core #1461 review. The bounded Windows harness fetches only candidate `2026.9.30-97fafb0`, verifies its manifest/archive digests and extracted executable, then proves unavailable-to-connected read navigation through ConPTY against an isolated source-built Core `10e4d72`; it makes no lifecycle, authentication, staging, or release mutation. Reconnect records an atomic, closed-schema receipt (`stage`, `outcome`, `closedReason`, plus a valid startup-only `startupBoundary` where applicable) in the attempt root, which remains only if cleanup cannot remove that root. Run `36766315178` preserved its failed Windows executable under the actual checked merge candidate `d51d1c82d884aa3bc5fa3e1707860c914634b64e` / SHA-256 `a34f4475ad5ea5bcb134dd8329986c1187710187082018485ddb0c8f2bceb05c`: direct invalid-URL classification passed, then its unavailable ConPTY observation reached only a bounded startup timeout. That is a retained harness observation, not an attribution to the compiler, overlay, Core, or TUI rendering. PR source CI must now checkout and bind the pull-request head SHA explicitly; integration against `develop` remains separate. Fresh natural exact-head Windows CI and independent review are still required. Packaged-Core acceptance remains unavailable until an installed package identity and digest contract exists. Candidate artifact creation and this local read acceptance are not publication, GA, or terminal/Core lifecycle acceptance. |

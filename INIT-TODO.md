@@ -1,5 +1,14 @@
 # Governance and adoption TODO
 
+- [ ] Issue #20 / TUI-ACCEPTANCE-003: repair all three inherited native source
+  pipeline findings (literal shell custody, actual-tab tool records, real Git
+  tree identities); independently review the entire cumulative PR25 and obtain
+  NEW complete-input ROOT admission before executing any source or regression.
+  Preserve Issue #18 publisher repair and all Windows/Linux/macOS five-action,
+  keyboard/error/cancel, real-Core and same-published-byte acceptance gates.
+  Include the related ancestor termination defect; retain every ancestor and
+  root non-link check while walking real parents to `/`.
+
 - [x] Initialize repo-local governance for Issue #1 on the authorized `develop`
   development baseline.
 - [x] Record project intent, active specification, and issue-to-spec mapping.

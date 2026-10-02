@@ -120,6 +120,20 @@ binary digest and byte size must agree with build-output and public-projection.
 All GitHub Actions used by CI and candidate publication are
 committed SHA references, with their human version labels retained only in
 comments.
+Issue #20 native input custody uses a quoted shell heredoc for the fresh
+environment boundary so literal next commands retain dollar expressions and
+semicolons without outer-shell execution. The actual tool producer emits tab
+separated name/path/SHA256/size records; the Python consumer splits real tabs.
+TUI and Core Git commits and trees are exactly 40 lowercase hexadecimal Git
+object identities, independently of the 64 hexadecimal SHA256 digest contract
+for dirty state, inventory and executable bytes. Actual producer/consumer and
+real Git tree regressions are required. This source repair addresses all three
+inherited pipeline findings together; execution remains prohibited until fresh
+entire SOURCE GO and a new complete-input ROOT admission. It grants no native
+five-action or published-byte acceptance and preserves Issue #18 publication.
+The same producer must terminate ancestor traversal at `/` using real parent
+paths and check every ancestor including root for links; stripping a final
+slash component to an empty string is not a valid root traversal.
 Each native run also mutates the
 source inode in place after the immutable execution object exists and proves
 the launch still reaches the verified object; it restores the source byte

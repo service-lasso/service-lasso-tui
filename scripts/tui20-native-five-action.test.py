@@ -264,7 +264,9 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
             pathlib.Path(root,"ready.json").write_text(json.dumps({"coreCommit":"b"*40,"runtimePathReceipt":paths}))
             handoff={"url":"fixture","token":"fixture","deniedToken":"fixture","jwksPort":1,"_runtimePID":202,"_runtimeBirth":birth}
             class Terminal:
-                def __init__(self,*_): self.child=types.SimpleNamespace(pid=303,tui20_birth=birth,reaped_unowned=False,poll=lambda:0); self.exit_reason=None
+                def __init__(self,*_):
+                    self.exit_reason=None
+                    self.child=types.SimpleNamespace(pid=303,tui20_birth=birth,reaped_unowned=False,poll=lambda:None if self.exit_reason is None else 0)
                 def wait(self,*_): pass
                 def close(self): self.exit_reason="terminal_exited_zero"; return self.exit_reason
             argv=["owner","--root",root,"--executable",str(candidate),"--source-commit","a"*40,"--core-commit","b"*40,"--external-runtime","--adverse-controller-crash","--controller-pid","404"]

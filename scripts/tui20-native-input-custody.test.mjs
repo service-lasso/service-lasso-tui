@@ -7,10 +7,26 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { projectPrivateTrace } from "./tui20-private-trace-projection.mjs";
 
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
+
+test("private trace projector keeps hostile values and verbose source outside its closed lexical output", () => {
+  const secret = "private-token-/host/path-https://private.invalid";
+  const raw = Buffer.from(`PS4=${secret}\n+TUI20_TRACE_caller:2: env -i TOKEN=${secret}\n++TUI20_TRACE_producer:18: ps -o comm= -p ${secret}\n+TUI20_TRACE_producer:90: read -r -t 1 -u 9 writer_ready\n${secret}\n`);
+  assert.deepEqual(projectPrivateTrace(raw), { confidence: "lexical-incomplete", recognizedFrames: 3, unclassifiedFrames: 0, writerReadyReadObserved: true,
+    lastCommands: [{ role: "caller", sourceLine: 2, traceDepth: 1, category: "fresh-environment-command" },
+      { role: "producer", sourceLine: 90, traceDepth: 1, category: "writer-ready-read" }],
+    lastNestedCommands: [{ role: "producer", sourceLine: 18, traceDepth: 2, category: "host-observation-command" }] });
+  assert.ok(!JSON.stringify(projectPrivateTrace(raw)).includes(secret));
+  const hostile = Buffer.from(`+TUI20_TRACE_foreign:1: ${secret}\n+TUI20_TRACE_producer:9999999: ${secret}\n+TUI20_TRACE_producer:0: read -r -t 1 -u 9 writer_ready\n${"+".repeat(65)}TUI20_TRACE_producer:1: ${secret}\n+TUI20_TRACE_producer:7: ${secret}\n+TUI20_TRACE_producer:8: read -r -t 1 -u 9 writer_ready ${secret}\n`);
+  assert.deepEqual(projectPrivateTrace(hostile), { confidence: "lexical-incomplete", recognizedFrames: 2, unclassifiedFrames: 2, writerReadyReadObserved: false,
+    lastCommands: [{ role: "producer", sourceLine: 8, traceDepth: 1, category: "unclassified" }], lastNestedCommands: [] });
+  assert.ok(!JSON.stringify(projectPrivateTrace(hostile)).includes(secret));
+  assert.deepEqual(projectPrivateTrace(Buffer.from(secret)), { confidence: "lexical-incomplete", recognizedFrames: 0, unclassifiedFrames: 0, writerReadyReadObserved: false, lastCommands: [], lastNestedCommands: [] });
+});
 
 test("actual fresh native build rejects persisted flags and ambient workspace influence", async t => {
   assert.ok(["linux", "darwin"].includes(process.platform));
@@ -231,6 +247,82 @@ test("actual workflow custody producer preserves literals and consumes every rea
           catch { result.diagnosticFailures.push({ sink: "safe-output", route, code: "output_failed" }); }
         }
       }
+    }
+    // One materially new runtime observation, only on the original observed
+    // Darwin failure. It is inside the already-retained failed fixture, never
+    // a retry, primary replacement, or successful-run retention mechanism.
+    if (invocation === 1 && process.platform === "darwin" && Number.isInteger(result.status) && result.status !== 0) {
+      const tracePhase = path.join(root, "secondary-private-trace-phase");
+      const callerPS4 = '+TUI20_TRACE_caller:${LINENO}: ';
+      const producerPS4 = '+TUI20_TRACE_producer:${LINENO}: ';
+      const tracedProducer = explicitProducer.replace("env -i PATH=", `env -i PS4=${quote(producerPS4)} PATH=`)
+        .replace(` ${quote(parser)} -euo pipefail <<'TUI20_PHASE'`, ` ${quote(parser)} -x -v -euo pipefail <<'TUI20_PHASE'`);
+      const tracedCaller = Buffer.from(`phase=${quote(tracePhase)}\n${tracedProducer}TUI20_PHASE\n`);
+      const traceEnvironment = { ...environment, PS4: callerPS4 };
+      const traceArgs = ["-x", "-v", "-euo", "pipefail", "-c", tracedCaller.toString("utf8")];
+      const binding = { schemaVersion: 1, kind: "tui20-private-runtime-trace", primaryInvocation: 1,
+        parserSHA256: safeBinding.parser.sha256, originalCallerSHA256: digest(callerSource), callerSHA256: digest(tracedCaller),
+        fedSourceSHA256: digest(fedSource), fedSourceSize: fedSource.length, options: ["-x", "-v", "-euo", "pipefail"] };
+      let reached = false, stdoutFile, stderrFile;
+      const failures = [];
+      try {
+        assert.notEqual(tracedProducer, explicitProducer);
+        assert.ok(tracedProducer.split("\n")[0].includes(`env -i PS4=${quote(producerPS4)} PATH=`), "inner private trace role seam must be reached");
+        assert.ok(tracedProducer.split("\n")[0].includes(` ${quote(parser)} -x -v -euo pipefail <<'TUI20_PHASE'`), "inner selected parser instrumentation seam must be reached");
+        assert.deepEqual(Buffer.from(tracedProducer.slice(tracedProducer.indexOf("\n") + 1)), fedSource, "secondary trace must preserve every fed byte");
+        await assert.rejects(() => lstat(tracePhase), { code: "ENOENT" });
+        if (digest(await readFile(parser)) !== binding.parserSHA256) throw new Error("bound trace parser changed");
+        await persist(`${name}-trace-caller.source`, tracedCaller);
+        await persist(`${name}-trace-fed.source`, fedSource);
+        await persist(`${name}-trace-preflight.private.json`, JSON.stringify({ classification: "owner-private-runtime-trace",
+          parser, cwd: source, argv: traceArgs, innerArgv: ["-x", "-v", "-euo", "pipefail"], environment: traceEnvironment,
+          freshEnvironment: { ...freshEnvironment, PS4: producerPS4, PHASE: tracePhase,
+            SERVICE_LASSO_WORKSPACE_ROOT: path.join(tracePhase, "workspace"), SERVICE_LASSO_INSTANCE_REGISTRY_PATH: path.join(tracePhase, "registry/instances.json"),
+            SERVICE_LASSO_HOST_PORT_REGISTRY_PATH: path.join(tracePhase, "registry/ports.json") }, ...binding }));
+        stdoutFile = await open(path.join(diagnostics, `${name}-trace-stdout.private`), "wx", 0o600);
+        stderrFile = await open(path.join(diagnostics, `${name}-trace-stderr.private`), "wx", 0o600);
+        await stdoutFile.sync(); await stderrFile.sync();
+        const preflightDirectory = await open(diagnostics, "r");
+        try { await preflightDirectory.sync(); } finally { await preflightDirectory.close(); }
+        await emitDiagnostic({ ...binding, stage: "before-secondary", result: "pending" });
+        // Direct private descriptors avoid both public/raw assertion output and
+        // an artificial maxBuffer failure. Original caller stdin pipe remains.
+        const traced = spawnSync(parser, traceArgs, { cwd: source, env: traceEnvironment, stdio: ["pipe", stdoutFile.fd, stderrFile.fd] });
+        reached = true;
+        await persist(`${name}-trace-result.private.json`, JSON.stringify({ status: traced.status, signal: traced.signal,
+          error: traced.error ? { message: traced.error.message, code: traced.error.code } : null }));
+        const streams = {};
+        for (const [sink, file] of [["stdout", stdoutFile], ["stderr", stderrFile]]) {
+          try {
+            await file.sync();
+            const actual = await readFile(path.join(diagnostics, `${name}-trace-${sink}.private`));
+            streams[sink] = { persistence: "fsynced-readback", sha256: digest(actual), size: actual.length };
+            if (sink === "stderr") streams.projection = projectPrivateTrace(actual);
+          } catch { failures.push({ sink, code: "persistence_or_readback_failed" }); streams[sink] = { persistence: "failed" }; }
+        }
+        const directory = await open(diagnostics, "r");
+        try { await directory.sync(); } finally { await directory.close(); }
+        let image = "unavailable";
+        try { image = digest(await readFile(parser)) === binding.parserSHA256 ? "matched" : "changed"; }
+        catch { failures.push({ sink: "parser-image-readback", code: "readback_failed" }); }
+        if (image === "changed") failures.push({ sink: "parser-image-readback", code: "image_changed" });
+        await emitDiagnostic({ ...binding, stage: "after-secondary", invocationReached: true,
+          result: traced.error ? "spawn_failed" : traced.signal ? "signaled" : traced.status === 0 ? "exited_zero" : Number.isInteger(traced.status) ? "exited_nonzero" : "exit_unknown",
+          parserImageReadback: image, stdout: streams.stdout, stderr: streams.stderr,
+          projection: streams.projection || { confidence: "unavailable" }, diagnosticFailures: failures });
+      } catch {
+        failures.push({ sink: "runtime-trace", code: "diagnostic_failed" });
+        try { await emitDiagnostic({ ...binding, stage: "secondary-failure", result: "failed", invocationReached: reached, diagnosticFailures: failures }); }
+        catch { failures.push({ sink: "safe-output", code: "output_failed" }); }
+      } finally {
+        for (const file of [stdoutFile, stderrFile]) if (file) {
+          try { await file.sync(); } catch { failures.push({ sink: "trace-file", code: "sync_failed" }); }
+          try { await file.close(); } catch { failures.push({ sink: "trace-file", code: "close_failed" }); }
+        }
+        result.diagnosticFailures.push(...failures.map(failure => ({ ...failure, route: "secondary-private-runtime-trace" })));
+      }
+      try { await emitDiagnostic({ ...binding, stage: "secondary-persistence-closure", invocationReached: reached, diagnosticFailures: failures }); }
+      catch { result.diagnosticFailures.push({ sink: "safe-output", route: "secondary-private-runtime-trace", code: "output_failed" }); }
     }
     return result;
   };

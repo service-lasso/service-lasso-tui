@@ -2,6 +2,28 @@
 
 Status: active
 
+## Issue20 bounded Darwin private runtime trace
+
+TUI-ACCEPTANCE-003 permits ONE observational secondary replay only after the
+original mandatory Darwin producer returns an observed nonzero status, before
+its unchanged failing assertion. Keep the production workflow, primary caller,
+fed bytes, selected parser, environment, options, roots, adversaries, birth/image
+checks, waits, fsync and deadlines unchanged. The replay uses a distinct phase
+inside that already retained failed fixture. Only its caller and env-i parser
+seams add -x/-v and fixed private PS4 role/line markers; fed bytes stay identical.
+Raw stdout/stderr go directly to exclusive private files before spawn and are
+fsynced/read back afterward. They never enter public output or uploaded artifacts.
+A closed lexical projector emits only fixed command categories, bounded source
+line/depth integers, caller/producer roles, exact hashes/sizes and observed sink
+dispositions. A read category means an xtrace command boundary was observed,
+not that the read completed. Repeated PS4 prefixes identify trace nesting only,
+not an independently observed command-substitution process or failing parser.
+Unrecognized/truncated traces remain incomplete; no raw excerpt, argv or ENV is
+projected. Secondary success cannot satisfy primary acceptance. Projector
+privacy/adversarial controls and actual failure-path wiring remain UNEXECUTED
+until DIFFERENT ENTIRE SOURCE GO and NEW complete-input ROOT admission. Preserve
+the natural c74 line124 failure and all full native/publication/Core-byte gates.
+
 ## Issue20 final042 source repair contract
 
 TUI-ACCEPTANCE-001/002/003 and TUI-DISTRIBUTION-002 jointly require all six

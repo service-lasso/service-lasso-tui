@@ -1,5 +1,11 @@
 # Backlog
 
+Issue20 / SPEC001 TUI-ACCEPTANCE-003: bounded failure-only Darwin private -x/-v
+secondary replay and closed lexical projector. In progress, SOURCE ONLY;
+privacy/adversarial regressions UNEXECUTED. Original c74 mandatory producer
+failure remains unresolved; secondary success never grants acceptance. Fresh
+ENTIRE review/NEW ROOT admission and full native/published-byte gates remain.
+
 Issue20 final042 F1..F6 -> SPEC001 TUI-ACCEPTANCE-001/002/003 and
 TUI-DISTRIBUTION-002: effective native Go admission; post-fork ownership;
 mandatory caller identity; authentic closed reconnect schema; native writer

@@ -1,5 +1,10 @@
 # Governance and adoption TODO
 
+- [ ] Issue20 / TUI-ACCEPTANCE-003: independently review failure-only Darwin
+  private runtime trace replay and closed projector, then obtain NEW complete
+  input admission before any execution. Retain original mandatory failure and
+  all native/full-delivery gates; no private trace upload or causal repair claim.
+
 - [ ] Issue20 final042 F1..F6 / SPEC001 TUI-ACCEPTANCE-001/002/003 and
   TUI-DISTRIBUTION-002: coherently repair actual native Go admission, post-fork
   ownership, real reconnect caller identity/schema, native writer/independent

@@ -1,5 +1,13 @@
 # Service Lasso TUI project intent
 
+Issue20 / SPEC001 TUI-ACCEPTANCE-003 adds one failure-only Darwin observational
+secondary -x/-v replay in the retained private fixture, with identical fed bytes
+and a distinct phase. Preserve the original mandatory invocation/assertion and
+production workflow. Project only closed lexical command/role/line/depth facts
+and hashes/sizes/persistence observations; raw trace stays private. This is
+diagnostic source preparation, not a causal repair or successful receipt.
+DIFFERENT ENTIRE review and NEW complete-input ROOT admission precede execution.
+
 Issue20 final042 maps F1 native Go admission, F2 immediate terminal ownership,
 F3 mandatory reconnect caller identity, F4 authentic closed reconnect schema,
 F5 native writer enum plus independent Node persistence, and F6 observed-zero q

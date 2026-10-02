@@ -98,3 +98,16 @@ primary success and retained recovery. Actual natural-return/main/observer gate
 regression is required alongside the existing exception vector. Source-only,
 UNEXECUTED until DIFFERENT fresh ENTIRE review and NEW complete-input ROOT
 admission; all earlier repairs, Core authority and Issue18 protections remain.
+## Issue20 PR25 exact67b5 bounded parser differential preparation
+SPEC001 TUI-ACCEPTANCE-002/003 and TUI-DISTRIBUTION-002 permit a source-only
+paired parse diagnostic after the unchanged mandatory actual producer. Bind the
+same selected parser image, exact fed bytes, fresh environment and existing
+-euo pipefail options; add only -n, comparing stdin with -c input routes.
+Hypothesis: the fed bytes are rejected independently of parser input route.
+Unequal results falsify route independence; paired zero results falsify intrinsic
+parse rejection only. Neither proves expansion/runtime success, original caller
+equivalence or a Darwin cause. Keep private argv/environment/raw output fsynced
+before each route and emit only closed outcomes/hashes. Original invocation and
+assertions remain primary. All prior repairs and full delivery gates remain;
+DIFFERENT entire source review and NEW complete-input ROOT admission precede
+execution. No diagnostic has run locally and no source causal repair is claimed.

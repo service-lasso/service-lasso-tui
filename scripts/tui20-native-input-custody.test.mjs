@@ -182,6 +182,51 @@ test("actual workflow custody producer preserves literals and consumes every rea
       result: result.error ? "spawn_failed" : result.signal ? "signaled" : result.status === 0 ? "exited_zero" : Number.isInteger(result.status) ? "exited_nonzero" : "exit_unknown",
       exitStatus: Number.isInteger(result.status) ? result.status : null, parserImageReadback: parserReadback, diagnosticFailures: result.diagnosticFailures }); }
     catch { result.diagnosticFailures.push({ sink: "safe-output", code: "output_failed" }); }
+    // One paired parse-only experiment on the original producer, AFTER its
+    // mandatory invocation. Both routes receive the identical fed buffer and
+    // fresh environment; only stdin versus -c differs. GNU Bash -n reads without
+    // executing commands. This cannot reproduce expansion/runtime behavior or
+    // establish equivalence to the original outer caller/heredoc context.
+    if (invocation === 1) {
+      for (const route of ["stdin", "command-string"]) {
+        const parseArgs = ["-n", "-euo", "pipefail", ...(route === "command-string" ? ["-c", fedSource.toString("utf8")] : [])];
+        const binding = { schemaVersion: 1, kind: "tui20-parser-differential", hypothesis: "fed-parse-route-independent",
+          route, parserSHA256: safeBinding.parser.sha256, fedSourceSHA256: digest(fedSource), fedSourceSize: fedSource.length,
+          environmentSHA256: digest(Buffer.from(JSON.stringify(freshEnvironment))), options: ["-n", "-euo", "pipefail"] };
+        let reached = false;
+        try {
+          if (!Buffer.from(fedSource.toString("utf8")).equals(fedSource)) throw new Error("fed source is not lossless UTF-8");
+          if (digest(await readFile(parser)) !== binding.parserSHA256) throw new Error("bound parser image changed before parse");
+          // Each route independently persists its exact argv/environment/input
+          // before any parsing. Failure denies that route; no private values
+          // are projected onto stdout and no new upload channel is introduced.
+          await persist(`${name}-${route}-preflight.json`, JSON.stringify({ classification: "owner-private-parser-differential", parser, cwd: source,
+            argv: parseArgs, environment: freshEnvironment, fedSourceSHA256: digest(fedSource), fedSourceSize: fedSource.length }));
+          await persist(`${name}-${route}-fed.source`, fedSource);
+          await emitDiagnostic({ ...binding, stage: "before-parse", result: "pending" });
+          const parsed = spawnSync(parser, parseArgs, { cwd: source, env: freshEnvironment, input: route === "stdin" ? fedSource : Buffer.alloc(0), encoding: "utf8" });
+          reached = true;
+          const failures = [];
+          for (const [suffix, bytes] of [["stdout.private", parsed.stdout || ""], ["stderr.private", parsed.stderr || ""],
+            ["result.private.json", JSON.stringify({ status: parsed.status, signal: parsed.signal, error: parsed.error ? { message: parsed.error.message, code: parsed.error.code } : null })]]) {
+            try { await persist(`${name}-${route}-${suffix}`, bytes); }
+            catch { failures.push({ sink: suffix, code: "persistence_failed" }); }
+          }
+          let image = "unavailable";
+          try { image = digest(await readFile(parser)) === binding.parserSHA256 ? "matched" : "changed"; }
+          catch { failures.push({ sink: "parser-image-readback", code: "readback_failed" }); }
+          if (image === "changed") failures.push({ sink: "parser-image-readback", code: "image_changed" });
+          await emitDiagnostic({ ...binding, stage: "after-parse", invocationReached: true,
+            result: parsed.error ? "spawn_failed" : parsed.signal ? "signaled" : parsed.status === 0 ? "exited_zero" : Number.isInteger(parsed.status) ? "exited_nonzero" : "exit_unknown",
+            exitStatus: Number.isInteger(parsed.status) ? parsed.status : null, parserImageReadback: image, diagnosticFailures: failures });
+          result.diagnosticFailures.push(...failures.map(failure => ({ ...failure, route })));
+        } catch {
+          result.diagnosticFailures.push({ sink: "parser-differential", route, code: "diagnostic_failed" });
+          try { await emitDiagnostic({ ...binding, stage: "diagnostic-failure", result: "failed", invocationReached: reached }); }
+          catch { result.diagnosticFailures.push({ sink: "safe-output", route, code: "output_failed" }); }
+        }
+      }
+    }
     return result;
   };
   // Execute the complete actual pre-fetch producer, including fresh env,

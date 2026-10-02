@@ -411,7 +411,10 @@ test("held receipt handles bind publication despite attempt-root substitution", 
 
 test("Windows CI executes the pinned Python ConPTY helper against a safe unavailable endpoint", async () => {
   const workflow = await readFile(path.join(repoRoot, ".github", "workflows", "ci.yml"), "utf8");
-  assert.match(workflow, /actions\/setup-python@v6[\s\S]*?python-version: '3\.14'/u);
+  assert.match(
+    workflow,
+    /actions\/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6[\s\S]*?python-version: '3\.14'/u,
+  );
   assert.match(workflow, /CI_SOURCE_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}[\s\S]*?actions\/checkout@v5[\s\S]*?ref: \$\{\{ env\.CI_SOURCE_SHA \}\}/u);
   assert.match(workflow, /GOFLAGS: ""[\s\S]*?GOWORK: "off"[\s\S]*?node scripts\/assert-go-source-provenance\.mjs/u);
   assert.match(workflow, /go build -mod=readonly -buildvcs=true -o \$binary/u);

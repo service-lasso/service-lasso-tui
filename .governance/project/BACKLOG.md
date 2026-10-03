@@ -159,3 +159,8 @@ mandatory native/Darwin/Core and same-byte publication gates remain unmet.
 
 
 PR27 coherent F1/F2/F3 successor: SPEC001 PR27 source contract above and SPEC002 AC2/AC3/AC7 bind untrusted lexical markers, fixed preallocation/private held-readback quotas and LF/CRLF-equivalent credential assertions. All new regressions UNEXECUTED; original mandatory failure preserved. DIFFERENT ENTIRE SOURCE GO and NEW complete-input ROOT admission required; native/full-delivery and protected scoped publication/same-byte Core gates unmet.
+
+
+## Issue #29 coordinated Core #1628 amendment
+
+SPEC-003 TUI29-CHECKSUM/TUI29-PROPAGATION: four public files, exactlytwo archive-only checksum rows, all four held/private/public byte proofs; historical v2 six/four with original Map semantics. Implementation remains owned by TUI28. Fresh distinct ENTIRE cumulative four-repo source review and governed develop landing precede held implementation. Canonical policy a038/raw SHA256159d644c161cf532c94d3bfe17ed55e32bf94c5d2843928945c450f6d8140c12 unchanged; Windows/Linux native/runtime/provider/immutable publication/same-byte gates required, Darwin deferred never PASS. No current admission/proof implementation/qualification success is invented; full goal remains active. Later producer units require new ENTIRE review and NEW complete-input admission before execution. No product/parser/compiler/test/npm/native/ACL/provider-control execution or cleanup here.

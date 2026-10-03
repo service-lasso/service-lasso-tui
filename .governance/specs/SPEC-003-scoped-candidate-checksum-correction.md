@@ -1,0 +1,15 @@
+# TUI scoped candidate checksum correction
+
+Issue #29, coordinated Core #1628; TUI #28 remains implementation-owned separately. Active Development source-only correction to Core SPEC-008 R2/R4/R5/R6/R7/appendix and TUI SPEC-002 AC1–7. Pending durable amendment: https://github.com/service-lasso/service-lasso/issues/1628. Fresh distinct ENTIRE cumulative amendment review and governed develop landing precede held implementation; no execution or publication follows this spec alone.
+
+## TUI29-CHECKSUM
+
+Keep schemaVersion3 and all exact outer/nested R2 keys; exactly four public files: Linux archive `service-lasso-tui-{version}-linux-amd64.tar.gz`, Windows archive `service-lasso-tui-{version}-win32-amd64.zip`, `candidate-manifest.json`, `SHA256SUMS.txt`. Sums has exactly TWO archive-only rows, Linux then Windows ascending ASCII filename order, lowercase64/two ASCII spaces/canonical basename/LF. No manifest row or sums self-row. Construct archives → sums → manifest; unchanged checksumManifest(name,sha256) binds the completed sums. This explicitly corrects the agent-added three-row hash cycle, not a waiver of manifest proof.
+
+Local candidate-local-assets.json stays transport-only and hashes ALL FOUR original public files. Hold four original buffers and prove parser manifest bytes equal held manifest; retain unique draft asset-ID private readback and final immutable headerless public byte readback for all four, including exact IDs/URLs/sizes/raw hashes. Separate source-approved catalog binds exact manifest/sums/publication/source/version/schema/policy. Empty catalogs remain empty until actual publication and independent pins-only admission; fixtures cannot authorize themselves.
+
+Historical schema2 has SIX public files and FOUR archive-only checksum rows. Preserve actual Map-based verifier semantics: v2 did not enforce prospective v3 ASCII row order. No historical failures or receipts are relabeled. CLI7/Template3/Core candidate5 sums remain unchanged. Scope is canonical Core a0384e676c1b2dbf66b915563ea70c176c09d598 `.governance/project/ga-platform-scope.json`, blob e694c3e314c1bf11e03dc4656730a96467a765b8, raw SHA256159d644c161cf532c94d3bfe17ed55e32bf94c5d2843928945c450f6d8140c12, byte-identical/source-approved reference, never caller input.
+
+## TUI29-PROPAGATION
+
+Future source-selected release-scoped.yml plus producer/verifier/publisher/receipt/aggregate/native/Core v3 readers and fixtures must change together, preserving original provider controls, credentials, clean Go VCS identity, native ZIP/TAR safety, five actions/keyboard/error/cancel/reconnect/runtime/ownership and Windows/Linux direct evidence. Require exactly-two positive; third-manifest, duplicate/missing/reordered archive rows, wrong raw/hash, held/parser/public manifest substitution, policy/downgrade and fixture enrollment denials; separate exact historical v2 six/four positive. Each completed producer unit needs new ENTIRE source review and NEW complete-input admission before execution. Existing real failures stay failures, Darwin deferred never PASS, full programme active.

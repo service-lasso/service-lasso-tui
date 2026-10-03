@@ -26,3 +26,15 @@ Source-owned private native wrapper is exactly schema/scope/source/run/platform/
 Final retained publication evidence exactly schema/scope/source/run/candidate/qualification/publication/outcome, service-lasso.tui-publication-evidence.v1; candidate/qualification R3 byte refs and publication R3 immutable metadata (repository/releaseId/tag/targetCommit/draft/prerelease/immutable/assets), all four exact original asset IDs/API URLs/raw hashes/sizes. Private journal exactly schema/scope/source/run/phase/manifest/qualification/publication, service-lasso.tui-publication-journal.v1. Phase union created-private-draft, verified-private-draft, final-public-readback; draft records preserve observed draft/immutable state and partial inventory, never final success. No journal/native wrapper/qualification file is an extra candidate release asset.
 
 Scoped producer owns single-file stored Windows ZIP and USTAR Linux gzip TAR, original executable only, native amd64 PE/ELF identity, framing/checksum/modes/quotas. It uses the existing hash-pinned pywinpty3.0.5 requirements inside an owned fresh Windows venv after input custody, existing Go/Node source contracts and Core2633 clean admission before and after dependency/build/runtime acquisition. Native receipts retain the original five public schemas; private host/tool/process/ACL/log bytes are never uploaded. New server-context API support admits exact contractVersion/context and four slrc_ opaque bindings; unknown/duplicate keys and unavailable endpoint deny persistent restoration. Model context acquisition stays asynchronous and epoch-bound;2633 endpoint absence remains an explicit qualification gap.
+
+## Issue28 PR31 R2 protected publisher deadline (2026-10-04)
+SPEC002 AC-3 and SPEC004 TUI28-PUBLISH retain exactly the original 30-minute
+job bound on release-scoped.yml publish-candidate. Individual request limits
+cannot replace the credential-bearing job deadline. Restore timeout-minutes: 30
+without changing original release.yml, native deadlines, ownership waits or gates.
+Source regression reads both actual workflow publisher job blocks and requires
+exactly one job-level 30-minute bound. This correction joins the ENTIRE existing
+37-path PR31 unit, including source-resolved R1; all tests remain UNEXECUTED.
+DIFFERENT fresh ENTIRE SOURCE GO and NEW complete-input ROOT admission precede
+execution. Core2633 reconciliation, native, protected publication, same-byte Core
+and full-delivery qualification remain unmet; historical failures stay retained.

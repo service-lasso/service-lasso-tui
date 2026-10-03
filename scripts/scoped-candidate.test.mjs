@@ -11,6 +11,19 @@ import { SCOPE, hash } from "./scoped-native-contract.mjs";
 import { parseStrictJSON } from "./scoped-json.mjs";
 const assemble=async f=>{const assets=path.join(f.root,"package","release-assets"),evidence=path.join(f.root,"package","evidence");await assembleScopedCandidate({nativeDirectory:f.native,assetDirectory:assets,evidenceDirectory:evidence,identity:IDENTITY,run:RUN,token:"fixture-authority",fetchImpl:f.fetchImpl});return {...f,assets,evidence};};
 const publish=f=>publishCandidate({assetDirectory:f.assets,nativeDirectory:f.native,evidenceDirectory:f.evidence,journalDirectory:path.join(f.root,"private-journal"),identity:IDENTITY,run:RUN,token:"fixture-authority",fetchImpl:f.fetchImpl});
+test("SPEC002 AC-3 actual scoped and original publisher jobs retain the 30-minute authority bound",async()=>{
+  for(const name of ["release-scoped.yml","release.yml"]){
+    const workflow=(await readFile(new URL(`../.github/workflows/${name}`,import.meta.url),"utf8")).replace(/\r\n/gu,"\n");
+    const starts=[...workflow.matchAll(/^  publish-candidate:$/gmu)];
+    assert.equal(starts.length,1,`${name} has one actual publisher job`);
+    const rest=workflow.slice(starts[0].index+starts[0][0].length);
+    const next=rest.search(/^  [A-Za-z0-9_-]+:/mu);
+    const job=next<0?rest:rest.slice(0,next);
+    const bounds=[...job.matchAll(/^    timeout-minutes:([^\n]*)$/gmu)];
+    assert.equal(bounds.length,1,`${name} requires one job-level deadline`);
+    assert.equal(bounds[0][1].trim(),"30",`${name} retains the original 30-minute deadline`);
+  }
+});
 test("actual scoped aggregate and protected publisher preserve four original public byte receipts",async()=>{
   const f=await assemble(await fixture());assert.equal((await readdir(f.assets)).length,5);const sums=await readFile(path.join(f.assets,"SHA256SUMS.txt"),"utf8");assert.equal(sums.trimEnd().split("\n").length,2);assert.match(sums.split("\n")[0],/-linux-amd64.tar.gz$/u);
   const result=await publish(f);assert.equal(result.receipt.schema,"service-lasso.tui-publication-evidence.v1");assert.equal(result.receipt.publication.assets.length,4);assert.deepEqual(f.mutations,["tag","draft","upload","upload","upload","upload","publish"]);assert.equal(result.receipt.candidate.sha256,hash(await readFile(path.join(f.assets,"candidate-manifest.json"))));assert.equal(result.receipt.publication.immutable,true);

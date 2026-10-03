@@ -197,3 +197,14 @@ no parser/compiler/test/native execution before DIFFERENT ENTIRE SOURCE GO and
 NEW complete-input ROOT admission. Core2633 pending reconciliation stays denied.
 Original37-path two-OS candidate/native/provider/publication controls and legacy
 routes remain protected; no merge, publication, deployment or GA claim.
+## Issue28 PR31 R2 protected publisher deadline (2026-10-04)
+SPEC002 AC-3 and SPEC004 TUI28-PUBLISH retain exactly the original 30-minute
+job bound on release-scoped.yml publish-candidate. Individual request limits
+cannot replace the credential-bearing job deadline. Restore timeout-minutes: 30
+without changing original release.yml, native deadlines, ownership waits or gates.
+Source regression reads both actual workflow publisher job blocks and requires
+exactly one job-level 30-minute bound. This correction joins the ENTIRE existing
+37-path PR31 unit, including source-resolved R1; all tests remain UNEXECUTED.
+DIFFERENT fresh ENTIRE SOURCE GO and NEW complete-input ROOT admission precede
+execution. Core2633 reconciliation, native, protected publication, same-byte Core
+and full-delivery qualification remain unmet; historical failures stay retained.

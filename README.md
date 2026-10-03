@@ -21,9 +21,10 @@ explicitly advertises cancellation support.
 
 The TUI retains a locally protected, metadata-only reconciliation record only
 when Core supplies a validated opaque actor/client/instance context for that
-accepted operation. The current client fails closed and does not persist one
-until Core #1553's reviewed contract is integrated; it never derives authority
-from a URL, profile, or credential.
+accepted operation. The client admits only the reviewed server-issued
+reconciliation-context endpoint. The currently qualified Core2633 runtime
+pin lacks that endpoint, so persistent restoration remains unavailable with
+that runtime. The client never derives authority from a URL, profile, or credential.
 It never saves a credential, confirmation phrase, preview, request body, or
 idempotency key. A changed profile or actor binding leaves the operation
 unread and unreplayed.
@@ -156,3 +157,20 @@ URL, terminal text, or raw error.
 See [the runtime API contract](docs/runtime-api-contract.md), [the Core
 integration and release contract](docs/core-integration-contract.md), and [the
 framework decision](docs/framework-decision.md).
+
+## Scoped Windows/Linux candidate source
+
+The separate `release-scoped.yml` entrypoint produces schema3 candidates for
+Windows amd64 and Linux amd64 under the immutable owner policy. It requires
+both actual native Core journeys and current-attempt provider proof before
+publication. Exactly four public files retain the two original native archives,
+`candidate-manifest.json` and `SHA256SUMS.txt`; sums contains only the two archives.
+All four original files are held and independently verified through private
+draft and final immutable public readback. Qualification and custody wrappers
+are retained workflow evidence, not extra release assets.
+
+The historical schema2 workflow retains its four targets, six public files and
+four archive-only checksum rows. Darwin remains deferred for the scoped route.
+Source implementation and fixture consistency are separate from native runtime
+acceptance, actual publication, independent Core catalog admission and owner GA.
+The current runtime pin's persistent/pending reconciliation gap remains open.

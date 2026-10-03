@@ -1,0 +1,179 @@
+name: Publish scoped Windows Linux TUI candidate
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_version:
+        description: Exact yyyy.m.d-sevenSHA version for current develop source
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  validate-source:
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      version: ${{ steps.source.outputs.version }}
+      tag: ${{ steps.source.outputs.tag }}
+      scope_policy_sha256: ${{ steps.source.outputs.scope_policy_sha256 }}
+    env:
+      CANDIDATE_VERSION: ${{ inputs.candidate_version }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.23.2'
+      - id: source
+        name: Bind checked-out source and canonical policy before acquisition
+        run: node scripts/bind-scoped-source.mjs
+  native-candidate:
+    needs: validate-source
+    name: native-candidate (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: win32
+            runner: windows-latest
+          - platform: linux
+            runner: ubuntu-latest
+    env:
+      CANDIDATE_VERSION: ${{ needs.validate-source.outputs.version }}
+      GOFLAGS: ''
+      GOWORK: 'off'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.validate-source.outputs.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.23.2'
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.14'
+      - name: Bind source before native acquisition
+        run: node scripts/bind-scoped-source.mjs
+      - name: Build and qualify original executable on actual matching host
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/produce-scoped-native.mjs "${{ runner.temp }}/scoped-native-private-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}" "${{ runner.temp }}/scoped-native-public-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: scoped-native-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scoped-native-public-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}/*
+          if-no-files-found: error
+          retention-days: 90
+  aggregate:
+    if: always()
+    needs: [validate-source, native-candidate]
+    runs-on: ubuntu-latest
+    env:
+      CANDIDATE_VERSION: ${{ needs.validate-source.outputs.version }}
+    steps:
+      - name: Deny incomplete source or native gates
+        env:
+          SOURCE_RESULT: ${{ needs.validate-source.result }}
+          NATIVE_RESULT: ${{ needs.native-candidate.result }}
+        run: test "$SOURCE_RESULT" = success && test "$NATIVE_RESULT" = success
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.validate-source.outputs.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.23.2'
+      - id: selected
+        name: Bind exact current provider jobs and artifacts before retrieval
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/bind-scoped-source.mjs select-native
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ steps.selected.outputs.win32_id }}
+          path: ${{ runner.temp }}/scoped-inputs/win32
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ steps.selected.outputs.linux_id }}
+          path: ${{ runner.temp }}/scoped-inputs/linux
+          merge-multiple: true
+      - name: Verify original native bodies and independent artifact byte readback
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/assemble-scoped-candidate.mjs "${{ runner.temp }}/scoped-inputs" "${{ runner.temp }}/scoped-package/release-assets" "${{ runner.temp }}/scoped-package/evidence"
+      - name: Retain native original public proof bodies alongside qualification
+        run: cp -R "$RUNNER_TEMP/scoped-inputs" "$RUNNER_TEMP/scoped-package/native"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: scoped-package-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scoped-package
+          if-no-files-found: error
+          retention-days: 90
+  publish-candidate:
+    if: always()
+    needs: [validate-source, native-candidate, aggregate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: development-candidate
+    env:
+      CANDIDATE_VERSION: ${{ needs.validate-source.outputs.version }}
+      CANDIDATE_TAG: ${{ needs.validate-source.outputs.tag }}
+      CANDIDATE_SHA: ${{ needs.validate-source.outputs.sha }}
+    steps:
+      - name: Deny any failed skipped cancelled or missing gate
+        env:
+          SOURCE_RESULT: ${{ needs.validate-source.result }}
+          NATIVE_RESULT: ${{ needs.native-candidate.result }}
+          AGGREGATE_RESULT: ${{ needs.aggregate.result }}
+        run: test "$SOURCE_RESULT" = success && test "$NATIVE_RESULT" = success && test "$AGGREGATE_RESULT" = success
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.validate-source.outputs.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.23.2'
+      - name: Bind exact clean source before package retrieval
+        run: node scripts/bind-scoped-source.mjs
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: scoped-package-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scoped-package
+      - name: Publish original held bytes through protected private draft and immutable readback
+        env:
+          GH_TOKEN: ${{ secrets.DEVELOPMENT_CANDIDATE_TOKEN }}
+        run: node scripts/publish-scoped-candidate.mjs --asset-directory "$RUNNER_TEMP/scoped-package/release-assets" --native-directory "$RUNNER_TEMP/scoped-package/native" --evidence-directory "$RUNNER_TEMP/scoped-package/evidence" --journal-directory "$RUNNER_TEMP/scoped-publication-private-${{ github.run_id }}-${{ github.run_attempt }}" --source-ref "$GITHUB_REF" --source-commit "$CANDIDATE_SHA" --version "$CANDIDATE_VERSION" --tag "$CANDIDATE_TAG" > "$RUNNER_TEMP/scoped-publication-evidence.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: scoped-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scoped-publication-evidence.json
+          if-no-files-found: error
+          retention-days: 90
+  complete:
+    if: always()
+    needs: [validate-source, native-candidate, aggregate, publish-candidate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every original scoped dependency
+        env:
+          SOURCE_RESULT: ${{ needs.validate-source.result }}
+          NATIVE_RESULT: ${{ needs.native-candidate.result }}
+          AGGREGATE_RESULT: ${{ needs.aggregate.result }}
+          PUBLISH_RESULT: ${{ needs.publish-candidate.result }}
+        run: test "$SOURCE_RESULT" = success && test "$NATIVE_RESULT" = success && test "$AGGREGATE_RESULT" = success && test "$PUBLISH_RESULT" = success

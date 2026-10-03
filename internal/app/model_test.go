@@ -2,6 +2,9 @@ package app
 
 import (
 	"context"
+	"bytes"
+	"os"
+	"path/filepath"
 	"errors"
 	"reflect"
 	"strings"
@@ -424,8 +427,10 @@ func TestPersistenceRequiresServerSuppliedContext(t *testing.T) {
 	}
 	m = preparedModel(t, durableFake{reconciliation: "core-context-opaque-123"})
 	m.operationStore = store
-	updated, _ = m.Update(key('y'))
-	_, _ = updated.(model).Update(operationMsg{submissionID: 1, operation: api.Operation{ID: "mcp-operation-12345678", Action: "service_start", Status: "running", Phase: "executing", Ownership: "own"}})
+	updated, command := m.Update(key('y'))
+	message := command().(operationMsg)
+	message.operation = api.Operation{ID: "mcp-operation-12345678", Action: "service_start", Status: "running", Phase: "executing", Ownership: "own"}
+	_, _ = updated.(model).Update(message)
 	if store.value == nil || store.value.Version != 2 || store.value.Binding != "core-context-opaque-123" {
 		t.Fatalf("server context was not retained: %#v", store.value)
 	}
@@ -435,13 +440,17 @@ type memoryOperationStore struct{ value *persistedOperation }
 
 func (s *memoryOperationStore) Load() (*persistedOperation, error) { return s.value, nil }
 func (s *memoryOperationStore) Save(v persistedOperation) error    { s.value = &v; return nil }
-func (s *memoryOperationStore) Clear() error                       { s.value = nil; return nil }
+func (s *memoryOperationStore) Clear(expected persistedOperation) error {
+	if s.value != nil && *s.value != expected { return errors.New("retained operation changed") }
+	s.value = nil
+	return nil
+}
 
 type failingOperationStore struct{ err error }
 
 func (s *failingOperationStore) Load() (*persistedOperation, error) { return nil, nil }
 func (s *failingOperationStore) Save(persistedOperation) error      { return s.err }
-func (s *failingOperationStore) Clear() error                       { return nil }
+func (s *failingOperationStore) Clear(persistedOperation) error     { return nil }
 
 func TestDashboardNavigationSearchResizeAndSanitizationRemainCovered(t *testing.T) {
 	m := New(fakeClient{}, context.Background()).(model)
@@ -475,4 +484,166 @@ func TestStaleSnapshotAndEpochIsolationRemainCovered(t *testing.T) {
 	if strings.Contains(ignored.(model).View(), "Old result") {
 		t.Fatal("stale connection result was rendered")
 	}
+}
+
+
+
+func TestStoredOperationContextIsEpochBoundAndNeverReplays(t *testing.T) {
+    client := &recordingDurableClient{reconciliation:"server-context"}
+    m := preparedModel(t,client)
+    m.operationStore=&memoryOperationStore{value:&persistedOperation{Version:2,OperationID:"mcp-operation-12345678",ConnectionName:m.connectionName,Binding:"server-context"}}
+    command:=m.readStoredOperation()
+    stale:=command()
+    m.connectionEpoch++
+    updated, next:=m.Update(stale)
+    if next!=nil || updated.(model).operation!=nil { t.Fatal("stale context restoration read a different connection") }
+    m.connectionEpoch--
+    updated,next=m.Update(command())
+    if next==nil || updated.(model).operation==nil || updated.(model).operation.reconciliationContext!="server-context" { t.Fatal("matching server context failed to retain original operation") }
+    if client.submitCalls!=0 { t.Fatal("restoration replayed a mutation") }
+}
+
+func TestPersistedOperationRejectsUnknownAndDuplicateAuthority(t *testing.T) {
+    for _, raw := range []string{
+        `{"version":2,"operationId":"operation-fixture","connectionName":"fixture","reconciliationContext":"one","reconciliationContext":"two"}`,
+        `{"version":2,"operationId":"operation-fixture","connectionName":"fixture","reconciliationContext":"one","credential":"inert"}`,
+        `{"version":2,"operationId":"operation-fixture","connectionName":"fixture","reconciliationContext":"one"} {}`,
+    } {
+        var value persistedOperation
+        if decodeOperationMetadata([]byte(raw), &value)==nil { t.Fatal("unsafe durable metadata admitted") }
+    }
+}
+
+// This fault adapter exercises a real Save filesystem failure and real Clear
+// against the original file. The original file is a regular leaf, so using it
+// as Save's parent fails before replacement, independent of platform privileges.
+type replacementFailureStore struct {
+    fileOperationStore
+    clears int
+}
+func (s *replacementFailureStore) Save(value persistedOperation) error {
+    return (fileOperationStore{path: filepath.Join(s.path, "blocked-replacement")}).Save(value)
+}
+func (s *replacementFailureStore) Clear(expected persistedOperation) error {
+    s.clears++
+    return s.fileOperationStore.Clear(expected)
+}
+
+func TestTerminalReplacementFailurePreservesOriginalRecordBytes(t *testing.T) {
+    for _, terminal := range []api.Operation{
+        {ID: "operation-B", Status: "succeeded", Outcome: "completed"},
+        {ID: "operation-B", Status: "unknown_after_crash"},
+    } {
+        t.Run(terminal.Status, func(t *testing.T) {
+            path := filepath.Join(t.TempDir(), "operation.json")
+            // Noncanonical whitespace proves preservation of original bytes,
+            // rather than equivalent parsed metadata reconstructed by the UI.
+            original := []byte("{\n \"version\":2,\"operationId\":\"operation-A\",\"connectionName\":\"profile-A\",\"reconciliationContext\":\"actor-A\"\n}\n")
+            if err := os.WriteFile(path, original, 0600); err != nil { t.Fatal(err) }
+            store := &replacementFailureStore{fileOperationStore: fileOperationStore{path: path}}
+            m := New(durableFake{}, context.Background()).(model)
+            m.operationStore = store
+            m.operation = &operationSubmission{id: 8, client: durableFake{}, connectionName: "profile-B", reconciliationContext: "actor-B", operation: api.Operation{ID: terminal.ID, Status: "running"}}
+            updated, command := m.Update(operationMsg{submissionID: 8, operation: terminal})
+            got := updated.(model)
+            after, err := os.ReadFile(path)
+            if err != nil || !bytes.Equal(after, original) || store.clears != 0 {
+                t.Fatalf("failed B replacement removed or changed original A: error=%v clear=%d bytes=%q", err, store.clears, after)
+            }
+            if got.err == nil || got.operation == nil || command != nil { t.Fatal("terminal storage failure lost visible error or recovery") }
+            retained, err := store.Load()
+            if err != nil || retained.OperationID != "operation-A" { t.Fatalf("original recovery record unavailable: %v %#v", err, retained) }
+            // A late restoration must not substitute A for the active B.
+            restored, next := got.Update(storedOperationMsg{epoch: got.connectionEpoch, stored: retained, bound: true, binding: "actor-A"})
+            if next != nil || restored.(model).operation.id != 8 { t.Fatal("late stored read stole failed B recovery") }
+        })
+    }
+}
+
+type clearFailureStore struct {
+    fileOperationStore
+    clearErr error
+}
+func (s *clearFailureStore) Clear(expected persistedOperation) error {
+    if s.clearErr != nil { return s.clearErr }
+    return s.fileOperationStore.Clear(expected)
+}
+
+func TestTerminalClearErrorKeepsRecoveryAndExactPersistedRecord(t *testing.T) {
+    store := &clearFailureStore{fileOperationStore: fileOperationStore{path: filepath.Join(t.TempDir(), "operation.json")}, clearErr: errors.New("clear denied")}
+    m := New(durableFake{}, context.Background()).(model)
+    m.operationStore = store
+    m.operation = &operationSubmission{id: 6, client: durableFake{}, connectionName: "original-profile", reconciliationContext: "original-context", operation: api.Operation{ID: "operation-B"}}
+    // The active display epoch/profile may change, but ownership remains that
+    // of the captured original submission and its retained client.
+    m.connectionEpoch, m.connectionName = 9, "different-profile"
+    updated, command := m.Update(operationMsg{submissionID: 6, operation: api.Operation{ID: "operation-B", Outcome: "completed"}})
+    got := updated.(model)
+    retained, err := store.Load()
+    if err != nil || retained == nil || retained.ConnectionName != "original-profile" || retained.Binding != "original-context" { t.Fatalf("clear failure lost original ownership: %v %#v", err, retained) }
+    if !errors.Is(got.err, store.clearErr) || got.operation == nil || command != nil { t.Fatal("clear failure was hidden or recovery discarded") }
+    store.clearErr = nil
+    finished, _ := got.Update(operationMsg{submissionID: 6, operation: api.Operation{ID: "operation-B", Outcome: "completed"}})
+    // Retry uses readback only and now reaches actual file removal.
+    if finished.(model).operation != nil { t.Fatal("successful terminal readback did not close in-memory recovery") }
+    if _, err := os.Stat(store.path); !os.IsNotExist(err) { t.Fatal("successful retry retained completed record") }
+}
+
+func TestFileClearRequiresExactRetainedOwnership(t *testing.T) {
+    store := fileOperationStore{path: filepath.Join(t.TempDir(), "operation.json")}
+    original := persistedOperation{Version: 2, OperationID: "operation-A", ConnectionName: "profile-A", Binding: "actor-A"}
+    if err := store.Save(original); err != nil { t.Fatal(err) }
+    before, err := os.ReadFile(store.path); if err != nil { t.Fatal(err) }
+    for _, different := range []persistedOperation{
+        {Version: 2, OperationID: "operation-B", ConnectionName: original.ConnectionName, Binding: original.Binding},
+        {Version: 2, OperationID: original.OperationID, ConnectionName: "profile-B", Binding: original.Binding},
+        {Version: 2, OperationID: original.OperationID, ConnectionName: original.ConnectionName, Binding: "actor-B"},
+    } {
+        if store.Clear(different) == nil { t.Fatal("different retained identity authorized removal") }
+        after, err := os.ReadFile(store.path); if err != nil || !bytes.Equal(before, after) { t.Fatal("ownership denial changed retained bytes") }
+    }
+    if err := store.Clear(original); err != nil { t.Fatal(err) }
+    if _, err := os.Stat(store.path); !os.IsNotExist(err) { t.Fatal("matching retained identity did not remove its record") }
+}
+
+func TestTerminalUnboundOrStaleMessageDoesNotTouchRetainedStore(t *testing.T) {
+    store := &memoryOperationStore{value: &persistedOperation{Version: 2, OperationID: "operation-A", ConnectionName: "profile-A", Binding: "actor-A"}}
+    m := New(durableFake{}, context.Background()).(model)
+    m.operationStore = store
+    m.operation = &operationSubmission{id: 3, client: durableFake{}, operation: api.Operation{ID: "operation-B"}}
+    ignored, _ := m.Update(operationMsg{submissionID: 2, operation: api.Operation{ID: "operation-B", Outcome: "completed"}, binding: "actor-B"})
+    if ignored.(model).operation.reconciliationContext != "" || store.value.OperationID != "operation-A" { t.Fatal("stale submission changed recovery") }
+    finished, _ := ignored.(model).Update(operationMsg{submissionID: 3, operation: api.Operation{ID: "operation-B", Outcome: "completed"}})
+    if finished.(model).operation != nil || store.value.OperationID != "operation-A" { t.Fatal("unbound terminal removed another retained record") }
+}
+
+func TestMismatchedOperationReadbackCannotChangeRetainedAuthority(t *testing.T) {
+    for _, message := range []operationMsg{
+        {submissionID: 3, operation: api.Operation{ID: "different-operation", Outcome: "completed"}},
+        {submissionID: 3, operation: api.Operation{ID: "operation-A", Outcome: "completed"}, binding: "different-context"},
+        {submissionID: 3, operation: api.Operation{Outcome: "completed"}},
+    } {
+        original := persistedOperation{Version: 2, OperationID: "operation-A", ConnectionName: "profile-A", Binding: "actor-A"}
+        store := &memoryOperationStore{value: &original}
+        m := New(durableFake{}, context.Background()).(model)
+        m.operationStore = store
+        m.operation = &operationSubmission{id: 3, client: durableFake{}, connectionName: original.ConnectionName, reconciliationContext: original.Binding, operation: api.Operation{ID: original.OperationID}}
+        updated, command := m.Update(message)
+        if updated.(model).err == nil || updated.(model).operation == nil || command != nil || store.value == nil || *store.value != original { t.Fatal("mismatched host response changed retained recovery") }
+    }
+}
+func TestDelayedStoredReadCannotResurrectCompletedOperation(t *testing.T) {
+    client := &recordingDurableClient{reconciliation: "actor-A"}
+    m := New(client, context.Background()).(model)
+    m.connectionName = "profile-A"
+    store := &memoryOperationStore{value: &persistedOperation{Version: 2, OperationID: "operation-A", ConnectionName: "profile-A", Binding: "actor-A"}}
+    m.operationStore = store
+    delayed := m.readStoredOperation()()
+    m.nextSubmissionID = 1
+    m.operation = &operationSubmission{id: 1, client: client, connectionName: "profile-A", reconciliationContext: "actor-A", operation: api.Operation{ID: "operation-B"}}
+    finished, _ := m.Update(operationMsg{submissionID: 1, operation: api.Operation{ID: "operation-B", Outcome: "completed"}})
+    if store.value != nil { t.Fatal("completed B was not cleared") }
+    restored, command := finished.(model).Update(delayed)
+    if restored.(model).operation != nil || command != nil || store.value != nil { t.Fatal("delayed read resurrected superseded A") }
+    if client.submitCalls != 0 { t.Fatal("recovery replayed submission") }
 }

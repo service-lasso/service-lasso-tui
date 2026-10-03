@@ -202,3 +202,52 @@ PR27 coherent F1/F2/F3 successor: SPEC001 PR27 source contract above and SPEC002
 ## Issue #29 coordinated Core #1628 amendment
 
 SPEC-003 TUI29-CHECKSUM/TUI29-PROPAGATION: four public files, exactlytwo archive-only checksum rows, all four held/private/public byte proofs; historical v2 six/four with original Map semantics. Implementation remains owned by TUI28. Fresh distinct ENTIRE cumulative four-repo source review and governed develop landing precede held implementation. Canonical policy a038/raw SHA256159d644c161cf532c94d3bfe17ed55e32bf94c5d2843928945c450f6d8140c12 unchanged; Windows/Linux native/runtime/provider/immutable publication/same-byte gates required, Darwin deferred never PASS. No current admission/proof implementation/qualification success is invented; full goal remains active. Later producer units require new ENTIRE review and NEW complete-input admission before execution. No product/parser/compiler/test/npm/native/ACL/provider-control execution or cleanup here.
+
+## Issue #28 complete scoped candidate source unit
+SPEC-004 TUI28-CANDIDATE/NATIVE/AGGREGATE/PUBLISH/DENIALS/CLOSURE maps the entire source-owned schema3 Windows/Linux implementation, exact four public files/two sums, direct native five-action ownership, current-attempt aggregate and protected held-byte publisher. Core durable correction0087aa4b and TUIe58b4cd are landed source authority. Historical v2 remains separate. Persistent reconciliation still requires compatible qualified Core;2633 runtime pin remains. SOURCE ONLY, regressions UNEXECUTED pending different ENTIRE SOURCE GO and NEW ROOT; full goal ACTIVE and production catalogs empty.
+
+## Issue #28 source implementation ready for entire review
+SPEC-004 TUI28-CANDIDATE/NATIVE/AGGREGATE/PUBLISH/DENIALS/CLOSURE is implemented coherently in the separate scoped workflow, native producer/owner/observer, current-attempt aggregate, archive/public byte verifiers and protected publisher. Existing v2 workflow and publisher source stay unchanged. The canonical policy copy is byte-identical. All new local product/compiler/parser/test/native execution remains UNEXECUTED; source-only review and NEW complete-input ROOT are mandatory. Preserve natural pre-code CI37150082745: macOS failure and native jobs skipped, never scoped acceptance. Persistent/pending reconciliation against2633 remains blocked despite source support for the reviewed future endpoint. Full programme ACTIVE; no protected catalog entry, real publication, Core qualification or GA is claimed.
+
+## Issue28 PR31 R1 retained-record correction (2026-10-04)
+SPEC001 TUI-OPERATIONS-R1 binds the reviewed failure at125eb: terminal or
+unknown_after_crash B must never remove preexisting retained A after failed
+replacement. Clear receives the exact successfully persisted version/operation/
+connection/server-context tuple and refuses a different or invalid record.
+Save/Clear errors remain visible and retain in-memory read recovery; delayed
+restoration cannot replace an active submission. Actual Update plus file-store
+regressions require original A byte-for-byte readback, terminal and unknown
+cases, failed clear, mismatched ownership, no context, and stale restoration.
+This is source-only correction within the existing single-record architecture;
+no parser/compiler/test/native execution before DIFFERENT ENTIRE SOURCE GO and
+NEW complete-input ROOT admission. Core2633 pending reconciliation stays denied.
+Original37-path two-OS candidate/native/provider/publication controls and legacy
+routes remain protected; no merge, publication, deployment or GA claim.
+## Issue28 PR31 R2 protected publisher deadline (2026-10-04)
+SPEC002 AC-3 and SPEC004 TUI28-PUBLISH retain exactly the original 30-minute
+job bound on release-scoped.yml publish-candidate. Individual request limits
+cannot replace the credential-bearing job deadline. Restore timeout-minutes: 30
+without changing original release.yml, native deadlines, ownership waits or gates.
+Source regression reads both actual workflow publisher job blocks and requires
+exactly one job-level 30-minute bound. This correction joins the ENTIRE existing
+37-path PR31 unit, including source-resolved R1; all tests remain UNEXECUTED.
+DIFFERENT fresh ENTIRE SOURCE GO and NEW complete-input ROOT admission precede
+execution. Core2633 reconciliation, native, protected publication, same-byte Core
+and full-delivery qualification remain unmet; historical failures stay retained.
+## Issue28 PR31 R3 held inner native identity (2026-10-04)
+SPEC004 TUI28-NATIVE/AGGREGATE/DENIALS requires the exact five acquired public
+receipt buffers to pass every existing closed schema, private-field denial and
+cross-receipt meaning before raw refs/provider comparison. Bind inner TUI commit
+to current wrapper/source and inner executable digest/size to the original
+extracted archive executable and wrapper binary. Validate and consume the SAME
+held buffers; a pathname reread cannot supply meaning for a different snapshot.
+Actual aggregate and protected publisher regressions cover coherent wrong inner
+commit, wrong digest/size and malformed held bodies replaced by valid pathname
+bodies after acquisition, plus the exact existing positive. Retain Core2633,
+R1 retained-A ownership, R2 30-minute publisher, original five native actions,
+policy/run/attempt/jobs/current provider ZIP inventory and original closure.
+Sole-writer correction retains the existing clean issue28/PR31 branch under
+explicit successor custody, starting e19d against e58b. SOURCE ONLY; regressions
+UNEXECUTED until DIFFERENT fresh ENTIRE SOURCE GO and NEW complete-input ROOT
+admission. Native/reconciliation/immutable publication/same-byte Core/full goal
+remain unmet. No historical failure or admission is relabeled.

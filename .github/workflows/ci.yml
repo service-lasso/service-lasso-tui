@@ -91,6 +91,8 @@ jobs:
         run: |
           python scripts/verify-release-asset-conpty-python.test.py
           python scripts/tui20-native-five-action.test.py
+          python scripts/tui28-native-ownership.test.py
+          node --test scripts/scoped-candidate.test.mjs
           node --test scripts/tui20-native-core.recovery.test.mjs scripts/verify-tui20-native-public-receipt.test.mjs scripts/verify-real-core-conpty.test.mjs scripts/verify-release-asset-conpty.test.mjs scripts/verify-candidate-publication.test.mjs scripts/verify-candidate-publication-fresh-job.test.mjs
       - name: Test actual native custody producer and receipt consumer
         if: runner.os != 'Windows'

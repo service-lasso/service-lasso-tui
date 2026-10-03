@@ -523,3 +523,5 @@ and LF/CRLF regressions but do not execute them before DIFFERENT ENTIRE SOURCE
 GO and NEW complete-input ROOT admission. c585 natural Darwin and Windows
 failures stay preserved; native cause, protected scoped credential, publication
 and same-published-byte Core/full delivery remain incomplete.
+## Issue #28 source implementation ready for entire review
+SPEC-004 TUI28-CANDIDATE/NATIVE/AGGREGATE/PUBLISH/DENIALS/CLOSURE is implemented coherently in the separate scoped workflow, native producer/owner/observer, current-attempt aggregate, archive/public byte verifiers and protected publisher. Existing v2 workflow and publisher source stay unchanged. The canonical policy copy is byte-identical. All new local product/compiler/parser/test/native execution remains UNEXECUTED; source-only review and NEW complete-input ROOT are mandatory. Preserve natural pre-code CI37150082745: macOS failure and native jobs skipped, never scoped acceptance. Persistent/pending reconciliation against2633 remains blocked despite source support for the reviewed future endpoint. Full programme ACTIVE; no protected catalog entry, real publication, Core qualification or GA is claimed.

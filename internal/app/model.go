@@ -34,8 +34,9 @@ type durableLifecycleClient interface {
 
 // reconciliationContextProvider is an adapter boundary for Core's pending
 // server-issued actor/client/instance reconciliation context. The production
-// HTTP client intentionally does not implement it until Core #1553 provides a
-// reviewed contract. Local URL, profile, and credential material are never a
+// HTTP client validates the reviewed server endpoint when it exists; the
+// qualified Core2633 pin lacks it and fails closed. Local URL, profile, and
+// credential material are never a
 // substitute for this authority.
 type reconciliationContextProvider interface {
 	ReconciliationContext() (string, bool)
@@ -108,6 +109,7 @@ type lifecyclePreparedMsg struct {
 	err               error
 }
 type operationMsg struct {
+	binding string
 	submissionID uint64
 	operation    api.Operation
 	err          error
@@ -138,18 +140,25 @@ func (m model) Init() tea.Cmd {
 }
 
 type storedOperationMsg struct {
+	binding string
+	bound   bool
+	epoch   uint64
 	stored *persistedOperation
 	err    error
 }
 
 func (m model) readStoredOperation() tea.Cmd {
 	store := m.operationStore
+	epoch := m.connectionEpoch
+	client := m.client
 	return func() tea.Msg {
 		if store == nil {
 			return storedOperationMsg{}
 		}
 		stored, err := store.Load()
-		return storedOperationMsg{stored: stored, err: err}
+		if err != nil || stored == nil { return storedOperationMsg{stored: stored, err: err, epoch: epoch} }
+		binding, bound := clientReconciliationContext(client)
+		return storedOperationMsg{stored: stored, err: err, epoch: epoch, binding: binding, bound: bound}
 	}
 }
 
@@ -267,12 +276,13 @@ func prepareLifecycle(client durableLifecycleClient, ctx context.Context, epoch 
 
 func submitDurableLifecycle(submission operationSubmission, preview api.LifecyclePreview, ctx context.Context) tea.Cmd {
 	return func() tea.Msg {
+		binding, _ := clientReconciliationContext(submission.client)
 		key, err := api.NewIdempotencyKey()
 		if err != nil {
 			return operationMsg{submissionID: submission.id, err: err}
 		}
 		operation, err := submission.client.SubmitLifecycle(ctx, preview, key)
-		return operationMsg{submissionID: submission.id, operation: operation, err: err}
+		return operationMsg{submissionID: submission.id, operation: operation, err: err, binding: binding}
 	}
 }
 
@@ -343,6 +353,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.pendingPreview = &message.preview
 	case storedOperationMsg:
+		if message.epoch != m.connectionEpoch {
+			return m, nil
+		}
 		if message.err != nil {
 			m.err = message.err
 			return m, nil
@@ -350,7 +363,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if message.stored == nil || message.stored.ConnectionName != m.connectionName {
 			return m, nil
 		}
-		binding, matches := m.reconciliationContext()
+		binding, matches := message.binding, message.bound
 		if !matches || binding != message.stored.Binding {
 			m.lastResult = "Retained operation belongs to a different actor or connection; it was not read or replayed."
 			return m, nil
@@ -360,7 +373,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.nextSubmissionID++
-		m.operation = &operationSubmission{id: m.nextSubmissionID, client: durable, connectionName: m.connectionName, connectionEpoch: m.connectionEpoch, operation: api.Operation{ID: message.stored.OperationID, Status: "reconciling", Phase: "reconciling"}}
+		m.operation = &operationSubmission{id: m.nextSubmissionID, client: durable, connectionName: m.connectionName, connectionEpoch: m.connectionEpoch, reconciliationContext: binding, operation: api.Operation{ID: message.stored.OperationID, Status: "reconciling", Phase: "reconciling"}}
 		return m, readOperation(*m.operation, m.ctx)
 	case operationMsg:
 		if m.operation == nil || message.submissionID != m.operation.id {
@@ -374,6 +387,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastResult = "Operation outcome is uncertain; reconnect or refresh only reads the retained operation."
 			return m, nil
 		}
+		if message.binding != "" && m.operation.reconciliationContext == "" {
+			m.operation.reconciliationContext = message.binding
+		}
 		m.operation.operation = message.operation
 		if message.cancellation {
 			m.operation.cancellationPending = false
@@ -386,8 +402,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if message.operation.Outcome != "" || message.operation.Status == "unknown_after_crash" {
 			m.lastResult = fmt.Sprintf("Core operation %s: %s.", safeTerminalText(message.operation.ID, 80), safeTerminalText(firstNonEmpty(message.operation.Outcome, message.operation.Status), 48))
+			retainedContext := m.operation.reconciliationContext
 			m.operation = nil
-			if m.operationStore != nil {
+			if m.operationStore != nil && retainedContext != "" {
 				_ = m.operationStore.Clear()
 			}
 			return m, nil
@@ -586,7 +603,7 @@ func (m *model) submitPendingAction() tea.Cmd {
 			return nil
 		}
 		m.nextSubmissionID++
-		binding, _ := m.reconciliationContext()
+		binding := ""
 		submission := operationSubmission{id: m.nextSubmissionID, client: durable, connectionName: m.connectionName, connectionEpoch: m.connectionEpoch, reconciliationContext: binding}
 		preview := *m.pendingPreview
 		m.pendingAction, m.pendingServiceID, m.pendingPreview, m.preparingAction = "", "", nil, false
@@ -653,8 +670,8 @@ func (m *model) activateConnection(client runtimeClient) {
 	m.screen = dashboardScreen
 }
 
-func (m model) reconciliationContext() (string, bool) {
-	provider, ok := m.client.(reconciliationContextProvider)
+func clientReconciliationContext(client any) (string, bool) {
+	provider, ok := client.(reconciliationContextProvider)
 	if !ok {
 		return "", false
 	}

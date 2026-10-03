@@ -424,8 +424,10 @@ func TestPersistenceRequiresServerSuppliedContext(t *testing.T) {
 	}
 	m = preparedModel(t, durableFake{reconciliation: "core-context-opaque-123"})
 	m.operationStore = store
-	updated, _ = m.Update(key('y'))
-	_, _ = updated.(model).Update(operationMsg{submissionID: 1, operation: api.Operation{ID: "mcp-operation-12345678", Action: "service_start", Status: "running", Phase: "executing", Ownership: "own"}})
+	updated, command := m.Update(key('y'))
+	message := command().(operationMsg)
+	message.operation = api.Operation{ID: "mcp-operation-12345678", Action: "service_start", Status: "running", Phase: "executing", Ownership: "own"}
+	_, _ = updated.(model).Update(message)
 	if store.value == nil || store.value.Version != 2 || store.value.Binding != "core-context-opaque-123" {
 		t.Fatalf("server context was not retained: %#v", store.value)
 	}
@@ -475,4 +477,32 @@ func TestStaleSnapshotAndEpochIsolationRemainCovered(t *testing.T) {
 	if strings.Contains(ignored.(model).View(), "Old result") {
 		t.Fatal("stale connection result was rendered")
 	}
+}
+
+
+
+func TestStoredOperationContextIsEpochBoundAndNeverReplays(t *testing.T) {
+    client := &recordingDurableClient{reconciliation:"server-context"}
+    m := preparedModel(t,client)
+    m.operationStore=&memoryOperationStore{value:&persistedOperation{Version:2,OperationID:"mcp-operation-12345678",ConnectionName:m.connectionName,Binding:"server-context"}}
+    command:=m.readStoredOperation()
+    stale:=command()
+    m.connectionEpoch++
+    updated, next:=m.Update(stale)
+    if next!=nil || updated.(model).operation!=nil { t.Fatal("stale context restoration read a different connection") }
+    m.connectionEpoch--
+    updated,next=m.Update(command())
+    if next==nil || updated.(model).operation==nil || updated.(model).operation.reconciliationContext!="server-context" { t.Fatal("matching server context failed to retain original operation") }
+    if client.submitCalls!=0 { t.Fatal("restoration replayed a mutation") }
+}
+
+func TestPersistedOperationRejectsUnknownAndDuplicateAuthority(t *testing.T) {
+    for _, raw := range []string{
+        `{"version":2,"operationId":"operation-fixture","connectionName":"fixture","reconciliationContext":"one","reconciliationContext":"two"}`,
+        `{"version":2,"operationId":"operation-fixture","connectionName":"fixture","reconciliationContext":"one","credential":"inert"}`,
+        `{"version":2,"operationId":"operation-fixture","connectionName":"fixture","reconciliationContext":"one"} {}`,
+    } {
+        var value persistedOperation
+        if decodeOperationMetadata([]byte(raw), &value)==nil { t.Fatal("unsafe durable metadata admitted") }
+    }
 }

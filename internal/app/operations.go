@@ -2,6 +2,9 @@ package app
 
 import (
 	"encoding/json"
+	"bytes"
+	"io"
+    "unicode/utf8"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,7 +38,10 @@ func defaultOperationStore() operationStore {
 }
 
 func (s fileOperationStore) Load() (*persistedOperation, error) {
-	bytes, err := os.ReadFile(s.path)
+	    entry, err := os.Lstat(s.path)
+    if os.IsNotExist(err) { return nil, nil }
+    if err != nil || !entry.Mode().IsRegular() || entry.Size() <= 0 || entry.Size() > 4096 { return nil, fmt.Errorf("operation reconciliation metadata is invalid") }
+    raw, err := os.ReadFile(s.path)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
@@ -43,7 +49,7 @@ func (s fileOperationStore) Load() (*persistedOperation, error) {
 		return nil, fmt.Errorf("read operation reconciliation metadata: %w", err)
 	}
 	var value persistedOperation
-	if err := json.Unmarshal(bytes, &value); err != nil || value.Version != 2 || value.OperationID == "" || value.ConnectionName == "" || value.Binding == "" {
+	if err := decodeOperationMetadata(raw, &value); err != nil || value.Version != 2 || value.OperationID == "" || value.ConnectionName == "" || value.Binding == "" {
 		return nil, fmt.Errorf("operation reconciliation metadata is invalid")
 	}
 	return &value, nil
@@ -56,8 +62,19 @@ func (s fileOperationStore) Save(value persistedOperation) error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0700); err != nil {
 		return err
 	}
-	bytes, _ := json.Marshal(value)
-	return os.WriteFile(s.path, bytes, 0600)
+	    raw, err := json.Marshal(value)
+    if err != nil || len(raw) > 4096 { return fmt.Errorf("operation reconciliation metadata is invalid") }
+    // Sync the completed temporary body before the atomic replacement. A failed
+    // write leaves the previous retained operation intact.
+    temporary, err := os.CreateTemp(filepath.Dir(s.path), ".operation-reconciliation-*")
+    if err != nil { return err }
+    name := temporary.Name()
+    defer os.Remove(name)
+    if err = temporary.Chmod(0600); err == nil { _, err = temporary.Write(raw) }
+    if err == nil { err = temporary.Sync() }
+    closeErr := temporary.Close()
+    if err != nil { return err }; if closeErr != nil { return closeErr }
+    return os.Rename(name, s.path)
 }
 
 func (s fileOperationStore) Clear() error {
@@ -65,4 +82,24 @@ func (s fileOperationStore) Clear() error {
 		return err
 	}
 	return nil
+}
+
+func decodeOperationMetadata(raw []byte, destination *persistedOperation) error {
+    if !utf8.Valid(raw) { return fmt.Errorf("invalid reconciliation encoding") }
+    decoder := json.NewDecoder(bytes.NewReader(raw))
+    token, err := decoder.Token()
+    if err != nil || token != json.Delim('{') { return fmt.Errorf("invalid reconciliation object") }
+    keys := map[string]bool{}
+    for decoder.More() {
+        token, err = decoder.Token(); key, ok := token.(string)
+        if err != nil || !ok || keys[key] { return fmt.Errorf("duplicate reconciliation field") }
+        keys[key] = true
+        if key != "version" && key != "operationId" && key != "connectionName" && key != "reconciliationContext" { return fmt.Errorf("unknown reconciliation field") }
+        var value json.RawMessage
+        if decoder.Decode(&value) != nil { return fmt.Errorf("invalid reconciliation value") }
+    }
+    token, err = decoder.Token()
+    if err != nil || token != json.Delim('}') || len(keys) != 4 { return fmt.Errorf("incomplete reconciliation object") }
+    if _, err = decoder.Token(); err != io.EOF { return fmt.Errorf("trailing reconciliation data") }
+    return json.Unmarshal(raw,destination)
 }

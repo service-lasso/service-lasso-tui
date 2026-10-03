@@ -56,3 +56,6 @@ complete-input ROOT admission. No secret/settings/identity is provisioned here;
 mandatory native/Darwin/Core and same-byte publication gates remain unmet.
 
 Issue #29 adds the prospective scoped schema3 correction in SPEC-003 without altering historical schema2/SPEC002 custody controls. Schema2 remains six public files/four archive-only sums rows; schema3 exactlyfour/two and all four held/public proofs. Fresh entire combined review/landing precedes producer implementation.
+
+## Issue #28 source implementation ready for entire review
+SPEC-004 TUI28-CANDIDATE/NATIVE/AGGREGATE/PUBLISH/DENIALS/CLOSURE is implemented coherently in the separate scoped workflow, native producer/owner/observer, current-attempt aggregate, archive/public byte verifiers and protected publisher. Existing v2 workflow and publisher source stay unchanged. The canonical policy copy is byte-identical. All new local product/compiler/parser/test/native execution remains UNEXECUTED; source-only review and NEW complete-input ROOT are mandatory. Preserve natural pre-code CI37150082745: macOS failure and native jobs skipped, never scoped acceptance. Persistent/pending reconciliation against2633 remains blocked despite source support for the reviewed future endpoint. Full programme ACTIVE; no protected catalog entry, real publication, Core qualification or GA is claimed.

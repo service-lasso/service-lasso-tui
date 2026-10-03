@@ -54,3 +54,5 @@ six original held assets, private draft and headerless public byte checks remain
 Source regression is UNEXECUTED pending DIFFERENT fresh ENTIRE SOURCE GO and NEW
 complete-input ROOT admission. No secret/settings/identity is provisioned here;
 mandatory native/Darwin/Core and same-byte publication gates remain unmet.
+
+Issue #29 adds the prospective scoped schema3 correction in SPEC-003 without altering historical schema2/SPEC002 custody controls. Schema2 remains six public files/four archive-only sums rows; schema3 exactlyfour/two and all four held/public proofs. Fresh entire combined review/landing precedes producer implementation.

@@ -2,15 +2,68 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile, writeFile, readdir } from "node:fs/promises";
 import path from "node:path";
-import { fixture, IDENTITY, RUN, SOURCE, VERSION } from "./scoped-candidate-fixture.mjs";
+import { fixture, artifactZIP, IDENTITY, RUN, SOURCE, VERSION } from "./scoped-candidate-fixture.mjs";
 import { assembleScopedCandidate } from "./assemble-scoped-candidate.mjs";
 import { publishCandidate } from "./publish-scoped-candidate.mjs";
 import { assertManifest, assertActualLocalAssets } from "./verify-scoped-candidate-publication.mjs";
 import { assertManifest as legacyManifest } from "./verify-candidate-publication.mjs";
-import { SCOPE, hash } from "./scoped-native-contract.mjs";
+import { SCOPE, PUBLIC_RECEIPTS, hash } from "./scoped-native-contract.mjs";
 import { parseStrictJSON } from "./scoped-json.mjs";
-const assemble=async f=>{const assets=path.join(f.root,"package","release-assets"),evidence=path.join(f.root,"package","evidence");await assembleScopedCandidate({nativeDirectory:f.native,assetDirectory:assets,evidenceDirectory:evidence,identity:IDENTITY,run:RUN,token:"fixture-authority",fetchImpl:f.fetchImpl});return {...f,assets,evidence};};
-const publish=f=>publishCandidate({assetDirectory:f.assets,nativeDirectory:f.native,evidenceDirectory:f.evidence,journalDirectory:path.join(f.root,"private-journal"),identity:IDENTITY,run:RUN,token:"fixture-authority",fetchImpl:f.fetchImpl});
+const assemble=async(f,options={})=>{const assets=path.join(f.root,"package","release-assets"),evidence=path.join(f.root,"package","evidence");await assembleScopedCandidate({nativeDirectory:f.native,assetDirectory:assets,evidenceDirectory:evidence,identity:IDENTITY,run:RUN,token:"fixture-authority",fetchImpl:f.fetchImpl,...options});return {...f,assets,evidence};};
+const publish=(f,options={})=>publishCandidate({assetDirectory:f.assets,nativeDirectory:f.native,evidenceDirectory:f.evidence,journalDirectory:path.join(f.root,"private-journal"),identity:IDENTITY,run:RUN,token:"fixture-authority",fetchImpl:f.fetchImpl,...options});
+
+// Rebind every outer raw reference and the actual provider ZIP to the altered
+// inner originals. Only the semantic bridge, rather than stale metadata, can deny.
+async function rebindInner(f,row,change){
+  const originals=Object.fromEntries(PUBLIC_RECEIPTS.map(name=>[name,Buffer.from(row.files[name])]));
+  const records=Object.fromEntries(PUBLIC_RECEIPTS.map(name=>[name,parseStrictJSON(row.files[name])]));
+  change(records);
+  for(const name of PUBLIC_RECEIPTS)row.files[name]=Buffer.from(JSON.stringify(records[name])+"\n");
+  row.wrapper.receipts=PUBLIC_RECEIPTS.map(name=>({name,sha256:hash(row.files[name]),size:row.files[name].length}));
+  const wrapperName=`native-${row.platform}.json`;row.files[wrapperName]=Buffer.from(JSON.stringify(row.wrapper)+"\n");
+  row.zip=artifactZIP(row.files);row.artifact.digest=`sha256:${hash(row.zip)}`;
+  for(const [name,bytes] of Object.entries(row.files))await writeFile(path.join(row.directory,name),bytes);
+  if(f.evidence){
+    const file=path.join(f.evidence,"qualification.json"),value=parseStrictJSON(await readFile(file));
+    const ref=value.receipts.find(item=>item.platform===row.platform);
+    ref.sha256=hash(row.files[wrapperName]);ref.size=row.files[wrapperName].length;
+    await writeFile(file,JSON.stringify(value)+"\n");
+  }
+  return originals;
+}
+const innerChanges=[
+  ["coherent foreign inner source",records=>{records["input-custody.json"].source.tuiCommit="d".repeat(40);records["build-output.json"].tuiCommit="d".repeat(40);records["native-public-projection.json"].sourceCommit="d".repeat(40);}],
+  ["coherent foreign inner binary digest",records=>{records["binary-digest.json"].sha256="d".repeat(64);records["build-output.json"].nativeBinary.sha256="d".repeat(64);records["native-public-projection.json"].binarySHA256="d".repeat(64);}],
+  ["coherent foreign inner binary size",records=>{records["binary-digest.json"].size+=1;records["build-output.json"].nativeBinary.size+=1;}],
+  ["coherent foreign inner binary digest and size",records=>{records["binary-digest.json"].sha256="d".repeat(64);records["build-output.json"].nativeBinary={sha256:"d".repeat(64),size:257};records["binary-digest.json"].size=257;records["native-public-projection.json"].binarySHA256="d".repeat(64);}]
+];
+for(const route of ["aggregate","publisher"])for(const platform of ["win32","linux"])for(const [label,change] of innerChanges)
+test(`TUI28-DENIALS actual ${route} denies ${platform} ${label} with matching raw refs and provider ZIP`,async()=>{
+  const f=route==="publisher"?await assemble(await fixture()):await fixture();
+  const row=f.objects.find(item=>item.platform===platform),outerBinary={...row.wrapper.binary},archive=Buffer.from(row.files[row.wrapper.archive.name]);
+  await rebindInner(f,row,change);
+  assert.deepEqual(row.wrapper.binary,outerBinary);assert.ok(row.files[row.wrapper.archive.name].equals(archive));
+  for(const ref of row.wrapper.receipts){assert.equal(hash(row.files[ref.name]),ref.sha256);assert.equal(row.files[ref.name].length,ref.size);}
+  assert.equal(row.artifact.digest,`sha256:${hash(row.zip)}`);
+  const before=f.calls.length;await assert.rejects(route==="publisher"?publish(f):assemble(f));
+  assert.equal(f.calls.length,before);assert.deepEqual(f.mutations,[]);
+});
+for(const route of ["aggregate","publisher"])for(const name of PUBLIC_RECEIPTS)
+test(`TUI28-DENIALS actual ${route} validates original held ${name} despite valid pathname replacement`,async()=>{
+  const f=route==="publisher"?await assemble(await fixture()):await fixture(),row=f.objects[0];
+  const originals=await rebindInner(f,row,records=>{records[name].unexpectedHeldKey=true;});
+  const held=Buffer.from(row.files[name]);let reached=false;
+  const beforeNativeValidation=async({root,platform})=>{
+    if(platform!==row.platform)return;reached=true;
+    // All five pathname siblings become the valid original set. The held malformed
+    // provider body remains unchanged and still has coherent wrapper/raw ZIP refs.
+    for(const [file,bytes] of Object.entries(originals))await writeFile(path.join(root,file),bytes);
+  };
+  const before=f.calls.length;await assert.rejects(route==="publisher"?publish(f,{beforeNativeValidation}):assemble(f,{beforeNativeValidation}));
+  assert.equal(reached,true);assert.ok((await readFile(path.join(row.directory,name))).equals(originals[name]));
+  assert.ok(row.files[name].equals(held));assert.equal(row.artifact.digest,`sha256:${hash(row.zip)}`);
+  assert.equal(f.calls.length,before);assert.deepEqual(f.mutations,[]);
+});
 test("SPEC002 AC-3 actual scoped and original publisher jobs retain the 30-minute authority bound",async()=>{
   for(const name of ["release-scoped.yml","release.yml"]){
     const workflow=(await readFile(new URL(`../.github/workflows/${name}`,import.meta.url),"utf8")).replace(/\r\n/gu,"\n");
@@ -27,6 +80,17 @@ test("SPEC002 AC-3 actual scoped and original publisher jobs retain the 30-minut
 test("actual scoped aggregate and protected publisher preserve four original public byte receipts",async()=>{
   const f=await assemble(await fixture());assert.equal((await readdir(f.assets)).length,5);const sums=await readFile(path.join(f.assets,"SHA256SUMS.txt"),"utf8");assert.equal(sums.trimEnd().split("\n").length,2);assert.match(sums.split("\n")[0],/-linux-amd64.tar.gz$/u);
   const result=await publish(f);assert.equal(result.receipt.schema,"service-lasso.tui-publication-evidence.v1");assert.equal(result.receipt.publication.assets.length,4);assert.deepEqual(f.mutations,["tag","draft","upload","upload","upload","upload","publish"]);assert.equal(result.receipt.candidate.sha256,hash(await readFile(path.join(f.assets,"candidate-manifest.json"))));assert.equal(result.receipt.publication.immutable,true);
+});
+test("TUI28-NATIVE aggregate and publisher use valid held originals despite later malformed pathnames",async()=>{
+  const original=await fixture();let acquisitions=0;
+  const beforeNativeValidation=async({root})=>{acquisitions+=1;await writeFile(path.join(root,"binary-digest.json"),'{"malformedLaterPath":true}\n');};
+  const f=await assemble(original,{beforeNativeValidation});assert.equal(acquisitions,2);
+  // Restore only the fixture input paths for the next independent publisher
+  // acquisition; provider ZIP bodies have always remained the valid originals.
+  for(const row of f.objects)for(const [name,bytes] of Object.entries(row.files))await writeFile(path.join(row.directory,name),bytes);
+  const result=await publish(f,{beforeNativeValidation});assert.equal(acquisitions,4);
+  assert.equal(result.receipt.outcome,"success");assert.equal(result.receipt.publication.assets.length,4);
+  assert.deepEqual(f.mutations,["tag","draft","upload","upload","upload","upload","publish"]);
 });
 for(const [name,mutate] of [
   ["missing native job",f=>f.jobs.splice(f.jobs.findIndex(job=>job.name==="native-candidate (linux)"),1)],

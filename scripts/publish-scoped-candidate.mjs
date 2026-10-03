@@ -57,7 +57,7 @@ export async function resolveCandidateTag({ identity, read }) {
   fail("candidate tag unresolved");
 }
 
-export async function publishCandidate({ assetDirectory, identity, token, fetchImpl = fetch, beforeHeldAcquisition, nativeDirectory, evidenceDirectory, journalDirectory, run }) {
+export async function publishCandidate({ assetDirectory, identity, token, fetchImpl = fetch, beforeHeldAcquisition, nativeDirectory, evidenceDirectory, journalDirectory, run, beforeNativeValidation }) {
   await assertSourcePolicy();
   candidateIdentity(identity);
   if (!token) fail("publisher authority missing");
@@ -69,7 +69,7 @@ export async function publishCandidate({ assetDirectory, identity, token, fetchI
   await assertPublicationDirectory(assetDirectory, manifest);
   const held = await holdVerifiedLocalAssets({ assetDirectory, manifest, localAssets: inventory });
   if (!held.bytes["candidate-manifest.json"].equals(admittedManifestBytes)) fail("held candidate manifest differs from admitted bytes");
-  const qualified = await verifyScopedQualification({nativeDirectory,evidenceDirectory,manifest,run,token,fetchImpl});
+  const qualified = await verifyScopedQualification({nativeDirectory,evidenceDirectory,manifest,run,token,fetchImpl,beforeNativeValidation});
   if(!journalDirectory) fail("private publication journal required");
   await mkdir(journalDirectory, {mode:0o700});
   const publication = release => ({repository:"service-lasso/service-lasso-tui",releaseId:release.id,tag:release.tag_name,targetCommit:identity.sourceCommit,draft:release.draft,prerelease:release.prerelease,immutable:release.immutable===true,assets:release.assets.map(asset=>({id:asset.id,name:asset.name,url:asset.url,size:asset.size,sha256:held.inventory[asset.name]?.sha256})).sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0)});

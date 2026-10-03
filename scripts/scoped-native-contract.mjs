@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { SCOPE, assertScope } from "./scoped-policy.mjs";
 import { verifyNativeArchive } from "./scoped-native-archive.mjs";
+import { verifyHeldNativePublicReceipt } from "./scoped-native-public.mjs";
 export const CORE_COMMIT="2633c07be25512d0a84f9bfa28de6be5edff35e8";
 export const PUBLIC_RECEIPTS=Object.freeze(["binary-digest.json","build-output.json","core-source-binding.json","input-custody.json","native-public-projection.json"]);
 export const NATIVE_PLATFORMS=Object.freeze(["win32","linux"]);
@@ -23,6 +24,9 @@ export function assertNativeWrapper(value,{source,run,version,platform,bodies}) 
   for(const [index,name] of PUBLIC_RECEIPTS.entries()){const ref=byteRef(value.receipts[index]);if(ref.name!==name||hash(bodies[name])!==ref.sha256||bodies[name].length!==ref.size)fail();}
   const archive=bodies[value.archive.name];if(hash(archive)!==value.archive.sha256||archive.length!==value.archive.size)fail();
   const binary=verifyNativeArchive(target,archive);if(hash(binary)!==value.binary.sha256||binary.length!==value.binary.size)fail();
+  // Parse the same original buffers bound above and later consumed by provider ZIP checks.
+  const inner=verifyHeldNativePublicReceipt(Object.fromEntries(PUBLIC_RECEIPTS.map(name=>[name,bodies[name]])));
+  if(inner.input.source.tuiCommit!==source.commit||inner.binary.sha256!==hash(binary)||inner.binary.size!==binary.length||inner.core.coreCommit!==CORE_COMMIT||inner.projection.result!=="succeeded"||inner.projection.actionsPassed!==true||inner.projection.ownedRuntimeClosed!==true)fail();
   return value;
 }
 export function assertProviderRun(provider,run,source){assertRun(run);assertSource(source);if(provider?.id!==run.id||provider.run_attempt!==run.attempt||provider.head_sha!==source.commit||provider.head_branch!=="develop"||provider.path!==".github/workflows/release-scoped.yml"||run.workflowSha!==source.commit)fail();}

@@ -234,3 +234,20 @@ exactly one job-level 30-minute bound. This correction joins the ENTIRE existing
 DIFFERENT fresh ENTIRE SOURCE GO and NEW complete-input ROOT admission precede
 execution. Core2633 reconciliation, native, protected publication, same-byte Core
 and full-delivery qualification remain unmet; historical failures stay retained.
+## Issue28 PR31 R3 held inner native identity (2026-10-04)
+SPEC004 TUI28-NATIVE/AGGREGATE/DENIALS requires the exact five acquired public
+receipt buffers to pass every existing closed schema, private-field denial and
+cross-receipt meaning before raw refs/provider comparison. Bind inner TUI commit
+to current wrapper/source and inner executable digest/size to the original
+extracted archive executable and wrapper binary. Validate and consume the SAME
+held buffers; a pathname reread cannot supply meaning for a different snapshot.
+Actual aggregate and protected publisher regressions cover coherent wrong inner
+commit, wrong digest/size and malformed held bodies replaced by valid pathname
+bodies after acquisition, plus the exact existing positive. Retain Core2633,
+R1 retained-A ownership, R2 30-minute publisher, original five native actions,
+policy/run/attempt/jobs/current provider ZIP inventory and original closure.
+Sole-writer correction retains the existing clean issue28/PR31 branch under
+explicit successor custody, starting e19d against e58b. SOURCE ONLY; regressions
+UNEXECUTED until DIFFERENT fresh ENTIRE SOURCE GO and NEW complete-input ROOT
+admission. Native/reconciliation/immutable publication/same-byte Core/full goal
+remain unmet. No historical failure or admission is relabeled.

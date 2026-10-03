@@ -24,7 +24,7 @@ type persistedOperation struct {
 type operationStore interface {
 	Load() (*persistedOperation, error)
 	Save(persistedOperation) error
-	Clear() error
+	Clear(persistedOperation) error
 }
 
 type fileOperationStore struct{ path string }
@@ -77,7 +77,19 @@ func (s fileOperationStore) Save(value persistedOperation) error {
     return os.Rename(name, s.path)
 }
 
-func (s fileOperationStore) Clear() error {
+func (s fileOperationStore) Clear(expected persistedOperation) error {
+	// Only the exact record this submission persisted may be removed. Invalid
+	// metadata and another actor/connection's record remain recovery evidence.
+	retained, err := s.Load()
+	if err != nil {
+		return err
+	}
+	if retained == nil {
+		return nil
+	}
+	if *retained != expected {
+		return fmt.Errorf("retained operation changed; reconciliation metadata was not removed")
+	}
 	if err := os.Remove(s.path); err != nil && !os.IsNotExist(err) {
 		return err
 	}

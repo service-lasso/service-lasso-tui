@@ -140,6 +140,7 @@ func (m model) Init() tea.Cmd {
 }
 
 type storedOperationMsg struct {
+	generation uint64
 	binding string
 	bound   bool
 	epoch   uint64
@@ -150,15 +151,16 @@ type storedOperationMsg struct {
 func (m model) readStoredOperation() tea.Cmd {
 	store := m.operationStore
 	epoch := m.connectionEpoch
+	generation := m.nextSubmissionID
 	client := m.client
 	return func() tea.Msg {
 		if store == nil {
 			return storedOperationMsg{}
 		}
 		stored, err := store.Load()
-		if err != nil || stored == nil { return storedOperationMsg{stored: stored, err: err, epoch: epoch} }
+		if err != nil || stored == nil { return storedOperationMsg{stored: stored, err: err, epoch: epoch, generation: generation} }
 		binding, bound := clientReconciliationContext(client)
-		return storedOperationMsg{stored: stored, err: err, epoch: epoch, binding: binding, bound: bound}
+		return storedOperationMsg{stored: stored, err: err, epoch: epoch, generation: generation, binding: binding, bound: bound}
 	}
 }
 
@@ -353,7 +355,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.pendingPreview = &message.preview
 	case storedOperationMsg:
-		if message.epoch != m.connectionEpoch {
+		if message.epoch != m.connectionEpoch || message.generation != m.nextSubmissionID {
+			return m, nil
+		}
+		// A delayed startup read must not steal a submitted operation's client,
+		// context or identity, including one retained after a storage failure.
+		if m.operation != nil {
 			return m, nil
 		}
 		if message.err != nil {
@@ -387,6 +394,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastResult = "Operation outcome is uncertain; reconnect or refresh only reads the retained operation."
 			return m, nil
 		}
+		if message.operation.ID == "" || (m.operation.operation.ID != "" && message.operation.ID != m.operation.operation.ID) || (message.binding != "" && m.operation.reconciliationContext != "" && message.binding != m.operation.reconciliationContext) {
+			m.err = fmt.Errorf("operation readback does not match its retained identity or context")
+			return m, nil
+		}
 		if message.binding != "" && m.operation.reconciliationContext == "" {
 			m.operation.reconciliationContext = message.binding
 		}
@@ -395,18 +406,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.operation.cancellationPending = false
 		}
 		m.err = nil
+		retained := persistedOperation{Version: 2, OperationID: message.operation.ID, ConnectionName: m.operation.connectionName, Binding: m.operation.reconciliationContext}
+		persisted := false
 		if m.operationStore != nil && m.operation.reconciliationContext != "" {
-			if err := m.operationStore.Save(persistedOperation{Version: 2, OperationID: message.operation.ID, ConnectionName: m.operation.connectionName, Binding: m.operation.reconciliationContext}); err != nil {
+			if err := m.operationStore.Save(retained); err != nil {
 				m.err = err
+			} else {
+				persisted = true
 			}
 		}
 		if message.operation.Outcome != "" || message.operation.Status == "unknown_after_crash" {
 			m.lastResult = fmt.Sprintf("Core operation %s: %s.", safeTerminalText(message.operation.ID, 80), safeTerminalText(firstNonEmpty(message.operation.Outcome, message.operation.Status), 48))
-			retainedContext := m.operation.reconciliationContext
-			m.operation = nil
-			if m.operationStore != nil && retainedContext != "" {
-				_ = m.operationStore.Clear()
+			// Failure to replace B must leave the original durable A untouched.
+			// Keep this submission for read-only recovery when either write fails.
+			if m.err != nil {
+				return m, nil
 			}
+			if persisted {
+				if err := m.operationStore.Clear(retained); err != nil {
+					m.err = err
+					return m, nil
+				}
+			}
+			m.operation = nil
 			return m, nil
 		}
 		return m, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return operationPollMsg{submissionID: message.submissionID} })

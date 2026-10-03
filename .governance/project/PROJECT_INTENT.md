@@ -182,3 +182,18 @@ SPEC-004 TUI28-CANDIDATE/NATIVE/AGGREGATE/PUBLISH/DENIALS/CLOSURE maps the entir
 
 ## Issue #28 source implementation ready for entire review
 SPEC-004 TUI28-CANDIDATE/NATIVE/AGGREGATE/PUBLISH/DENIALS/CLOSURE is implemented coherently in the separate scoped workflow, native producer/owner/observer, current-attempt aggregate, archive/public byte verifiers and protected publisher. Existing v2 workflow and publisher source stay unchanged. The canonical policy copy is byte-identical. All new local product/compiler/parser/test/native execution remains UNEXECUTED; source-only review and NEW complete-input ROOT are mandatory. Preserve natural pre-code CI37150082745: macOS failure and native jobs skipped, never scoped acceptance. Persistent/pending reconciliation against2633 remains blocked despite source support for the reviewed future endpoint. Full programme ACTIVE; no protected catalog entry, real publication, Core qualification or GA is claimed.
+
+## Issue28 PR31 R1 retained-record correction (2026-10-04)
+SPEC001 TUI-OPERATIONS-R1 binds the reviewed failure at125eb: terminal or
+unknown_after_crash B must never remove preexisting retained A after failed
+replacement. Clear receives the exact successfully persisted version/operation/
+connection/server-context tuple and refuses a different or invalid record.
+Save/Clear errors remain visible and retain in-memory read recovery; delayed
+restoration cannot replace an active submission. Actual Update plus file-store
+regressions require original A byte-for-byte readback, terminal and unknown
+cases, failed clear, mismatched ownership, no context, and stale restoration.
+This is source-only correction within the existing single-record architecture;
+no parser/compiler/test/native execution before DIFFERENT ENTIRE SOURCE GO and
+NEW complete-input ROOT admission. Core2633 pending reconciliation stays denied.
+Original37-path two-OS candidate/native/provider/publication controls and legacy
+routes remain protected; no merge, publication, deployment or GA claim.

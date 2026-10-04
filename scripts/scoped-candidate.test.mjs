@@ -1,6 +1,8 @@
+import { execFileSync } from "node:child_process";
+import os from "node:os";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile, writeFile, readdir } from "node:fs/promises";
+import { readFile, writeFile, readdir, mkdir, mkdtemp } from "node:fs/promises";
 import path from "node:path";
 import { fixture, artifactZIP, IDENTITY, RUN, SOURCE, VERSION } from "./scoped-candidate-fixture.mjs";
 import { assembleScopedCandidate } from "./assemble-scoped-candidate.mjs";
@@ -181,4 +183,25 @@ test(`TUI28-DENIALS actual protected publisher denies ${label} before every muta
     return original(url,options);
   };
   await assert.rejects(publish(f),/missing a current TUI CI check/u);assert.deepEqual(f.mutations,[]);
+});
+
+for(const autocrlf of ["true","false","input"])
+test(`TUI28-CANDIDATE actual Git checkout preserves canonical policy under autocrlf=${autocrlf}`,async()=>{
+  const root=await mkdtemp(path.join(os.tmpdir(),"tui28-policy-git-")),seed=path.join(root,"seed");await mkdir(seed);
+  const git=(cwd,...args)=>execFileSync("git",args,{cwd,encoding:"utf8",stdio:["ignore","pipe","pipe"]}).trim();
+  git(seed,"init","--initial-branch=develop");git(seed,"config","core.autocrlf","false");git(seed,"config","user.name","policy-fixture");git(seed,"config","user.email","fixture@example.invalid");git(seed,"config","commit.gpgsign","false");
+  const policy=await readFile(new URL("../.governance/project/ga-platform-scope.json",import.meta.url));
+  const attributes=await readFile(new URL("../.gitattributes",import.meta.url));
+  assert.equal(attributes.toString("utf8").trim(),".governance/project/ga-platform-scope.json -text");
+  await mkdir(path.join(seed,".governance","project"),{recursive:true});await writeFile(path.join(seed,".governance","project","ga-platform-scope.json"),policy);await writeFile(path.join(seed,".gitattributes"),attributes);
+  git(seed,"add",".");git(seed,"commit","-m","protected original policy");const protectedCommit=git(seed,"rev-parse","HEAD");
+  // Commit the same LF policy without the attribute to retain the original
+  // failure control. These are disposable fixture objects, never release inputs.
+  git(seed,"rm",".gitattributes");git(seed,"commit","-m","unprotected control");
+  const clone=path.join(root,"clone");git(root,"clone","--no-checkout",seed,clone);git(clone,"config","core.autocrlf",autocrlf);git(clone,"checkout","--detach",protectedCommit);
+  const protectedBytes=await readFile(path.join(clone,".governance","project","ga-platform-scope.json"));assert.ok(protectedBytes.equals(policy));assert.equal(hash(protectedBytes),SCOPE.policySha256);
+  if(autocrlf==="true"){
+    const control=path.join(root,"control");git(root,"clone","--no-checkout",seed,control);git(control,"config","core.autocrlf","true");git(control,"checkout","--detach","HEAD");
+    const transformed=await readFile(path.join(control,".governance","project","ga-platform-scope.json"));assert.equal(transformed.toString("utf8"),policy.toString("utf8").replace(/\n/gu,"\r\n"));assert.notEqual(hash(transformed),SCOPE.policySha256);
+  }
 });

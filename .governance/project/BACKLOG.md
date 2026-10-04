@@ -228,3 +228,9 @@ scope selection, provider PASS claim, new schema/trust boundary or gate waiver.
 All checks UNEXECUTED until DIFFERENT ENTIRE cumulative SOURCE GO and NEW ROOT;
 Core2633 compatibility, native/F7/immutable publication/same-byte Core remain
 unqualified, registries remain empty, Darwin deferred never PASS.
+Issue28 canonical policy checkout protection: exact ga-platform-scope.json
+bytes remain SHA256159d644c161cf532c94d3bfe17ed55e32bf94c5d2843928945c450f6d8140c12
+and original blob under every Git newline setting. Add only that path -text;
+real Git checkout regression source covers autocrlf true/false/input and original
+unprotected true transformation. No bytes/pin/schema change. UNEXECUTED until
+DIFFERENT ENTIRE review and NEW complete-input ROOT.

@@ -55,3 +55,24 @@ explicit successor custody, starting e19d against e58b. SOURCE ONLY; regressions
 UNEXECUTED until DIFFERENT fresh ENTIRE SOURCE GO and NEW complete-input ROOT
 admission. Native/reconciliation/immutable publication/same-byte Core/full goal
 remain unmet. No historical failure or admission is relabeled.
+## Issue28 scoped source check isolation (2026-10-05)
+SPEC004 TUI28-AGGREGATE/PUBLISH/DENIALS requires source-owned Windows/Linux
+publisher preflight checks: Linux test and build, Windows test and build, and
+Scoped release asset cross-compilation. The last is a separate CI job compiling
+exactly windows/amd64 and linux/amd64 with clean source/VCS identity admission.
+The scoped verifier must not require legacy Darwin checks or legacy four-target
+cross-compilation. Existing legacy workflows and verification policy remain.
+Actual current-attempt native win32/linux five-action gates, all original held
+proof/bytes and immutable publisher controls remain mandatory. Deny each missing
+scoped source check and deny legacy-only substitution before writes. Regression
+source must bind the named actual CI job and its exact target list. No caller
+scope selection, provider PASS claim, new schema/trust boundary or gate waiver.
+All checks UNEXECUTED until DIFFERENT ENTIRE cumulative SOURCE GO and NEW ROOT;
+Core2633 compatibility, native/F7/immutable publication/same-byte Core remain
+unqualified, registries remain empty, Darwin deferred never PASS.
+Issue28 canonical policy checkout protection: exact ga-platform-scope.json
+bytes remain SHA256159d644c161cf532c94d3bfe17ed55e32bf94c5d2843928945c450f6d8140c12
+and original blob under every Git newline setting. Add only that path -text;
+real Git checkout regression source covers autocrlf true/false/input and original
+unprotected true transformation. No bytes/pin/schema change. UNEXECUTED until
+DIFFERENT ENTIRE review and NEW complete-input ROOT.

@@ -1,11 +1,13 @@
+import { execFileSync } from "node:child_process";
+import os from "node:os";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile, writeFile, readdir } from "node:fs/promises";
+import { readFile, writeFile, readdir, mkdir, mkdtemp } from "node:fs/promises";
 import path from "node:path";
 import { fixture, artifactZIP, IDENTITY, RUN, SOURCE, VERSION } from "./scoped-candidate-fixture.mjs";
 import { assembleScopedCandidate } from "./assemble-scoped-candidate.mjs";
 import { publishCandidate } from "./publish-scoped-candidate.mjs";
-import { assertManifest, assertActualLocalAssets } from "./verify-scoped-candidate-publication.mjs";
+import { assertManifest, assertActualLocalAssets, assertPreflight } from "./verify-scoped-candidate-publication.mjs";
 import { assertManifest as legacyManifest } from "./verify-candidate-publication.mjs";
 import { SCOPE, PUBLIC_RECEIPTS, hash } from "./scoped-native-contract.mjs";
 import { parseStrictJSON } from "./scoped-json.mjs";
@@ -156,3 +158,50 @@ test("actual aggregate denies structurally valid TAR containing wrong ELF archit
 });
 
 test("raw JSON denies malformed UTF-8 and BOM before boundary decoding",()=>{assert.throws(()=>parseStrictJSON(Buffer.from([0x7b,0x22,0x61,0x22,0x3a,0x22,0xff,0x22,0x7d])));assert.throws(()=>parseStrictJSON(Buffer.concat([Buffer.from([0xef,0xbb,0xbf]),Buffer.from("{}")])));});
+
+const scopedChecks=["Linux test and build","Windows test and build","Scoped release asset cross-compilation"];
+const protectedScopedPolicy=contexts=>({immutableReleases:{enabled:true},environment:{name:"development-candidate",protection_rules:[{type:"wait_timer",wait_timer:1}],deployment_branch_policy:{protected_branches:true,custom_branch_policies:false}},branchProtection:{required_status_checks:{strict:true,contexts},required_pull_request_reviews:{required_approving_review_count:0},allow_force_pushes:{enabled:false}}});
+test("TUI28-PUBLISH scoped policy binds actual two-target CI without a Darwin prerequisite",async()=>{
+  const workflow=(await readFile(new URL("../.github/workflows/ci.yml",import.meta.url),"utf8")).replace(/\r\n/gu,"\n");
+  const starts=[...workflow.matchAll(/^  scoped-release-asset-compile:$/gmu)];assert.equal(starts.length,1);
+  const rest=workflow.slice(starts[0].index+starts[0][0].length),next=rest.search(/^  [A-Za-z0-9_-]+:/mu),job=next<0?rest:rest.slice(0,next);
+  assert.match(job,/^    name: Scoped release asset cross-compilation$/mu);
+  assert.doesNotMatch(job,/^    needs:|darwin|macos/imu);
+  const targets=[...job.matchAll(/^          for target in ([^;]+); do$/gmu)];assert.equal(targets.length,1);assert.deepEqual(targets[0][1].trim().split(/\s+/u),["windows/amd64","linux/amd64"]);
+  assert.match(job,/node scripts\/assert-go-source-provenance\.mjs/u);
+  assert.match(job,/test "\$source_commit" = "\$CI_SOURCE_SHA"/u);
+  assert.match(job,/go build -mod=readonly -buildvcs=true/u);
+  assert.match(job,/vcs\.revision=\$source_commit/u);assert.match(job,/vcs\.modified=false/u);
+  assert.deepEqual(assertPreflight(protectedScopedPolicy(scopedChecks)).requiredChecks,scopedChecks);
+  // Legacy source policy is independently retained, rather than relabeled scoped.
+  const legacy=await readFile(new URL("./verify-candidate-publication.mjs",import.meta.url),"utf8");assert.match(legacy,/"macOS test and build", "Release asset cross-compilation"/u);
+});
+for(const [label,contexts] of [...scopedChecks.map(check=>[`missing ${check}`,scopedChecks.filter(name=>name!==check)]),["legacy-only substitution",["Linux test and build","Windows test and build","macOS test and build","Release asset cross-compilation"]]])
+test(`TUI28-DENIALS actual protected publisher denies ${label} before every mutation`,async()=>{
+  const f=await assemble(await fixture()),original=f.fetchImpl;f.fetchImpl=async(url,options)=>{
+    if(String(url).endsWith("/branches/develop/protection")){const policy=protectedScopedPolicy(contexts).branchProtection;return {status:200,headers:{get:()=>null},body:(async function*(){yield Buffer.from(JSON.stringify(policy));})()};}
+    return original(url,options);
+  };
+  await assert.rejects(publish(f),/missing a current TUI CI check/u);assert.deepEqual(f.mutations,[]);
+});
+
+for(const autocrlf of ["true","false","input"])
+test(`TUI28-CANDIDATE actual Git checkout preserves canonical policy under autocrlf=${autocrlf}`,async()=>{
+  const root=await mkdtemp(path.join(os.tmpdir(),"tui28-policy-git-")),seed=path.join(root,"seed");await mkdir(seed);
+  const git=(cwd,...args)=>execFileSync("git",args,{cwd,encoding:"utf8",stdio:["ignore","pipe","pipe"]}).trim();
+  git(seed,"init","--initial-branch=develop");git(seed,"config","core.autocrlf","false");git(seed,"config","user.name","policy-fixture");git(seed,"config","user.email","fixture@example.invalid");git(seed,"config","commit.gpgsign","false");
+  const policy=await readFile(new URL("../.governance/project/ga-platform-scope.json",import.meta.url));
+  const attributes=await readFile(new URL("../.gitattributes",import.meta.url));
+  assert.equal(attributes.toString("utf8").trim(),".governance/project/ga-platform-scope.json -text");
+  await mkdir(path.join(seed,".governance","project"),{recursive:true});await writeFile(path.join(seed,".governance","project","ga-platform-scope.json"),policy);await writeFile(path.join(seed,".gitattributes"),attributes);
+  git(seed,"add",".");git(seed,"commit","-m","protected original policy");const protectedCommit=git(seed,"rev-parse","HEAD");
+  // Commit the same LF policy without the attribute to retain the original
+  // failure control. These are disposable fixture objects, never release inputs.
+  git(seed,"rm",".gitattributes");git(seed,"commit","-m","unprotected control");
+  const clone=path.join(root,"clone");git(root,"clone","--no-checkout",seed,clone);git(clone,"config","core.autocrlf",autocrlf);git(clone,"checkout","--detach",protectedCommit);
+  const protectedBytes=await readFile(path.join(clone,".governance","project","ga-platform-scope.json"));assert.ok(protectedBytes.equals(policy));assert.equal(hash(protectedBytes),SCOPE.policySha256);
+  if(autocrlf==="true"){
+    const control=path.join(root,"control");git(root,"clone","--no-checkout",seed,control);git(control,"config","core.autocrlf","true");git(control,"checkout","--detach","HEAD");
+    const transformed=await readFile(path.join(control,".governance","project","ga-platform-scope.json"));assert.equal(transformed.toString("utf8"),policy.toString("utf8").replace(/\n/gu,"\r\n"));assert.notEqual(hash(transformed),SCOPE.policySha256);
+  }
+});

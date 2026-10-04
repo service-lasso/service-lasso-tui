@@ -16,7 +16,7 @@ const AZURE_REQUIRED_SIGNED_QUERY_KEYS = new Set(["sp", "sv", "se", "sig", "jwt"
 const AZURE_OPTIONAL_SIGNED_QUERY_KEYS = new Set(["sr", "spr", "rscd", "rsct", "skoid", "sktid", "skt", "ske", "sks", "skv", "response-content-disposition", "response-content-type"]);
 const MAX_SIGNED_QUERY_VALUE_BYTES = 4096;
 const MAX_SIGNED_QUERY_BYTES = 8192;
-const REQUIRED_CHECKS = Object.freeze(["Linux test and build", "Windows test and build", "macOS test and build", "Release asset cross-compilation"]);
+const REQUIRED_CHECKS = Object.freeze(["Linux test and build", "Windows test and build", "Scoped release asset cross-compilation"]);
 const REQUIRED_PLATFORMS = Object.freeze(["linux-amd64", "win32-amd64"]);
 const PLATFORM_ARCHIVES = Object.freeze({
   "darwin-amd64": { extension: "tar.gz", executable: "service-lasso-tui" },

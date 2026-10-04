@@ -48,7 +48,7 @@ export async function fixture(){
     if(url.startsWith("https://productionresultssa1.blob.core.windows.net/")){if(options.headers?.Authorization)throw new Error("artifact credential forwarded");const id=Number(new URL(url).pathname.split("/").at(-1));return response(objects.find(item=>item.artifact.id===id).zip);}
     if(url.endsWith("/immutable-releases"))return response({enabled:true});
     if(url.endsWith("/environments/development-candidate"))return response({name:"development-candidate",protection_rules:[{type:"wait_timer",wait_timer:1}],deployment_branch_policy:{protected_branches:true,custom_branch_policies:false}});
-    if(url.endsWith("/branches/develop/protection"))return response({required_status_checks:{strict:true,contexts:["Linux test and build","Windows test and build","macOS test and build","Release asset cross-compilation"]},required_pull_request_reviews:{required_approving_review_count:0},allow_force_pushes:{enabled:false}});
+    if(url.endsWith("/branches/develop/protection"))return response({required_status_checks:{strict:true,contexts:["Linux test and build","Windows test and build","Scoped release asset cross-compilation"]},required_pull_request_reviews:{required_approving_review_count:0},allow_force_pushes:{enabled:false}});
     if(url.includes("/git/ref/tags/"))return tag?response({ref:`refs/tags/${IDENTITY.tag}`,object:{type:"commit",sha:tag}}):response({},404);
     if(url.endsWith("/git/refs")&&method==="POST"){mutations.push("tag");tag=JSON.parse(options.body).sha;return response({},201);}
     if(url.endsWith("/releases")&&method==="POST"){mutations.push("draft");release={id:299,tag_name:IDENTITY.tag,target_commitish:SOURCE.commit,draft:true,prerelease:true,immutable:false,assets:[]};return response(release,201);}

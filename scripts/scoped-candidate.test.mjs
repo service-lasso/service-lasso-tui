@@ -5,7 +5,7 @@ import path from "node:path";
 import { fixture, artifactZIP, IDENTITY, RUN, SOURCE, VERSION } from "./scoped-candidate-fixture.mjs";
 import { assembleScopedCandidate } from "./assemble-scoped-candidate.mjs";
 import { publishCandidate } from "./publish-scoped-candidate.mjs";
-import { assertManifest, assertActualLocalAssets } from "./verify-scoped-candidate-publication.mjs";
+import { assertManifest, assertActualLocalAssets, assertPreflight } from "./verify-scoped-candidate-publication.mjs";
 import { assertManifest as legacyManifest } from "./verify-candidate-publication.mjs";
 import { SCOPE, PUBLIC_RECEIPTS, hash } from "./scoped-native-contract.mjs";
 import { parseStrictJSON } from "./scoped-json.mjs";
@@ -156,3 +156,29 @@ test("actual aggregate denies structurally valid TAR containing wrong ELF archit
 });
 
 test("raw JSON denies malformed UTF-8 and BOM before boundary decoding",()=>{assert.throws(()=>parseStrictJSON(Buffer.from([0x7b,0x22,0x61,0x22,0x3a,0x22,0xff,0x22,0x7d])));assert.throws(()=>parseStrictJSON(Buffer.concat([Buffer.from([0xef,0xbb,0xbf]),Buffer.from("{}")])));});
+
+const scopedChecks=["Linux test and build","Windows test and build","Scoped release asset cross-compilation"];
+const protectedScopedPolicy=contexts=>({immutableReleases:{enabled:true},environment:{name:"development-candidate",protection_rules:[{type:"wait_timer",wait_timer:1}],deployment_branch_policy:{protected_branches:true,custom_branch_policies:false}},branchProtection:{required_status_checks:{strict:true,contexts},required_pull_request_reviews:{required_approving_review_count:0},allow_force_pushes:{enabled:false}}});
+test("TUI28-PUBLISH scoped policy binds actual two-target CI without a Darwin prerequisite",async()=>{
+  const workflow=(await readFile(new URL("../.github/workflows/ci.yml",import.meta.url),"utf8")).replace(/\r\n/gu,"\n");
+  const starts=[...workflow.matchAll(/^  scoped-release-asset-compile:$/gmu)];assert.equal(starts.length,1);
+  const rest=workflow.slice(starts[0].index+starts[0][0].length),next=rest.search(/^  [A-Za-z0-9_-]+:/mu),job=next<0?rest:rest.slice(0,next);
+  assert.match(job,/^    name: Scoped release asset cross-compilation$/mu);
+  assert.doesNotMatch(job,/^    needs:|darwin|macos/imu);
+  const targets=[...job.matchAll(/^          for target in ([^;]+); do$/gmu)];assert.equal(targets.length,1);assert.deepEqual(targets[0][1].trim().split(/\s+/u),["windows/amd64","linux/amd64"]);
+  assert.match(job,/node scripts\/assert-go-source-provenance\.mjs/u);
+  assert.match(job,/test "\$source_commit" = "\$CI_SOURCE_SHA"/u);
+  assert.match(job,/go build -mod=readonly -buildvcs=true/u);
+  assert.match(job,/vcs\.revision=\$source_commit/u);assert.match(job,/vcs\.modified=false/u);
+  assert.deepEqual(assertPreflight(protectedScopedPolicy(scopedChecks)).requiredChecks,scopedChecks);
+  // Legacy source policy is independently retained, rather than relabeled scoped.
+  const legacy=await readFile(new URL("./verify-candidate-publication.mjs",import.meta.url),"utf8");assert.match(legacy,/"macOS test and build", "Release asset cross-compilation"/u);
+});
+for(const [label,contexts] of [...scopedChecks.map(check=>[`missing ${check}`,scopedChecks.filter(name=>name!==check)]),["legacy-only substitution",["Linux test and build","Windows test and build","macOS test and build","Release asset cross-compilation"]]])
+test(`TUI28-DENIALS actual protected publisher denies ${label} before every mutation`,async()=>{
+  const f=await assemble(await fixture()),original=f.fetchImpl;f.fetchImpl=async(url,options)=>{
+    if(String(url).endsWith("/branches/develop/protection")){const policy=protectedScopedPolicy(contexts).branchProtection;return {status:200,headers:{get:()=>null},body:(async function*(){yield Buffer.from(JSON.stringify(policy));})()};}
+    return original(url,options);
+  };
+  await assert.rejects(publish(f),/missing a current TUI CI check/u);assert.deepEqual(f.mutations,[]);
+});

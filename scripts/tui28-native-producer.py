@@ -20,12 +20,36 @@ def parents(path):
         if current.parent==current: return
         current=current.parent
 
-def run(argv,cwd,env):
-    # Actual children are directly waited; no log text enters public evidence.
-    child=subprocess.Popen(argv,cwd=cwd,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-    stdout,stderr=child.communicate()
-    if child.returncode!=0: raise RuntimeError("native acquisition/build child failed")
+class NativeChildFailure(RuntimeError):
+    def __init__(self,observation):
+        super().__init__("native acquisition/build child failed")
+        self.observation=observation
+
+def run(argv,cwd,env,observation=None):
+    # Private process-local retention is not an independent durable owner.
+    if observation is None: observation=[]
+    item={"process":None,"stdout":None,"stderr":None,"returncode":None,"original":None,"completed":False}
+    observation.append(item)
+    try: child=subprocess.Popen(argv,cwd=cwd,env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    except BaseException as original:
+        item["original"]=original
+        raise
+    item["process"]=child
+    try: stdout,stderr=child.communicate()
+    except BaseException as original:
+        item["original"]=original
+        raise
+    item.update({"stdout":stdout,"stderr":stderr,"returncode":child.returncode,"completed":True})
+    if child.returncode!=0: raise NativeChildFailure(item)
     return stdout
+
+run_child=run
+
+def main(observation=None):
+    if observation is None: observation={}
+    children=[]; observation["children"]=children
+    def run(argv,cwd,env): return run_child(argv,cwd,env,children)
+    return _main_attempt(run)
 
 def birth(pid):
     if sys.platform=="win32":
@@ -35,10 +59,15 @@ def birth(pid):
     with open("/proc/%d/stat"%pid,encoding="utf-8") as stream: fields=stream.read().rsplit(") ",1)[1].split()
     return {"platform":"linux","parentPID":int(fields[1]),"startTimeTicks":fields[19],"image":os.readlink("/proc/%d/exe"%pid)}
 
-def main():
-    parser=argparse.ArgumentParser(); parser.add_argument("--root",required=True); parser.add_argument("--source",required=True); parser.add_argument("--version",required=True); parser.add_argument("--controller-pid",required=True,type=int); parser.add_argument("--node",required=True); args=parser.parse_args()
+def _main_attempt(run):
+    parser=argparse.ArgumentParser(); parser.add_argument("--root",required=True); parser.add_argument("--source",required=True); parser.add_argument("--version",required=True); parser.add_argument("--controller-pid",required=True,type=int); parser.add_argument("--node",required=True); parser.add_argument("--windows-query-profile"); args=parser.parse_args()
     host={"win32":"win32","linux":"linux"}.get(sys.platform)
     if host is None or platform.machine().lower() not in ("amd64","x86_64"): raise RuntimeError("actual host/architecture denied")
+    if host=="win32":
+        if not args.windows_query_profile or not os.path.isabs(args.windows_query_profile): raise RuntimeError("reviewed Windows query profile required")
+        parents(args.windows_query_profile)
+        if not os.path.isfile(args.windows_query_profile): raise RuntimeError("query profile input missing")
+    elif args.windows_query_profile is not None: raise RuntimeError("foreign Windows query input")
     source=os.path.abspath(args.source); parents(source); parent=os.path.dirname(os.path.abspath(args.root)); parents(parent)
     os.mkdir(args.root); root=os.path.abspath(args.root); parents(root)
     workspace=os.path.join(root,"workspace"); registry=os.path.join(root,"registry"); instances=os.path.join(registry,"instances.json"); ports=os.path.join(registry,"ports.json")
@@ -59,7 +88,12 @@ def main():
     env["HOME"]=home;env["USERPROFILE"]=home
     if host=="win32":
         env["APPDATA"]=os.path.join(home,"roaming");env["LOCALAPPDATA"]=os.path.join(home,"local");os.mkdir(env["APPDATA"]);os.mkdir(env["LOCALAPPDATA"])
-    env.update({"GOFLAGS":"","GOWORK":"off","CGO_ENABLED":"0","GOCACHE":os.path.join(root,"go-cache"),"GOMODCACHE":os.path.join(root,"go-modules"),"SERVICE_LASSO_WORKSPACE_ROOT":workspace,"SERVICE_LASSO_INSTANCE_REGISTRY_PATH":instances,"SERVICE_LASSO_HOST_PORT_REGISTRY_PATH":ports})
+    # Explicit source-selected baseline; GOENV=off alone does not clear ambient inputs.
+    # Exact tool/source/overlay custody is independently admitted before this producer runs.
+    goroot=os.path.dirname(os.path.dirname(tools["go"]));parents(goroot)
+    if not os.path.isfile(os.path.join(goroot,"VERSION")) or not os.path.isdir(os.path.join(goroot,"src")) or not os.path.isdir(os.path.join(goroot,"pkg","tool")):
+        raise RuntimeError("held Go tool root shape denied")
+    env.update({"GOROOT":goroot,"GOOS":"windows" if host=="win32" else "linux","GOARCH":"amd64","GOAMD64":"v1","GOENV":"off","GOTOOLCHAIN":"local","GOFIPS140":"off","GOEXPERIMENT":"","GOFLAGS":"","GOWORK":"off","CGO_ENABLED":"0","GOCACHEPROG":"","GOCACHE":os.path.join(root,"go-cache"),"GOMODCACHE":os.path.join(root,"go-modules"),"SERVICE_LASSO_WORKSPACE_ROOT":workspace,"SERVICE_LASSO_INSTANCE_REGISTRY_PATH":instances,"SERVICE_LASSO_HOST_PORT_REGISTRY_PATH":ports})
     commit=run([tools["git"],"rev-parse","HEAD"],source,env).decode().strip(); tree=run([tools["git"],"rev-parse","HEAD^{tree}"],source,env).decode().strip(); dirty=run([tools["git"],"status","--porcelain=v1","--untracked-files=all"],source,env)
     if dirty or commit!=os.environ.get("GITHUB_SHA") or os.environ.get("GITHUB_REF")!="refs/heads/develop" or args.version.split("-")[-1]!=commit[:7]: raise RuntimeError("native clean source denied")
     policy=os.path.join(source,".governance","project","ga-platform-scope.json")
@@ -99,9 +133,86 @@ def main():
     else: run([npm,"ci"],core,env);run([npm,"run","build"],core,env)
     if run([tools["git"],"status","--porcelain=v1","--untracked-files=all"],core,env): raise RuntimeError("Core build altered clean source")
     run([tools["node"],os.path.join(source,"scripts","assert-go-source-provenance.mjs")],source,env)
-    run([tools["go"],"test","-mod=readonly","./..."],source,env)
+    overlay_flags=[]
+    if host=="win32":
+        # Extend the physically existing allowAsmABI lower package. Never write
+        # the installed toolchain or depend on discovery of an overlay-only directory.
+        replacements={};overlay_inputs=[]
+        generated_query_go=os.path.join(root,"servicelasso_query_regions_windows_amd64.go")
+        generated_query_header=os.path.join(root,"windows-query-regions.h")
+        query_association=json.loads(run([tools["node"],os.path.join(source,"scripts","emit-windows-query-regions.mjs"),
+            args.windows_query_profile,generated_query_go,generated_query_header],source,env))
+        if query_association.get("kind")!="windows-query-build-association" or query_association.get("sourceCommit")!=commit or \
+            query_association.get("profileSHA256")!=file_hash(args.windows_query_profile) or \
+            query_association.get("goSHA256")!=file_hash(generated_query_go) or \
+            query_association.get("headerSHA256")!=file_hash(generated_query_header): raise RuntimeError("query emitted byte association changed")
+        # This record binds build bytes only; genuine containing reservation,
+        # exact provider/profile custody and full native factory remain required.
+        write(root,"owner-private-query-build-association.json",query_association)
+        for name in ("servicelasso_root_windows_amd64.go","servicelasso_call_windows_amd64.go","servicelasso_call_windows_amd64.s",
+                     "servicelasso_endpoint_windows_amd64.go","servicelasso_endpoint_windows_amd64.s","servicelasso_arguments_windows_amd64.go",
+                     "servicelasso_private_windows_amd64.go",
+                     "servicelasso_adopt_windows_amd64.go",
+                     "servicelasso_suspend_windows_amd64.go","servicelasso_suspend_windows_amd64.s",
+                     "servicelasso_creator_memory_windows_amd64.go",
+                     "servicelasso_creator_memory_windows_amd64.s",
+                     "servicelasso_creator_extent_windows_amd64.go",
+                     "servicelasso_creator_extent_windows_amd64.s",
+                     "servicelasso_creator_tls_windows_amd64.go",
+                     "servicelasso_creator_tls_windows_amd64.s",
+                     "servicelasso_creator_export_windows_amd64.go",
+                     "servicelasso_creator_export_windows_amd64.s",
+                     "servicelasso_creator_delay_windows_amd64.go",
+                     "servicelasso_creator_import_windows_amd64.go",
+                     "servicelasso_creator_import_windows_amd64.s",
+                     "servicelasso_creator_relocation_windows_amd64.go",
+                     "servicelasso_creator_relocation_windows_amd64.s",
+                     "servicelasso_creator_nativepe_windows_amd64.go",
+                     "servicelasso_creator_nativepe_windows_amd64.s",
+                     "servicelasso_creator_view_windows_amd64.go",
+                     "servicelasso_creator_pe_windows_amd64.go",
+                     "servicelasso_creator_read_windows_amd64.go",
+                     "servicelasso_creator_read_windows_amd64.s",
+                     "servicelasso_creator_metadata_windows_amd64.go",
+                     "servicelasso_creator_metadata_windows_amd64.s",
+                     "servicelasso_creator_file_windows_amd64.go",
+                     "servicelasso_creator_file_windows_amd64.s",
+                     "servicelasso_creator_name_windows_amd64.go",
+                     "servicelasso_creator_name_windows_amd64.s",
+                     "servicelasso_creator_modules_windows_amd64.go",
+                     "servicelasso_creator_modules_windows_amd64.s",
+                     "servicelasso_creator_image_windows_amd64.go",
+                     "servicelasso_creator_image_windows_amd64.s",
+                     "servicelasso_mapping_windows_amd64.go","servicelasso_mapping_windows_amd64.s",
+                     "servicelasso_reader_windows_amd64.go","servicelasso_reader_windows_amd64.s",
+                     "servicelasso_creator_pe_windows_amd64_test.go",
+                     "servicelasso_decode_binding_windows_amd64.go","servicelasso_decode_binding_windows_amd64_test.go",
+                     "servicelasso_export_windows_amd64_test.go","servicelasso_return_windows_amd64_test.go",
+                     "servicelasso_arguments_windows_amd64_test.go","servicelasso_private_windows_amd64_test.go"):
+            relative=os.path.join("src","internal","runtime","syscall","windows",name)
+            backing=os.path.join(source,"toolchain-overlay","go1.26.0",relative);parents(backing)
+            if not os.path.isfile(backing): raise RuntimeError("owned root overlay backing missing")
+            target=os.path.join(goroot,relative)
+            if not os.path.isdir(os.path.dirname(target)): raise RuntimeError("physical lower package missing")
+            replacements[target]=backing
+            overlay_inputs.append({"target":target,"backing":backing,"backingSHA256":file_hash(backing)})
+        os_relative=os.path.join("src","os","servicelasso_suspend_windows_amd64.go")
+        os_backing=os.path.join(source,"toolchain-overlay","go1.26.0",os_relative);parents(os_backing)
+        os_target=os.path.join(goroot,os_relative)
+        if not os.path.isfile(os_backing) or not os.path.isdir(os.path.dirname(os_target)): raise RuntimeError("owned physical os overlay backing missing")
+        replacements[os_target]=os_backing
+        overlay_inputs.append({"target":os_target,"backing":os_backing,"backingSHA256":file_hash(os_backing)})
+        query_target=os.path.join(goroot,"src","internal","runtime","syscall","windows","servicelasso_query_regions_windows_amd64.go")
+        replacements[query_target]=generated_query_go
+        overlay_inputs.append({"target":query_target,"backing":generated_query_go,"backingSHA256":file_hash(generated_query_go)})
+        write(root,"windows-owned-overlay.json",{"Replace":replacements})
+        overlay_flags=["-overlay="+os.path.join(root,"windows-owned-overlay.json")]
+        write(root,"owner-private-overlay-input.json",{"classification":"owner-private","goroot":goroot,"inputs":overlay_inputs})
+    run([tools["go"],"test","-mod=readonly",*overlay_flags,"./..."],source,env)
     executable=os.path.join(root,"service-lasso-tui.exe" if host=="win32" else "service-lasso-tui")
-    run([tools["go"],"build","-mod=readonly","-buildvcs=true","-trimpath","-ldflags=-s -w","-o",executable,"./cmd/service-lasso-tui"],source,env)
+    # COFF locator construction requires the genuine internal symbol table.
+    # Full owned-overlay/payload-first/native-owner-second wiring remains mandatory.
+    run([tools["go"],"build","-mod=readonly","-buildvcs=true","-trimpath",*overlay_flags,"-ldflags=-linkmode=internal","-o",executable,"./cmd/service-lasso-tui"],source,env)
     vcs=run([tools["go"],"version","-m",executable],source,env).decode(); lines={line.strip() for line in vcs.splitlines()}
     if "build\tvcs.revision="+commit not in lines or "build\tvcs.modified=false" not in lines or "build\tGOARCH=amd64" not in lines or "build\tGOOS="+("windows" if host=="win32" else "linux") not in lines: raise RuntimeError("native compiled VCS identity denied")
     binary={"sha256":file_hash(executable),"size":os.stat(executable).st_size}

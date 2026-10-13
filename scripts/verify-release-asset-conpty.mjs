@@ -36,8 +36,8 @@ let stage = "setup";
 let failureReason;
 
 class CorePreflightFailure extends Error {
-  constructor(reason) {
-    super(reason);
+  constructor(reason, ...original) {
+    super(reason, original.length ? { cause: original[0] } : undefined);
     this.reason = reason;
   }
 }
@@ -47,7 +47,7 @@ async function preflightStep(reason, operation) {
     return await operation();
   } catch (error) {
     if (error instanceof CorePreflightFailure) throw error;
-    throw new CorePreflightFailure(reason);
+    throw new CorePreflightFailure(reason, error);
   }
 }
 
@@ -182,6 +182,7 @@ async function reserveUnavailableLoopbackURL() {
 }
 
 export function parseProbe(stdout, mode, expectedIdentity) {
+  let original; let originalPresent = false;
   try {
     const result = JSON.parse(stdout.trim());
     const expectedKeys = mode === "unavailable"
@@ -218,8 +219,8 @@ export function parseProbe(stdout, mode, expectedIdentity) {
     ) {
       stage = `${mode}-${result.stage}`;
     }
-  } catch {}
-  throw new Error("release-asset ConPTY probe did not complete its bounded assertions");
+  } catch (error) { original = error; originalPresent = true; }
+  throw new Error("release-asset ConPTY probe did not complete its bounded assertions", originalPresent ? { cause: original } : undefined);
 }
 
 export function validateReceipt(receipt) {
@@ -266,27 +267,36 @@ function startWriterRequest(writer, message) {
   });
 }
 
-async function startNativeReceiptWriter(baseRoot) {
-  const child = spawn("python", [nativeReceiptWriter, "--base-root", baseRoot], { windowsHide: true, stdio: ["pipe", "pipe", "ignore"] });
-  const writer = { child, requests: [], buffer: "" };
+export async function startNativeReceiptWriter(baseRoot, { spawnProcess = spawn, writers = [] } = {}) {
+  const child = spawnProcess("python", [nativeReceiptWriter, "--base-root", baseRoot], { windowsHide: true, stdio: ["pipe", "pipe", "ignore"] });
+  const writer = { child, requests: [], buffer: "", parserFailures: [], childFailures: [], streamFailures: [], startupFailures: [], eventFailures: [], eventHandovers: new WeakMap() };
+  writers.push(writer);
   const rejectPending = error => {
     while (writer.requests.length) writer.requests.shift().reject(error);
   };
-  child.once("error", rejectPending);
   let rejectReady;
-  child.once("close", code => {
+  child.on("error", original => { writer.childFailures.push(original); writer.eventFailures.push({source:"child", original}); rejectReady?.(original); rejectPending(original); });
+  let observeClose;
+  writer.closeObserved = new Promise(resolve => { observeClose = resolve; });
+  child.once("close", (code, signal) => {
+    writer.closedEvent = { code, signal };
+    observeClose(writer.closedEvent);
     const error = new Error(`native receipt writer exited (${code ?? "signal"})`);
+    if (code !== 0 || signal !== null) { writer.closeFailure = error; writer.eventFailures.push({source:"close", original:error}); writer.closeFailureObserved = true; }
     rejectReady?.(error); rejectPending(error);
   });
   child.stdout.setEncoding("utf8");
+  child.stdout.on("error", original => { writer.streamFailures.push(original); writer.eventFailures.push({source:"stdout", original}); rejectReady?.(original); rejectPending(original); });
+  child.stdin?.on?.("error", original => { writer.streamFailures.push(original); writer.eventFailures.push({source:"stdin", original}); rejectReady?.(original); rejectPending(original); });
+  let readyTimer;
   const ready = new Promise((resolve, reject) => {
     rejectReady = reject;
-    const timer = setTimeout(() => reject(new Error("native receipt writer did not initialise")), 5_000);
+    readyTimer = setTimeout(() => reject(new Error("native receipt writer did not initialise")), 5_000);
     const onLine = line => {
       let result;
-      try { result = JSON.parse(line); } catch { return; }
+      try { result = JSON.parse(line); } catch (original) { writer.parserFailures.push(original); return; }
       if (!writer.ready && result?.event === "ready" && result.ok === true && typeof result.root === "string" && Object.keys(result).length === 3) {
-        clearTimeout(timer); writer.ready = true; resolve(result.root); return;
+        clearTimeout(readyTimer); writer.ready = true; resolve(result.root); return;
       }
       if (writer.ready) writer.onLine(result);
     };
@@ -307,18 +317,19 @@ async function startNativeReceiptWriter(baseRoot) {
       writer.acceptLine(line);
     }
   });
-  writer.root = await ready;
-  rejectReady = undefined;
+  try { writer.root = await ready; }
+  catch (original) { writer.startupFailures.push(original); throw original; }
+  finally { clearTimeout(readyTimer); rejectReady = undefined; }
   return writer;
 }
 
-export async function createReceiptSinks(tempRoot, { createDirectory = mkdtemp, openFile = open, platform = process.platform } = {}) {
+export async function createReceiptSinks(tempRoot, { createDirectory = mkdtemp, openFile = open, platform = process.platform, failures = [], writers = [] } = {}) {
   if (platform === "win32") {
     // The writer creates the attempt directory and both receipts with
     // NtCreateFile relative to a held parent handle. It rejects reparse
     // points while walking and keeps the root non-delete-shareable until
     // cleanup. JavaScript pathname checks are deliberately not used as proof.
-    const writer = await startNativeReceiptWriter(path.resolve(tempRoot));
+    const writer = await startNativeReceiptWriter(path.resolve(tempRoot), { writers });
     return { root: writer.root, helper: { writer, sink: "helper" }, node: { writer, sink: "node" } };
   }
   // Allocate a new unpredictable directory owned by this attempt before a
@@ -330,7 +341,7 @@ export async function createReceiptSinks(tempRoot, { createDirectory = mkdtemp, 
   try {
     node = await openFile(path.join(root, nodeReceiptName), "wx", 0o600);
   } catch (error) {
-    await helper.close().catch(() => undefined);
+    try { await helper.close(); } catch (original) { failures.push(original); }
     throw error;
   }
   return { root, helper, node };
@@ -353,16 +364,47 @@ export async function publishReceipt(handle, receipt) {
   } catch (error) { throw error; }
 }
 
-export async function closeReceiptSinks(sinks) {
+export async function closeReceiptSinks(sinks, { failures = [], closeEvents = [], handoff = {} } = {}) {
+  const first = failures.length;
+  const throwRecorded = original => { handoff.recorded = true; throw original; };
   const writer = sinks?.helper?.writer ?? sinks?.node?.writer;
   if (writer) {
-    try { await startWriterRequest(writer, { op: "close" }); } catch {}
-    await Promise.race([new Promise(resolve => writer.child.once("close", resolve)), new Promise(resolve => setTimeout(resolve, 5_000))]);
+    writer.closeObserved ??= new Promise(resolve => writer.child.once("close", (code, signal) => resolve({ code, signal })));
+    writer.eventFailures ??= [];
+    writer.eventHandovers ??= new WeakMap();
+    writer.closeEventHandovers ??= new WeakSet();
+    if (!writer.closeResult) writer.closeResult = Promise.resolve().then(async () => {
+      if (writer.closedEvent === undefined) {
+        if (!writer.closeRequest) writer.closeRequest = Promise.resolve().then(() => {
+          writer.originalCloseRequest = startWriterRequest(writer, { op: "close" });
+          return writer.originalCloseRequest;
+        });
+        try { await writer.closeRequest; } catch (original) { writer.eventFailures.push({source:"close-request", original}); }
+      }
+      let closed, timer;
+      try { closed = await Promise.race([writer.closeObserved, new Promise(resolve => { timer = setTimeout(() => resolve(false), 5_000); })]); }
+      catch (original) { writer.eventFailures.push({source:"close-observation", original}); }
+      finally { clearTimeout(timer); }
+      if (closed && (closed.code !== 0 || closed.signal !== null) && !writer.closeFailureObserved) {
+        writer.closeFailure ??= new Error("cleanup_unconfirmed");
+        writer.eventFailures.push({source:"close", original:writer.closeFailure}); writer.closeFailureObserved = true;
+      }
+      if (!closed && !writer.eventFailures.length) writer.eventFailures.push({source:"close-unconfirmed", original:new Error("cleanup_unconfirmed")});
+      return closed;
+    });
+    const closed = await writer.closeResult;
+    const handed = writer.eventHandovers.get(failures) ?? 0;
+    for (const event of writer.eventFailures.slice(handed)) failures.push(event.original);
+    writer.eventHandovers.set(failures, writer.eventFailures.length);
+    if (closed && !writer.closeEventHandovers.has(closeEvents)) { closeEvents.push(closed); writer.closeEventHandovers.add(closeEvents); }
+    if (failures.length > first) throwRecorded(failures[first]);
+    if (writer.eventFailures?.length) throwRecorded(writer.eventFailures[0].original);
     return;
   }
-  await Promise.allSettled([sinks?.helper?.close(), sinks?.node?.close()]);
+  const results = await Promise.allSettled([sinks?.helper, sinks?.node].map(sink => Promise.resolve().then(() => sink?.close())));
+  for (const result of results) if (result.status === "rejected") failures.push(result.reason);
+  if (failures.length > first) throwRecorded(failures[first]);
 }
-
 export async function persistNodeExitReceipt(nodeSink, code, signal, spawnFailed = false) {
   // Node owns this terminal observation. Reading the helper's independently
   // published pathname would reintroduce a lstat/read replacement race.
@@ -374,17 +416,17 @@ export async function persistNodeExitReceipt(nodeSink, code, signal, spawnFailed
   });
 }
 
-function helperReceiptFromOutput(stdout) {
+function helperReceiptFromOutput(stdout, parserFailures) {
   try {
     const result = JSON.parse(stdout.trim());
     return result?.receipt ? validateReceipt(result.receipt) : undefined;
-  } catch { return undefined; }
+  } catch (original) { parserFailures.push(original); return undefined; }
 }
 
-export async function finalizeReconnectExit(receiptSinks, code, signal, stdout, { persist = persistNodeExitReceipt, candidateIdentity } = {}) {
-  const receiptFailures = [];
+export async function finalizeReconnectExit(receiptSinks, code, signal, stdout, { persist = persistNodeExitReceipt, candidateIdentity, observation = { receiptFailures: [], parserFailures: [], primaryFailures: [] } } = {}) {
+  const receiptFailures = observation.receiptFailures;
   try {
-    const helperReceipt = helperReceiptFromOutput(stdout);
+    const helperReceipt = helperReceiptFromOutput(stdout, observation.parserFailures);
     if (helperReceipt) await publishReceipt(receiptSinks.helper, helperReceipt);
   } catch (error) {
     receiptFailures.push(error);
@@ -393,20 +435,17 @@ export async function finalizeReconnectExit(receiptSinks, code, signal, stdout, 
   try { await persist(receiptSinks.node, code, signal); }
   catch (error) { receiptFailures.push(error); }
   // A receipt-sink failure must never replace the helper's primary result.
-  let result; let primaryError;
+  let result; let primaryError; let primaryPresent = false;
   try {
     if (code !== 0 || signal) throw new Error("release-asset ConPTY reconnect probe failed");
     result = parseProbe(stdout, "reconnect", candidateIdentity);
-  } catch (error) { primaryError = error; }
-  if (primaryError) {
-    if (receiptFailures.length) primaryError.receiptFailures = receiptFailures;
-    throw primaryError;
-  }
+  } catch (error) { primaryError = error; primaryPresent = true; observation.primaryFailures.push(error); }
+  if (primaryPresent) throw primaryError;
   if (receiptFailures.length) throw new AggregateError(receiptFailures, "reconnect receipt persistence failed");
   return result;
 }
 
-export function startReconnectProbe(executable, apiURL, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath, shutdownToken, receiptSinks, candidateIdentity, { spawnProcess = spawn } = {}) {
+export function startReconnectProbe(executable, apiURL, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath, shutdownToken, receiptSinks, candidateIdentity, { spawnProcess = spawn, observation = { receiptFailures: [], parserFailures: [], primaryFailures: [] } } = {}) {
   if (!validCandidateIdentity(candidateIdentity)) throw new Error("reconnect candidate identity invalid");
   const heldIdentity = Object.freeze({ ...candidateIdentity });
   const child = spawnProcess("python", [
@@ -428,64 +467,79 @@ export function startReconnectProbe(executable, apiURL, readyPath, reconnectPath
   const exited = new Promise(resolve => child.once("close", resolve));
   const completed = new Promise((resolve, reject) => {
     let spawnFailed = false;
-    child.once("error", error => {
+    child.on("error", error => {
+      observation.primaryFailures.push(error);
+      if (spawnFailed) return;
       spawnFailed = true;
       // Preserve the original spawn error.  The independent Node receipt
       // records this terminal state without fabricating a helper result.
       Promise.resolve().then(() => persistNodeExitReceipt(receiptSinks.node, null, null, true)).catch(receiptFailure => {
-        error.receiptFailures = [...(error.receiptFailures ?? []), receiptFailure];
+        observation.receiptFailures.push(receiptFailure);
       }).finally(() => reject(error));
+    });
+    for (const name of ["stdout", "stderr"]) child[name]?.on?.("error", original => {
+      observation.primaryFailures.push(original);
+      if (spawnFailed) return;
+      spawnFailed = true;
+      reject(original);
     });
     child.once("close", async (code, signal) => {
       try {
-        if (!spawnFailed) resolve(await finalizeReconnectExit(receiptSinks, code, signal, stdout, { candidateIdentity: heldIdentity }));
+        if (!spawnFailed) resolve(await finalizeReconnectExit(receiptSinks, code, signal, stdout, { candidateIdentity: heldIdentity, observation }));
       } catch (error) {
         reject(error);
       }
     });
   });
   const probe = { child, completed, exited, shutdownRequestPath, shutdownAcknowledgementPath, shutdownToken, completedSuccessfully: false };
+  Object.defineProperty(probe, "observation", { value: observation });
   completed.then(() => { probe.completedSuccessfully = true; }, () => undefined);
   return probe;
 }
 
-async function waitForFile(file, timeoutMs = 20_000) {
+export async function waitForFile(file, timeoutMs = 20_000, observations = [], inspect = stat) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      await stat(file);
+      await inspect(file);
       return;
     } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
+      observations.push(error);
+      let code;
+      try { code = error?.code; } catch (secondary) { observations.push(secondary); throw error; }
+      if (code !== "ENOENT") throw error;
     }
     await new Promise(resolve => setTimeout(resolve, 50));
   }
   throw new Error("release-asset ConPTY probe did not reach unavailable state");
 }
 
-async function waitForAcknowledgement(file, token, timeoutMs = 5_000) {
+export async function waitForAcknowledgement(file, token, timeoutMs = 5_000, failures = [], observations = [], read = readFile) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      if ((await readFile(file, "utf8")) === `${token}\n`) return true;
+      if ((await read(file, "utf8")) === `${token}\n`) return true;
       return false;
     } catch (error) {
-      if (error?.code !== "ENOENT") return false;
+      observations.push(error);
+      let code;
+      try { code = error?.code; } catch (secondary) { failures.push(error, secondary); return false; }
+      if (code !== "ENOENT") { failures.push(error); return false; }
     }
     await new Promise(resolve => setTimeout(resolve, 50));
   }
   return false;
 }
 
-async function waitForExit(exited, timeoutMs = 5_000) {
+async function waitForExit(exited, timeoutMs = 5_000, failures = []) {
   if (!exited) return false;
   return Promise.race([
-    Promise.resolve(exited).then(() => true, () => false),
+    Promise.resolve(exited).then(() => true, original => { failures.push(original); return false; }),
     new Promise(resolve => setTimeout(() => resolve(false), timeoutMs)),
   ]);
 }
 
-export async function stopProbe(probe, { write = writeFile, waitForAck = waitForAcknowledgement, waitForHelperExit = waitForExit } = {}) {
+export async function stopProbe(probe, { write = writeFile, waitForAck = waitForAcknowledgement, waitForHelperExit = waitForExit, failures = [], observations = [] } = {}) {
   if (!probe?.child) return true;
   // Never address a process by PID here. The helper owns the PtyProcess and
   // must explicitly confirm that its own close completed before its temporary
@@ -494,24 +548,28 @@ export async function stopProbe(probe, { write = writeFile, waitForAck = waitFor
   if (!probe.shutdownRequestPath || !probe.shutdownAcknowledgementPath || !probe.shutdownToken) return false;
   try {
     await write(probe.shutdownRequestPath, `${probe.shutdownToken}\n`, { flag: "wx" });
-  } catch {
+  } catch (original) {
+    failures.push(original);
     return false;
   }
-  if (!await waitForAck(probe.shutdownAcknowledgementPath, probe.shutdownToken)) return false;
-  return waitForHelperExit(probe.exited);
+  const acknowledged = waitForAck === waitForAcknowledgement ? await waitForAck(probe.shutdownAcknowledgementPath, probe.shutdownToken, 5_000, failures, observations) : await waitForAck(probe.shutdownAcknowledgementPath, probe.shutdownToken);
+  if (!acknowledged) return false;
+  return waitForHelperExit === waitForExit ? waitForHelperExit(probe.exited, 5_000, failures) : waitForHelperExit(probe.exited);
 }
 
-export async function cleanupResources({ probe, apiServer, unavailable, tempRoot, retainTempRoot = false }, { stop = stopProbe, remove = rm } = {}) {
+export async function cleanupResources({ probe, apiServer, unavailable, tempRoot, retainTempRoot = false, failures = [], observations = [] }, { stop = stopProbe, remove = rm } = {}) {
   let confirmed = true;
   try {
-    confirmed = (await stop(probe)) === true;
-  } catch {
+    confirmed = (await (stop === stopProbe ? stop(probe, { failures, observations }) : stop(probe))) === true;
+  } catch (original) {
+    failures.push(original);
     confirmed = false;
   }
   for (const close of [() => apiServer?.stop(), () => unavailable?.close()]) {
     try {
       await close();
-    } catch {
+    } catch (original) {
+      failures.push(original);
       confirmed = false;
     }
   }
@@ -521,7 +579,8 @@ export async function cleanupResources({ probe, apiServer, unavailable, tempRoot
   if (confirmed && !retainTempRoot) {
     try {
       await remove(tempRoot, { recursive: true, force: true });
-    } catch {
+    } catch (original) {
+      failures.push(original);
       confirmed = false;
     }
   }
@@ -533,6 +592,15 @@ export function cleanupOutcome(primaryError, cleanupConfirmed) {
   return cleanupConfirmed ? undefined : new Error("cleanup_unconfirmed");
 }
 
+export async function finalizeProbeOutcome(primary, cleanup, close, { primaryPresent = primary !== undefined, observation = { cleanupOriginals: [] } } = {}) {
+  const originals = observation.cleanupOriginals;
+  let confirmed = false;
+  try { confirmed = await cleanup(originals) === true; } catch (original) { originals.push(original); }
+  try { await close(originals); } catch (original) { originals.push(original); }
+  if (primaryPresent) throw primary;
+  if (originals.length) throw originals[0];
+  if (!confirmed) throw new Error("cleanup_unconfirmed");
+}
 async function main() {
   if (process.platform !== "win32") {
     console.log(JSON.stringify({ ok: true, classification: "not_applicable", platform: process.platform }));
@@ -540,9 +608,9 @@ async function main() {
   }
   const { coreRoot: suppliedCoreRoot, coreKind } = parseArgs(process.argv.slice(2));
 
-  let tempRoot; let apiServer; let unavailable; let probe; let receiptSinks; let primaryError;
+  let tempRoot; let apiServer; let unavailable; let probe; let receiptSinks; let primaryError; let primaryPresent = false; let successfulResult; const finalizationObservation = { cleanupOriginals: [], closeEvents: [], observations: [], receiptWriters: [] };
   try {
-    receiptSinks = await createReceiptSinks(os.tmpdir());
+    receiptSinks = await createReceiptSinks(os.tmpdir(), { failures: finalizationObservation.cleanupOriginals, writers: finalizationObservation.receiptWriters });
     tempRoot = receiptSinks.root;
     stage = "core-runtime-preflight";
     const coreRuntime = await prepareCoreRuntime({ coreKind, coreRoot: suppliedCoreRoot, tempRoot });
@@ -576,7 +644,7 @@ async function main() {
     const shutdownRequestPath = path.join(tempRoot, "probe-shutdown-request");
     const shutdownAcknowledgementPath = path.join(tempRoot, "probe-shutdown-acknowledgement");
     probe = startReconnectProbe(executable, unavailable.url, readyPath, reconnectPath, shutdownRequestPath, shutdownAcknowledgementPath, randomUUID(), receiptSinks, extractedIdentity);
-    await waitForFile(readyPath);
+    await waitForFile(readyPath, 20_000, finalizationObservation.observations);
     const loopbackPort = unavailable.port;
     await unavailable.close(); unavailable = undefined;
     stage = "core-start";
@@ -589,24 +657,29 @@ async function main() {
     await writeFile(reconnectPath, "ready\n", { flag: "wx" });
     stage = "reconnect";
     const connected = await probe.completed;
-    console.log(JSON.stringify({ ok: true, classification: "direct-release-asset-source-built-core-conpty-read", candidate: { version: candidate.version, sourceCommit: candidate.sourceCommit, manifestSha256: candidate.manifestSha256, archiveSha256: candidate.archiveSha256, executable: candidate.executable }, core: { evidence: coreRuntime.evidence, sourceCommit: coreDevelop }, platform: "win32-amd64", unavailable: "rendered", connectedDashboard: "rendered", reconnect: connected.reconnect, navigation: connected.navigation, terminal: { narrowResize: connected.narrowResize }, exit: connected.exit }));
+    successfulResult = { ok: true, classification: "direct-release-asset-source-built-core-conpty-read", candidate: { version: candidate.version, sourceCommit: candidate.sourceCommit, manifestSha256: candidate.manifestSha256, archiveSha256: candidate.archiveSha256, executable: candidate.executable }, core: { evidence: coreRuntime.evidence, sourceCommit: coreDevelop }, platform: "win32-amd64", unavailable: "rendered", connectedDashboard: "rendered", reconnect: connected.reconnect, navigation: connected.navigation, terminal: { narrowResize: connected.narrowResize }, exit: connected.exit };
   } catch (error) {
-    primaryError = error;
+    primaryError = error; primaryPresent = true;
     if (stage === "core-runtime-preflight") failureReason = error instanceof CorePreflightFailure ? error.reason : "preflight_unclassified";
-    throw error;
   } finally {
     // Keep the native root and receipt handles anchored while the cooperating
     // probe and loopback resources stop. Windows deliberately retains that
     // root afterwards instead of doing a pathname-recursive delete.
-    const cleanupConfirmed = tempRoot ? await cleanupResources({ probe, apiServer, unavailable, tempRoot, retainTempRoot: process.platform === "win32" }) : false;
-    await closeReceiptSinks(receiptSinks);
-    const cleanupError = cleanupOutcome(primaryError, cleanupConfirmed);
-    if (cleanupError && cleanupError !== primaryError) {
-      stage = "cleanup-unconfirmed";
-      failureReason = "cleanup_unconfirmed";
-      throw cleanupError;
+    try {
+      await finalizeProbeOutcome(primaryError,
+        failures => tempRoot ? cleanupResources({ probe, apiServer, unavailable, tempRoot, retainTempRoot: process.platform === "win32", failures, observations: finalizationObservation.observations }) : false,
+        async failures => {
+          // closeReceiptSinks records all actual component originals before
+          // handing its first failure back; do not count that handoff twice.
+          const handoff = {};
+          try { await closeReceiptSinks(receiptSinks, { failures, closeEvents: finalizationObservation.closeEvents, handoff }); } catch (original) { if (!handoff.recorded) failures.push(original); }
+        }, { primaryPresent, observation: finalizationObservation });
+    } catch (original) {
+      if (!primaryPresent) { stage = "cleanup-unconfirmed"; failureReason = "cleanup_unconfirmed"; }
+      throw original;
     }
   }
+  console.log(JSON.stringify(successfulResult));
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(() => { console.log(JSON.stringify({ ok: false, stage, ...(failureReason ? { reason: failureReason } : {}) })); process.exitCode = 1; });

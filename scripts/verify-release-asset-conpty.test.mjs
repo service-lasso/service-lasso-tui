@@ -173,8 +173,9 @@ test("Windows native receipt writer accepts only the closed startup-boundary ext
     const directFailure = { stage: "direct-constructor", outcome: "error", closedReason: "stage_failed", candidateIdentity };
     assert.deepEqual(await publishReceipt(sinks.helper, directFailure), directFailure, "actual native enum must admit constructor stage");
     const failurePayload = JSON.stringify({ ok: false, stage: "direct-constructor", receipt: directFailure });
-    await assert.rejects(() => finalizeReconnectExit({ helper: { writer: sinks.helper.writer, sink: "rejected-helper" }, node: sinks.node }, 1, null, failurePayload), error => error.message === "release-asset ConPTY reconnect probe failed" && error.receiptFailures.length === 1);
-    await assert.rejects(() => finalizeReconnectExit({ helper: { writer: sinks.helper.writer, sink: "rejected-helper" }, node: { writer: sinks.node.writer, sink: "rejected-node" } }, 1, null, failurePayload), error => error.message === "release-asset ConPTY reconnect probe failed" && error.receiptFailures.length === 2);
+    const firstObservation = {receiptFailures: [], parserFailures: [], primaryFailures: []}, secondObservation = {receiptFailures: [], parserFailures: [], primaryFailures: []};
+    await assert.rejects(() => finalizeReconnectExit({ helper: { writer: sinks.helper.writer, sink: "rejected-helper" }, node: sinks.node }, 1, null, failurePayload, {observation: firstObservation}), error => error.message === "release-asset ConPTY reconnect probe failed" && firstObservation.receiptFailures.length === 1);
+    await assert.rejects(() => finalizeReconnectExit({ helper: { writer: sinks.helper.writer, sink: "rejected-helper" }, node: { writer: sinks.node.writer, sink: "rejected-node" } }, 1, null, failurePayload, {observation: secondObservation}), error => error.message === "release-asset ConPTY reconnect probe failed" && secondObservation.receiptFailures.length === 2);
     await assert.rejects(() => publishReceipt(sinks.node, { ...receipt, startupBoundary: "SENTINEL_SECRET" }), /invalid reconnect receipt/u);
   } finally {
     await closeReceiptSinks(sinks);
@@ -427,7 +428,7 @@ test("actual reconnect spawn error retains independent sink failure and never in
     },
   });
   try {
-    await assert.rejects(probe.completed, error => error === primary[0] && error.code === "ENOENT" && error.receiptFailures.length === 1 && error.receiptFailures[0] === sinkFailure);
+    await assert.rejects(probe.completed, error => error === primary[0] && error.code === "ENOENT" && probe.observation.receiptFailures.length === 1 && probe.observation.receiptFailures[0] === sinkFailure);
     await probe.exited;
     assert.equal(helperWrites, 0);
     assert.equal(probe.completedSuccessfully, false);
@@ -444,7 +445,7 @@ test("Windows reconnect spawn error preserves actual native writer rejection", {
     spawnProcess(_program, _args, options) { return spawn(path.join(root, "nonexistent-helper.exe"), [], options); },
   });
   try {
-    await assert.rejects(probe.completed, error => error.code === "ENOENT" && error.receiptFailures.length === 1 && /native receipt writer/u.test(error.receiptFailures[0].message));
+    await assert.rejects(probe.completed, error => error.code === "ENOENT" && probe.observation.receiptFailures.length === 1 && /native receipt writer/u.test(probe.observation.receiptFailures[0].message));
     await probe.exited;
   } finally {
     await closeReceiptSinks(sinks);

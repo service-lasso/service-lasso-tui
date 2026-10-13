@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+ "hash"
 	"io"
 	"os"
 	"regexp"
@@ -71,39 +72,33 @@ func startupProbeSourceCommit(info *debug.BuildInfo) (string, bool) {
 	return revision, modified == "false" && startupProbeSourceCommitPattern.MatchString(revision)
 }
 
-func startupProbeSelfSHA256() (string, bool) {
-	path, err := os.Executable()
-	if err != nil {
-		return "", false
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return "", false
-	}
-	defer file.Close()
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return "", false
-	}
-	return fmt.Sprintf("%x", hash.Sum(nil)), true
+type startupIdentityObservation struct {
+ Info *debug.BuildInfo
+ InfoRead bool
+ Path string
+ File *os.File
+ Hash hash.Hash
+ PathError,OpenError,ReadError,CloseError error
+ ReadBytes int64
+ CloseAttempted bool
+ SourceCommit,BinarySHA256 string
 }
-
-func startupProbeIdentity() (string, string, bool) {
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return "", "", false
-	}
-	sourceCommit, ok := startupProbeSourceCommit(info)
-	if !ok {
-		return "", "", false
-	}
-	binarySHA256, ok := startupProbeSelfSHA256()
-	if !ok {
-		return "", "", false
-	}
-	return sourceCommit, binarySHA256, true
+func startupProbeSelfSHA256()(string,bool){return startupProbeSelfSHA256Observed(&startupIdentityObservation{})}
+func startupProbeSelfSHA256Observed(observation *startupIdentityObservation)(string,bool){
+ observation.Path,observation.PathError=os.Executable();if observation.PathError!=nil{return "",false}
+ observation.File,observation.OpenError=os.Open(observation.Path);if observation.OpenError!=nil{return "",false}
+ observation.Hash=sha256.New();observation.ReadBytes,observation.ReadError=io.Copy(observation.Hash,observation.File)
+ observation.CloseAttempted=true;observation.CloseError=observation.File.Close()
+ if observation.ReadError!=nil||observation.CloseError!=nil{return "",false}
+ observation.BinarySHA256=fmt.Sprintf("%x",observation.Hash.Sum(nil));return observation.BinarySHA256,true
 }
-
+func startupProbeIdentity()(string,string,bool){return startupProbeIdentityObserved(&startupIdentityObservation{})}
+func startupProbeIdentityObserved(observation *startupIdentityObservation)(string,string,bool){
+ observation.Info,observation.InfoRead=debug.ReadBuildInfo();if !observation.InfoRead{return "","",false}
+ var ok bool;observation.SourceCommit,ok=startupProbeSourceCommit(observation.Info);if !ok{return "","",false}
+ _,ok=startupProbeSelfSHA256Observed(observation);if !ok{return "","",false}
+ return observation.SourceCommit,observation.BinarySHA256,true
+}
 func startupBoundaryForProgramError(err error) startupBoundary {
 	switch {
 	case errors.Is(err, tea.ErrProgramPanic):
@@ -137,18 +132,29 @@ func startupProbeMarkerWithIdentity(nonce string, boundary startupBoundary, sour
 	}
 }
 
-func reportStartupFailure(writer io.Writer, boundary startupBoundary, err error) {
-	nonce := os.Getenv(startupProbeNonceEnvironment)
-	if startupProbeNoncePattern.MatchString(nonce) {
-		if marker, ok := startupProbeMarker(nonce, boundary); ok {
-			// This opt-in marker is consumed in memory by the owned ConPTY helper.
-			// It intentionally contains neither the original error nor environment data.
-			fmt.Fprint(writer, marker)
-		}
-		// A valid probe nonce opts out of operator-facing output even when this
-		// binary cannot establish its own identity. A raw startup error could
-		// otherwise expose a URL, token, or runtime detail to the probe capture.
-		return
-	}
-	fmt.Fprintln(writer, err)
+// The actual main embeds this cell before startup/Run. Late diagnostic writes
+// therefore use an already owned source cell rather than enrolling after Join.
+type startupDiagnosticObservation struct {
+ Writer io.Writer
+ Boundary startupBoundary
+ Original error
+ Nonce,Output string
+ Identity startupIdentityObservation
+ WriteAttempted bool
+ Written int
+ WriteError error
+}
+func reportStartupFailure(writer io.Writer,boundary startupBoundary,err error){reportStartupFailureObserved(&startupDiagnosticObservation{},writer,boundary,err)}
+func reportStartupFailureObserved(observation *startupDiagnosticObservation,writer io.Writer,boundary startupBoundary,err error){
+ observation.Writer=writer;observation.Boundary=boundary;observation.Original=err
+ observation.Nonce=os.Getenv(startupProbeNonceEnvironment)
+ if startupProbeNoncePattern.MatchString(observation.Nonce){
+  source,digest,ok:=startupProbeIdentityObserved(&observation.Identity)
+  if ok{if marker,valid:=startupProbeMarkerWithIdentity(observation.Nonce,boundary,source,digest);valid{
+   observation.Output=marker;observation.WriteAttempted=true;observation.Written,observation.WriteError=fmt.Fprint(writer,marker)
+  }}
+  return
+ }
+ observation.Output=api.SafeError(err);observation.WriteAttempted=true
+ observation.Written,observation.WriteError=fmt.Fprintln(writer,observation.Output)
 }

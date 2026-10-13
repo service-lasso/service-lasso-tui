@@ -73,7 +73,7 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertNotIn('append_terminal', source)
         self.assertIn('"targetIds","status","outcome","cancellationSupported"', source)
         self.assertIn('"completedOperationNoReplay":True', source)
-        self.assertIn('connection profile "missing" credential is unavailable', source)
+        self.assertIn('connection configuration unavailable; check profile settings', source)
         self.assertIn('terminal_exited_zero', source)
         self.assertIn('CreateFileW', source)
         self.assertIn('"adverseAudit"', source)
@@ -82,7 +82,28 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
         self.assertIn('"runtimeState"', source)
         self.assertIn('expected_denials', source)
         self.assertIn('retained operation readback unavailable', source)
+        self.assertIn('PtyProcess.spawn([executable,"--compat-v1","--profile",profile]', source)
+        posix = pathlib.Path(__file__).with_name("tui20-native-posix-five-action.py").read_text(encoding="utf-8")
+        self.assertIn('args=[executable,"--compat-v1","--profile",profile]', posix)
         self.assertNotIn('private-token.json', source)
+
+    def test_missing_credential_requires_fixed_diagnostic_and_denies_private_values(self):
+        # Controlled in-memory bytes only; this is not a native terminal witness.
+        harness=load_posix_harness()
+        check=harness["assert_safe_missing_credential"]
+        safe=harness["SAFE_CONFIGURATION_DIAGNOSTIC"]
+        env={"SERVICE_LASSO_API_TOKEN":"private-token-marker","SERVICE_LASSO_DENIED_TOKEN":"denied-token-marker","SERVICE_LASSO_INVALID_TOKEN":"invalid-token-marker","SERVICE_LASSO_CONNECTIONS_CONFIG":"private-config-path-marker"}
+        check(safe+"\r\n",env)
+        for text in ("", "arbitrary startup failure", 'connection profile "missing" credential is unavailable'):
+            with self.subTest(text=text), self.assertRaisesRegex(RuntimeError,"safe configuration diagnostic unavailable"): check(text,env)
+        for private in ('"missing"','SERVICE_LASSO_MISSING_TOKEN',*env.keys(),*env.values()):
+            with self.subTest(private=private), self.assertRaisesRegex(RuntimeError,"configuration diagnostic privacy denied") as denied: check(safe+"\n"+private,env)
+            self.assertNotIn(private,str(denied.exception))
+        for name in ("tui20-native-posix-five-action.py","tui28-native-linux-five-action.py","tui20-native-five-action.py","tui28-native-windows-five-action.py"):
+            source=pathlib.Path(__file__).with_name(name).read_text(encoding="utf-8")
+            self.assertIn('SAFE_CONFIGURATION_DIAGNOSTIC="'+safe+'"',source)
+            self.assertIn('assert_safe_missing_credential(',source)
+            self.assertNotIn('connection profile "missing" credential is unavailable',source)
 
     def test_core_fixture_defines_only_owned_profiles_and_services(self):
         source = pathlib.Path(__file__).with_name("tui20-native-runtime.mjs").read_text(encoding="utf-8")
@@ -443,6 +464,7 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
             # every launch verifies the actual kernel-sealed copy's bytes.
             class ObservedTerminal:
                 def __init__(self,launch,executable,profile,env):
+                    self.text=harness["SAFE_CONFIGURATION_DIAGNOSTIC"]
                     self_case.assertEqual(harness["sha256_fd"](launch),identity["binarySHA256"])
                     self_case.assertEqual((os.fstat(held).st_dev,os.fstat(held).st_ino),inode)
                     observations.append(harness["sha256_fd"](held))

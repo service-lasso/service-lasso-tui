@@ -1,0 +1,29 @@
+/* UNRUN: closed context source geometry; no parser/kernel invocation. */
+#include "final_segment_test_support.h"
+typedef struct context_case {bootstrap_case base;sl_linux_public_startup startup;sl_linux_policy_parse parse;sl_linux_selinux_context context;sl_sepol_memory_attempt attempts[3];_Alignas(context_struct_t) unsigned char arena[sizeof(context_struct_t)+sizeof(ebitmap_node_t)+6];unsigned char input[1],output[4];sl_sepol_diagnostic diagnostic;sl_sepol_argument argument;} context_case;
+int main(void){
+ static context_case cases[18];
+ for(unsigned mode=0;mode<18;mode++){
+  context_case *e=&cases[mode];sl_linux_final_capture *r=&e->base.c.final_capture;sl_linux_selinux_context *o=&e->context;
+  r->prepared_controller=&e->base.c;r->actual_records=e->base.records;r->actual_capacity=100;r->actual_readback=e->base.bytes;r->actual_bytes=sizeof(e->base.bytes);r->actual_writes.calls=e->base.writes;r->actual_writes.capacity=2;r->actual_reads.calls=e->base.reads;r->actual_reads.capacity=2;e->base.c.startup_original=&e->startup;
+  e->startup.actual_contexts=o;e->startup.actual_context_capacity=1;e->startup.actual_parses=&e->parse;e->startup.actual_parse_capacity=1;e->parse.returned=1;
+  o->attempted=o->returned=1;o->parse_original=o->actual_parse=&e->parse;o->body=o->actual_body=e->input;o->extent=o->actual_extent=o->examined=1;
+  o->memory.actual_bytes=e->arena;o->memory.actual_capacity=o->memory.used=sizeof(e->arena);o->memory.actual_attempts=&e->attempts[0];o->memory.actual_attempt_capacity=o->memory.attempt_count=1;o->memory.finished=1;
+  e->attempts[0].entered=e->attempts[0].returned=1;e->attempts[0].operation=SL_SEPOL_ALLOCATE;e->attempts[0].result=e->arena;e->attempts[0].extent=sizeof(context_struct_t);o->context_original=(context_struct_t*)e->arena;
+  if(mode==1)o->returned=0;if(mode==2)o->context_original=(context_struct_t*)e->input;if(mode==3)o->memory.used=sizeof(context_struct_t)-1;if(mode==4)o->actual_parse=(sl_linux_policy_parse*)&e->base.bootstrap;if(mode==5)r->actual_records=(sl_linux_final_record*)o;if(mode==6)o->memory.active=1;
+  if(mode>=7&&mode<=12){sl_sepol_diagnostic_owner *d=&o->diagnostics;d->actual_memory=&o->memory;sl_sepol_diagnostic *f=&e->diagnostic;d->actual_frames=f;d->actual_capacity=d->count=1;d->actual_format_capacity=3;d->finished=1;d->first_failure=f;f->entered=f->returned=f->format_entered=f->format_returned=f->arguments_complete=1;f->format="%s";f->format_length=2;f->actual_arguments=&e->argument;f->actual_argument_capacity=f->argument_count=1;e->argument.kind=SL_ARG_STRING;e->argument.value.string="value";f->actual_output=(char*)e->output;f->actual_output_capacity=4;f->format_result=-77;f->result=-1;}
+  if(mode>=7&&mode<=12){unsigned char *copy=e->arena+sizeof(context_struct_t)+sizeof(ebitmap_node_t);memcpy(copy,"value",6);e->attempts[1].entered=e->attempts[1].returned=1;e->attempts[1].operation=SL_SEPOL_ALLOCATE;e->attempts[1].result=copy;e->attempts[1].offset=copy-e->arena;e->attempts[1].extent=6;o->memory.actual_attempt_capacity=o->memory.attempt_count=2;e->argument.referent_owner=&o->memory;e->argument.referent_original=e->argument.value.string;e->argument.referent_copy=copy;e->argument.referent_extent=e->argument.referent_copy_extent=6;e->argument.referent_entered=e->argument.referent_returned=e->argument.referent_terminated=1;}
+  if(mode==8)e->diagnostic.returned=0;if(mode==9)e->diagnostic.actual_output=(char*)r->actual_records;if(mode==10)e->diagnostic.argument_count=2;if(mode==11)o->diagnostics.first_failure=(sl_sepol_diagnostic*)&e->base.bootstrap;
+  if(mode==12){o->diagnostics.count=0;o->diagnostics.exhausted=1;o->diagnostics.first_failure=&o->diagnostics.exhaustion;o->diagnostics.exhaustion.entered=o->diagnostics.exhaustion.returned=1;o->diagnostics.exhaustion.result=-1;}
+  if(mode>=13){ebitmap_node_t *node=(ebitmap_node_t*)(e->arena+sizeof(context_struct_t));o->context_original->range.level[0].cat.node=node;o->context_original->range.level[0].cat.highbit=64;node->map=1;e->attempts[1].entered=e->attempts[1].returned=1;e->attempts[1].operation=SL_SEPOL_ALLOCATE;e->attempts[1].result=node;e->attempts[1].offset=sizeof(context_struct_t);e->attempts[1].extent=sizeof(*node);o->memory.actual_attempt_capacity=o->memory.attempt_count=2;}
+  if(mode==14)o->context_original->range.level[0].cat.node->next=(ebitmap_node_t*)e->input;if(mode==15)o->context_original->range.level[0].cat.node->next=o->context_original->range.level[0].cat.node;if(mode==16)e->attempts[1].returned=0;if(mode==17)e->attempts[0].returned=0;
+  unsigned char original[sizeof(*o)];memcpy(original,o,sizeof(original));unsigned long count=0,extent=0;long result=final_contexts(r,0,&count,&extent);
+  assert(!r->count&&!r->extent&&!memcmp(original,o,sizeof(original)));
+  if(!mode){assert(!result&&count==15);assert(!final_contexts(r,1,&count,&extent)&&r->count==15);assert(r->actual_records[6].body==e->input&&r->actual_records[7].body==e->arena);unsigned char expected[8];final_u64(expected,UINT64_MAX-24);assert(!memcmp(r->actual_records[8].header+8,expected,8));}
+  else if(mode==7){assert(!result&&count==27);assert(!final_contexts(r,1,&count,&extent)&&r->count==27);assert(r->actual_records[23].body==e->output&&r->actual_records[23].length==4&&e->diagnostic.format_result==-77);assert(r->actual_records[26].body==e->argument.referent_copy);unsigned char expected[8];final_u64(expected,29);assert(!memcmp(r->actual_records[26].header,expected,8));}
+  else if(mode==12){assert(!result&&count==21);assert(!final_contexts(r,1,&count,&extent)&&r->count==21&&o->diagnostics.first_failure==&o->diagnostics.exhaustion);}
+  else if(mode==13){assert(!result&&count==20);assert(!final_contexts(r,1,&count,&extent)&&r->count==20);assert(r->actual_records[17].body==(const unsigned char*)o->context_original->range.level[0].cat.node);}
+  else assert(result<0);
+ }
+ return 0;
+}

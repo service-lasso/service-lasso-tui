@@ -1,0 +1,13 @@
+# Windows duplex pending settlement357
+
+Source-only implementation, UNRUN. CancelIoEx is a request and does not wait; ERROR_NOT_FOUND cannot establish completion. The SAME original server/OVERLAPPED/event and pending backing remain owned. Separate finite settlement rows retain native GetOverlappedResult(FALSE), undefined connect transferred output, actual Internal observations and documented HasOverlappedIoCompleted observations. Normal, aborted, other error and incomplete are distinct. Positive kernel-operation completion retires only that borrower; it does not repair construction failure, grant connection usefulness, close handles or grant LOCAL/FINAL/return. Pending/unknown/capacity exhaustion preserves the graph and original primary failed stage.
+
+Actual source: duplex_windows.c/h owns cancellation and settlement rows; public_startup_windows.c invokes them on its failed pending-connect path before publishing returned startup result. Its full mutable roster is now18 regions including independent settlement backing, checked before stream/channel APIs. Fresh expected result does not imply numerical scheduling fit or a new deadline. Actual fixed generated geometry/entry and all last-borrower/custody/close consumers remain required.
+
+Conditional primary contracts read:
+- https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelioex : request is not completion; OVERLAPPED remains live until completion; normal/aborted/other-error outcomes separate.
+- https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-hasoverlappediocompleted : use only for the original operation whose begin actually returned ERROR_IO_PENDING; query details separately.
+- C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/um/WinBase.h SHA256 EC538199F5EBE8CEC2DFD4F1BA48316EF776C82D37277AED3A677965E494F192 line1907: macro compares DWORD Internal against STATUS_PENDING.
+- C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/um/ioapiset.h SHA256 7C3F659F98B3F1748A314BD64106583D01649333E0419B66232B4F64B3F85B0C : CancelIoEx prototype at117.
+
+The macro/source correspondence is not authorization to overwrite kernel-owned fields. Actual supported ABI/kernel/own-actor exclusion and same-overlapped lifetime are qualification premises. No process-wide policy, product signal changes, host settings, new issuer, infallible completion or always-settled failure assumption is introduced. No descriptor is closed by these bodies.

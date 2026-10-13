@@ -1,0 +1,12 @@
+/* UNRUN actual production paired owner ptrace/proc-read roster. */
+#define SERVICE_LASSO_OWNED_SEPOL 1
+#include "../public_startup_linux.h"
+#include <assert.h>
+#include <errno.h>
+static unsigned calls,read_calls;static long failure,read_failure;
+long sl_linux_interpret_candidate_ptrace(sl_linux_candidate_ptrace *p){calls++;p->attempted=p->returned=1;p->result=failure;return failure;}
+long sl_linux_interpret_candidate_owner_proc_read(sl_linux_candidate_ptrace *p){read_calls++;p->attempted=p->returned=1;p->result=read_failure;return read_failure;}
+#include "../candidate_startup_entry_linux.c"
+typedef struct{sl_linux_public_startup startup;sl_linux_candidate_ptrace ptrace[2];sl_linux_candidate_roles roles[1];sl_linux_candidate_payload_context payload[1];sl_linux_selinux_context owner[1];} fixture;
+static void prepare(fixture *f){sl_linux_public_startup *s=&f->startup;s->returned=s->candidate_roles_returned=s->candidate_routes_returned=1;s->stage=SL_STARTUP_ACQUIRED;s->candidate_ptrace=f->ptrace;s->candidate_ptrace_capacity=2;s->actual_policy_capacity=s->actual_context_capacity=s->actual_candidate_role_capacity=s->actual_candidate_payload_capacity=s->mounts.selinux_count=1;s->actual_candidate_roles=f->roles;s->actual_contexts=f->owner;s->actual_candidate_payloads=f->payload;for(unsigned j=0;j<2;j++){f->ptrace[j].roles_original=f->roles;f->ptrace[j].owner_original=f->owner;f->ptrace[j].payload_original=&f->payload[0].reachable;}}
+int main(void){fixture cases[6]={0};for(unsigned i=0;i<6;i++){fixture *f=&cases[i];prepare(f);failure=i==1?-91:0;read_failure=i==4?-93:0;if(i==2)f->startup.candidate_routes_result=-92;if(i==3)f->ptrace[1].owner_original=NULL;if(i==5)f->startup.candidate_ptrace_capacity=1;unsigned before=calls,rb=read_calls;long result=sl_linux_interpret_startup_candidate_ptrace(&f->startup);assert(f->startup.candidate_ptrace_returned);if(i==2||i==3||i==5)assert(result==-EINVAL&&calls==before&&read_calls==rb);else if(i==1)assert(result==-91&&calls==before+1&&read_calls==rb&&f->startup.candidate_ptrace_count==1);else assert(result==(i==4?-93:0)&&calls==before+1&&read_calls==rb+1&&f->startup.actual_candidate_ptrace==f->ptrace&&f->startup.candidate_ptrace_count==2&&f->ptrace[0].returned&&f->ptrace[1].returned);before=calls;rb=read_calls;assert(sl_linux_interpret_startup_candidate_ptrace(&f->startup)==-EINVAL&&calls==before&&read_calls==rb);}return 0;}

@@ -48,6 +48,14 @@ jobs:
       CANDIDATE_VERSION: ${{ needs.validate-source.outputs.version }}
       GOFLAGS: ''
       GOWORK: 'off'
+      GOAMD64: 'v1'
+      GOARCH: 'amd64'
+      GOENV: 'off'
+      GOTOOLCHAIN: 'local'
+      GOFIPS140: 'off'
+      GOEXPERIMENT: ''
+      CGO_ENABLED: '0'
+      GOCACHEPROG: ''
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:

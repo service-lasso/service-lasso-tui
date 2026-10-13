@@ -20,11 +20,11 @@ func TestReconciliationContextUsesOnlyClosedServerAuthority(t *testing.T) {
     defer server.Close()
     client, err := NewClientWithAuth(server.URL,server.Client(),"inert-fixture",AuthModeOAuthBearer)
     if err!=nil { t.Fatal(err) }
-    first, ok := client.ReconciliationContext()
-    if !ok || !strings.HasPrefix(first,"slrc1_") { t.Fatal("closed server context was not admitted") }
+    first, ok, failure := client.ReconciliationContext()
+    if failure!=nil || !ok || !strings.HasPrefix(first,"slrc1_") { t.Fatal("closed server context was not admitted") }
     body = strings.Replace(body,`"actorBinding":"`+a+`"`,`"actorBinding":"`+b+`"`,1)
-    second, ok := client.ReconciliationContext()
-    if !ok || first==second { t.Fatal("actor change failed to change durable binding") }
+    second, ok, failure := client.ReconciliationContext()
+    if failure!=nil || !ok || first==second { t.Fatal("actor change failed to change durable binding") }
     validBody := body
     for _, invalid := range []string{
         strings.Replace(validBody,`"context":`, `"unknown":true,"context":`,1),
@@ -34,8 +34,8 @@ func TestReconciliationContextUsesOnlyClosedServerAuthority(t *testing.T) {
         body+` {}`, strings.Repeat(" ",4097),
     } {
         body = invalid
-        if binding, admitted := client.ReconciliationContext(); admitted || binding!="" { t.Fatal("invalid context admitted") }
+        if binding, admitted, failure := client.ReconciliationContext(); admitted || binding!="" || failure==nil { t.Fatal("invalid context admitted or failure discarded") }
     }
     status=http.StatusNotFound
-    if binding, admitted := client.ReconciliationContext(); admitted || binding!="" { t.Fatal("Core2633 missing endpoint must deny persistent restoration") }
+    if binding, admitted, failure := client.ReconciliationContext(); admitted || binding!="" || failure!=nil { t.Fatal("Core2633 missing endpoint must deny persistent restoration without inventing a read failure") }
 }

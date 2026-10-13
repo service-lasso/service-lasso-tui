@@ -6,7 +6,7 @@ import os
 import hashlib
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, mock_open
 
 
 SCRIPT = os.path.join(os.path.dirname(__file__), "verify-release-asset-conpty.py")
@@ -121,7 +121,7 @@ class ReceiptTests(unittest.TestCase):
         with patch.dict(os.environ, {"SERVICE_LASSO_API_TOKEN": "host-credential", "UNRELATED_HOST_VALUE": "host-only"}):
             result = probe_module.direct_constructor_assertion("candidate.exe", {"sourceCommit": self.source_commit, "binarySHA256": self.binary_sha256}, runner=runner, nonce=nonce)
         self.assertEqual(result, {"exit": "exit_code_2", "startupBoundary": "api_url_invalid", "candidateIdentity": {"sourceCommit": self.source_commit, "binarySHA256": self.binary_sha256}})
-        self.assertEqual(observed["args"], ["candidate.exe"])
+        self.assertEqual(observed["args"], ["candidate.exe", "--compat-v1"])
         self.assertEqual(observed["environment"]["SERVICE_LASSO_API_URL"], "://invalid")
         self.assertEqual(observed["environment"]["SERVICE_LASSO_API_TOKEN"], probe_module.INERT_PROBE_TOKEN)
         self.assertNotEqual(observed["environment"]["SERVICE_LASSO_API_TOKEN"], "host-credential")
@@ -366,7 +366,7 @@ class ReceiptTests(unittest.TestCase):
                 backend=None,
             )
         self.assertEqual(result, 0)
-        self.assertEqual(FakePty.spawned[0][0][0], os.path.abspath("candidate.exe"))
+        self.assertEqual(FakePty.spawned[0][0], [os.path.abspath("candidate.exe"), "--compat-v1"])
 
     def test_actual_main_requires_both_identity_arguments_before_constructor_entry(self):
         base = [SCRIPT, "--executable", "candidate.exe", "--mode", "reconnect", "--api-url", "http://127.0.0.1:1"]
@@ -401,7 +401,11 @@ class ReceiptTests(unittest.TestCase):
                             if isinstance(waited, Exception): raise waited
                             return waited
                     terminal = QTerminal(); terminal.exitstatus = exitstatus; terminal.signalstatus = signalstatus
-                    pty = types.SimpleNamespace(spawn=lambda *_a, **_k: terminal)
+                    launches = []
+                    def spawn(args, **kwargs):
+                        launches.append(args)
+                        return terminal
+                    pty = types.SimpleNamespace(spawn=spawn)
                     output = io.StringIO()
                     with contextlib.redirect_stdout(output):
                         if helper_mode in ("connected", "core-unavailable"):
@@ -410,11 +414,199 @@ class ReceiptTests(unittest.TestCase):
                         else:
                             result = self.run_probe("candidate.exe", helper_mode, "http://127.0.0.1:1", os.path.join(root, "ready"), "reconnect", None, None, None, pty_process=pty, wait=lambda *_a: "rendered", wait_file=lambda *_a: True, backend=None)
                     payload = json.loads(output.getvalue())
+                    self.assertEqual(launches, [[os.path.abspath("candidate.exe") if helper_mode in ("unavailable", "reconnect") else "candidate.exe", "--compat-v1"]])
                     self.assertTrue(terminal.wait_observed)
                     self.assertEqual(result, 0 if reason == "completed" else 1)
                     self.assertEqual(payload["receipt"]["closedReason"], reason)
                     self.assertEqual(payload["receipt"]["outcome"], "normal" if reason == "completed" else "error")
 
+
+    def test_actual_probe_defers_public_success_until_close_and_retains_original_failures(self):
+        primary = OSError("PRIVATE primary terminal read")
+        cleanup = OSError("PRIVATE terminal close")
+        held_cleanup = OSError("PRIVATE held close")
+        events = []
+        class BrokenClose(FakePty):
+            def close(self, force=True):
+                events.append("terminal-close")
+                raise cleanup
+        terminal = BrokenClose()
+        import types
+        for failed in (False, True):
+            observation = {"failures": [], "cleanupFailures": []}
+            def wait(*_args):
+                if failed: raise primary
+                return "rendered"
+            def emit(value):
+                events.append("emit")
+                self.assertFalse(value["ok"])
+                self.assertNotIn("PRIVATE", json.dumps(value))
+            events.clear()
+            with patch.object(probe_module, "emit", emit):
+                result = self.run_probe("candidate.exe", "unavailable", "http://127.0.0.1:1", None, None, None, None, None, pty_process=types.SimpleNamespace(spawn=lambda *_a, **_k: terminal), wait=wait, backend=None, observation=observation)
+            self.assertEqual(result, 1)
+            self.assertEqual(events, ["terminal-close", "emit"])
+            self.assertEqual(observation["cleanupFailures"], [cleanup])
+            self.assertEqual(observation["failures"], [primary] if failed else [])
+        class Held:
+            path = os.path.abspath("candidate.exe")
+            receipt = {"sourceCommit": self.source_commit, "binarySHA256": self.binary_sha256}
+            def close(self):
+                events.append("held-close")
+                raise held_cleanup
+        held = Held()
+        observation = {"failures": [], "cleanupFailures": []}
+        events.clear()
+        with patch.object(probe_module, "emit", emit):
+            result = probe_module.discriminate_constructor_then_probe("candidate.exe", "unavailable", "http://127.0.0.1:1", None, None, None, None, None, pty_process=types.SimpleNamespace(spawn=lambda *_a, **_k: terminal), wait=lambda *_a: "rendered", backend=None, identity_acquirer=lambda *_a: (held.path, held), direct_assertion=lambda *_a: {"exit": "exit_code_2"}, observation=observation)
+        self.assertEqual(result, 1)
+        self.assertEqual(events, ["terminal-close", "held-close", "emit"])
+        self.assertEqual(observation["cleanupFailures"], [cleanup, held_cleanup])
+
+    def test_actual_windows_acquisition_retains_conversion_primary_and_once_owned_cleanup(self):
+        from unittest.mock import Mock
+        import types
+        import sys
+        import stat
+        primary = OSError("PRIVATE conversion")
+        secondary = OSError("PRIVATE descriptor close")
+        for conversion in ("crt", "file"):
+            calls = []
+            kernel = types.SimpleNamespace(CreateFileW=Mock(return_value=123), CloseHandle=Mock(return_value=0))
+            def open_handle(*_args):
+                calls.append("crt")
+                if conversion == "crt": raise primary
+                return 456
+            def open_file(*_args):
+                calls.append("file")
+                raise primary
+            def close_descriptor(value):
+                calls.append(("close-descriptor", value))
+                raise secondary
+            observation = {"failures": [], "cleanupFailures": []}
+            with patch.object(probe_module.os, "name", "nt"), patch.object(probe_module.os, "lstat", return_value=types.SimpleNamespace(st_mode=stat.S_IFREG, st_file_attributes=0)), patch.object(probe_module.ctypes, "WinDLL", return_value=kernel, create=True), patch.object(probe_module.ctypes, "get_last_error", return_value=5, create=True), patch.dict(sys.modules, {"msvcrt": types.SimpleNamespace(open_osfhandle=open_handle)}), patch.object(probe_module.os, "fdopen", side_effect=open_file), patch.object(probe_module.os, "close", side_effect=close_descriptor):
+                with self.assertRaises(OSError) as caught:
+                    probe_module.acquire_candidate_identity("candidate.exe", self.source_commit, self.binary_sha256, observation=observation)
+            self.assertIs(caught.exception, primary)
+            self.assertFalse(hasattr(primary, "_service_lasso_cleanup_failures"))
+            if conversion == "crt":
+                kernel.CloseHandle.assert_called_once_with(123)
+                self.assertEqual(calls, ["crt"])
+                self.assertEqual(len(observation["cleanupFailures"]), 1)
+            else:
+                kernel.CloseHandle.assert_not_called()
+                self.assertEqual(calls, ["crt", "file", ("close-descriptor", 456)])
+                self.assertEqual(observation["cleanupFailures"], [secondary])
+
+    def test_useful_release_probe_accepts_nonwritable_foreign_process(self):
+        import types
+        class SlottedTerminal:
+            __slots__ = ()
+            exitstatus = 0
+            signalstatus = None
+            def isalive(self): return False
+            def write(self, _value): pass
+            def wait(self): return 0
+            def close(self, force=True): pass
+        terminal = SlottedTerminal()
+        observation = {"failures": [], "cleanupFailures": []}
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            result = self.run_probe("candidate.exe", "unavailable", "http://127.0.0.1:1", None, None, None, None, None, pty_process=types.SimpleNamespace(spawn=lambda *_a, **_k: terminal), wait=lambda *_a: "rendered", backend=None, observation=observation)
+        self.assertEqual(result, 0)
+        self.assertTrue(json.loads(output.getvalue())["ok"])
+        self.assertEqual(observation["failures"], [])
+        self.assertEqual(observation["cleanupFailures"], [])
+        self.assertIs(observation["terminalCloses"][0]["process"],terminal)
+        self.assertTrue(observation["terminalCloses"][0]["completed"])
+
+    def test_actual_shutdown_then_probe_finally_attempts_terminal_close_once(self):
+        import types
+        original=OSError("PRIVATE first terminal close")
+        for failing in (False,True):
+            calls=[]; observation={"failures":[],"cleanupFailures":[]}
+            class Terminal:
+                __slots__=()
+                def close(self,force=True):
+                    calls.append("close")
+                    if failing: raise original
+                def isalive(self): return False
+            terminal=Terminal()
+            def wait(*_args):
+                if failing:
+                    for attempt in range(2):
+                        with self.assertRaises(RuntimeError): probe_module.check_shutdown(terminal,"request","ack","token",observation)
+                    raise RuntimeError("cleanup-unconfirmed")
+                probe_module.check_shutdown(terminal,"request","ack","token",observation)
+            with patch("builtins.open",mock_open(read_data="token\n")), patch.object(probe_module.os.path,"exists",return_value=True), contextlib.redirect_stdout(io.StringIO()) as output:
+                result=self.run_probe("candidate.exe","unavailable","http://127.0.0.1:1",None,None,None,None,None,pty_process=types.SimpleNamespace(spawn=lambda *_a,**_k:terminal),wait=wait,backend=None,observation=observation)
+            self.assertEqual(result,1); self.assertEqual(calls,["close"])
+            self.assertFalse(json.loads(output.getvalue())["ok"])
+            self.assertEqual(observation["cleanupFailures"],[])
+            item=observation["terminalCloses"][0]
+            self.assertIs(item["process"],terminal); self.assertEqual(item["completed"],not failing)
+            self.assertIs(item["original"],original if failing else None)
+            if failing:
+                self.assertIs(observation["failures"][0],original)
+                self.assertEqual(sum(item is original for item in observation["failures"]),1)
+
+    def test_actual_real_core_probe_closes_before_emit_and_preserves_primary(self):
+        import runpy
+        import types
+        import sys
+        modules = {}
+        if os.name != "nt":
+            enums = types.ModuleType("winpty.enums"); enums.Backend = types.SimpleNamespace(ConPTY=None)
+            ptyprocess = types.ModuleType("winpty.ptyprocess"); ptyprocess.PtyProcess = FakePty
+            modules = {"winpty": types.ModuleType("winpty"), "winpty.enums": enums, "winpty.ptyprocess": ptyprocess}
+        with patch.dict(sys.modules, modules):
+            actual = runpy.run_path(os.path.join(os.path.dirname(SCRIPT), "verify-real-core-conpty.py"))
+        primary, cleanup = OSError("PRIVATE read"), OSError("PRIVATE close")
+        for failed in (False, True):
+            events = []
+            class Terminal:
+                __slots__ = ()
+                exitstatus = 0
+                signalstatus = None
+                def isalive(self): return False
+                def write(self, _value): pass
+                def wait(self): return 0
+                def close(self, force=True):
+                    events.append("close")
+                    raise cleanup
+            def wait_for(*_args):
+                if failed: raise primary
+                return True
+            def emit(value):
+                events.append("emit")
+                self.assertFalse(value["ok"])
+                self.assertNotIn("PRIVATE", json.dumps(value))
+            observation = {"failures": [], "cleanupFailures": []}
+            with patch.dict(actual["probe"].__globals__, {"PtyProcess": types.SimpleNamespace(spawn=lambda *_a, **_k: Terminal()), "wait_for": wait_for, "emit": emit}):
+                result = actual["probe"]("candidate.exe", "unavailable", "http://127.0.0.1:1", observation=observation)
+            self.assertEqual(result, 1)
+            self.assertEqual(events, ["close", "emit"])
+            self.assertEqual(observation["failures"], [primary] if failed else [])
+            self.assertEqual(observation["cleanupFailures"], [cleanup])
+
+    def test_actual_private_shutdown_wait_and_constructor_failures_keep_originals(self):
+        original = OSError("PRIVATE lifecycle")
+        observation = {"failures": [], "cleanupFailures": []}
+        class Broken:
+            def close(self, force=True): raise original
+            def wait(self): raise original
+        self.assertFalse(probe_module.acknowledge_shutdown(Broken(), "unused", "unused", observation=observation))
+        self.assertEqual(probe_module.observed_q_exit(Broken(), observation), "terminal_unknown")
+        self.assertIsNone(probe_module.direct_constructor_assertion("candidate.exe", {"sourceCommit": self.source_commit, "binarySHA256": self.binary_sha256}, runner=lambda *_a, **_k: (_ for _ in ()).throw(original), observation=observation))
+        self.assertEqual(observation["failures"], [original, original, original])
+        eof = EOFError("PRIVATE eof")
+        class Exited:
+            exitstatus = 0
+            signalstatus = None
+            def isalive(self): return False
+            def read(self): raise eof
+        with self.assertRaises(probe_module.TerminalClosed):
+            probe_module.wait_for(Exited(), ("ready",), 1, select_fn=lambda *_a: ([object()], [], []), observation=observation)
+        self.assertIs(observation["failures"][-1], eof)
 
 if __name__ == "__main__":
     unittest.main()

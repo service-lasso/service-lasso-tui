@@ -2,11 +2,25 @@
 
 Keyboard-first terminal operator interface for the Service Lasso runtime API.
 
-## Run
+## Current operator/v2 source
+
+The source defaults to operator/v2; `--compat-v1` explicitly selects the
+historical compatibility interface. The current complete issue1/PR33 source
+unit is incomplete and UNRUN. Source review, original diagnostic capture,
+finite native ownership, genuine installed Core/CLI/TUI inputs and direct
+Windows/Linux acceptance remain pending; no current release qualification is
+claimed. See the [current capability matrix](docs/capability-matrix.md) and
+[read-only declared action inspection](docs/declared-action-inspection.md).
+
+The following retained run and probe sections describe historical compatibility
+work and dependencies. Their old candidate pins and observations are not current
+operator/v2 admission or instructions to bypass its outstanding gates.
+
+## Historical explicit compatibility interface
 
 ```powershell
 $env:SERVICE_LASSO_API_TOKEN = '<local operator token>'
-go run ./cmd/service-lasso-tui --api http://127.0.0.1:17883
+go run ./cmd/service-lasso-tui --compat-v1 --api http://127.0.0.1:17883
 ```
 
 Use `j`/`k` or the arrow keys to select a service, `Enter` for details, `r` to
@@ -22,7 +36,7 @@ explicitly advertises cancellation support.
 The TUI retains a locally protected, metadata-only reconciliation record only
 when Core supplies a validated opaque actor/client/instance context for that
 accepted operation. The client admits only the reviewed server-issued
-reconciliation-context endpoint. The currently qualified Core2633 runtime
+reconciliation-context endpoint. The historically qualified Core2633 runtime
 pin lacks that endpoint, so persistent restoration remains unavailable with
 that runtime. The client never derives authority from a URL, profile, or credential.
 It never saves a credential, confirmation phrase, preview, request body, or
@@ -174,3 +188,11 @@ four archive-only checksum rows. Darwin remains deferred for the scoped route.
 Source implementation and fixture consistency are separate from native runtime
 acceptance, actual publication, independent Core catalog admission and owner GA.
 The current runtime pin's persistent/pending reconciliation gap remains open.
+
+## Current log search source (author18; unrun)
+The selected v2 log search query and query-bound read editor are now authored.
+See [the keyboard search guide](docs/operator-log-search.md). Current Core v2
+log issuance, source handles, tail/source rotation and genuine installed/native
+acceptance remain missing or unproved; full issue1 delivery remains incomplete.
+
+Selected v2 metadata cache, local favorites filtering and current graph layout labels are source-only behavior described in [operator metadata](docs/operator-metadata.md). The authentic server revision/all-writer producer and finite retained-cache owner remain missing; all new cases are UNRUN.

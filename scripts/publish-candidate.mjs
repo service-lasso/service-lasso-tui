@@ -6,7 +6,7 @@ import { assertManifest, assertPreflight, assertPublicationDirectory, candidateI
 
 const ROOT = "https://api.github.com/repos/service-lasso/service-lasso-tui";
 const SHA = /^[a-f0-9]{40}$/u;
-const fail = message => { throw new Error(message); };
+const fail = (message,...causes) => { throw new Error(message,causes.length?{cause:causes[0]}:undefined); };
 const canonical = value => JSON.stringify(value && typeof value === "object" ? Array.isArray(value) ? value.map(item => JSON.parse(canonical(item))) : Object.fromEntries(Object.keys(value).sort().map(key => [key, JSON.parse(canonical(value[key]))])) : value);
 
 // One deadline covers response headers AND the entire streamed body. Never log
@@ -28,7 +28,7 @@ export async function providerJSON(fetchImpl, token, route, { method = "GET", bo
       for await (const chunk of response.body) { const bytes = Buffer.from(chunk); size += bytes.length; if (size > 1048576) fail("provider metadata bound exceeded"); chunks.push(bytes); }
       return JSON.parse(Buffer.concat(chunks).toString("utf8"));
     })()]);
-  } catch { fail("provider request or metadata denied"); } finally { clearTimeout(timer); controller.abort(); }
+  } catch(cause) { fail("provider request or metadata denied",cause); } finally { clearTimeout(timer); controller.abort(); }
 }
 
 export async function resolveCandidateTag({ identity, read }) {
@@ -99,7 +99,7 @@ export async function publishCandidate({ assetDirectory, identity, token, fetchI
         const response = await fetchImpl(`https://uploads.github.com/repos/service-lasso/service-lasso-tui/releases/${created.id}/assets?name=${encodeURIComponent(name)}`, { method: "POST", redirect: "error", signal: controller.signal, headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "Content-Type": "application/octet-stream" }, body: held.bytes[name] });
         if (response.status !== 201) fail("candidate upload denied");
       })(), new Promise((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error("candidate upload deadline")); }, 30000); })]);
-    } catch { fail("candidate upload denied"); } finally { clearTimeout(timer); controller.abort(); }
+    } catch(cause) { fail("candidate upload denied",cause); } finally { clearTimeout(timer); controller.abort(); }
   }
   const draft = await read(`/releases/${created.id}`);
   if (draft?.id !== created.id) fail("draft numeric identity mismatch");

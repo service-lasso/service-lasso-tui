@@ -86,29 +86,32 @@ class CandidateIdentity:
     def close(self):
         self.file.close()
 
-def acquire_candidate_identity(executable, source_commit, expected_binary_sha256):
-    # The expected digest and source revision are public candidate identities.
-    # They are only accepted after this owned handle observes the bytes that the
-    # child will execute. On Windows the handle refuses write and delete sharing
-    # until the PTY child has been spawned and the probe has finished.
+def acquire_candidate_identity(executable, source_commit, expected_binary_sha256, observation=None):
     if not isinstance(executable, str) or not SOURCE_COMMIT_PATTERN.fullmatch(source_commit or "") or not SHA256_PATTERN.fullmatch(expected_binary_sha256 or ""):
         raise ValueError("candidate identity invalid")
     executable = os.path.abspath(executable)
     metadata = os.lstat(executable)
     if not stat.S_ISREG(metadata.st_mode) or (os.name == "nt" and getattr(metadata, "st_file_attributes", 0) & 0x400):
         raise ValueError("candidate executable invalid")
-    if os.name == "nt":
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        kernel32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
-        kernel32.CreateFileW.restype = wintypes.HANDLE
-        handle = kernel32.CreateFileW(executable, 0x80000000, 0x00000001, None, 3, 0x80, None)
-        if handle == wintypes.HANDLE(-1).value:
-            raise OSError(ctypes.get_last_error(), "CreateFileW candidate identity")
-        import msvcrt
-        file = os.fdopen(msvcrt.open_osfhandle(handle, os.O_RDONLY), "rb")
-    else:
-        file = open(executable, "rb")
+    file, descriptor, handle, kernel32 = None, None, None, None
     try:
+        if os.name == "nt":
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+            kernel32.CreateFileW.restype = wintypes.HANDLE
+            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+            kernel32.CloseHandle.restype = wintypes.BOOL
+            handle = kernel32.CreateFileW(executable, 0x80000000, 0x00000001, None, 3, 0x80, None)
+            if handle == wintypes.HANDLE(-1).value:
+                handle = None
+                raise OSError(ctypes.get_last_error(), "CreateFileW candidate identity")
+            import msvcrt
+            descriptor = msvcrt.open_osfhandle(handle, os.O_RDONLY)
+            handle = None  # CRT descriptor now owns the original handle.
+            file = os.fdopen(descriptor, "rb")
+            descriptor = None  # File now owns the original descriptor.
+        else:
+            file = open(executable, "rb")
         digest = hashlib.sha256()
         while chunk := file.read(1024 * 1024):
             digest.update(chunk)
@@ -116,12 +119,22 @@ def acquire_candidate_identity(executable, source_commit, expected_binary_sha256
         if observed != expected_binary_sha256:
             raise ValueError("candidate executable digest mismatch")
         return executable, CandidateIdentity(file, executable, source_commit, observed)
-    except Exception:
-        file.close()
+    except Exception as original:
+        # Keep the exact original raised object; secondary teardown originals
+        # belong to the caller-local observation, never to foreign exceptions.
+        cleanup = []
+        try:
+            if file is not None: file.close()
+            elif descriptor is not None: os.close(descriptor)
+            elif handle is not None:
+                if not kernel32.CloseHandle(handle):
+                    raise OSError(ctypes.get_last_error(), "CloseHandle candidate identity")
+        except Exception as secondary:
+            cleanup.append(secondary)
+        if observation is not None: observation["cleanupFailures"].extend(cleanup)
         raise
 
-
-def terminal_close_reason(process):
+def terminal_close_reason(process, observation=None):
     # EOF is a stream observation, not a process-exit observation. Query only
     # the owned PTY's bounded lifecycle fields; never retain terminal output.
     try:
@@ -129,7 +142,8 @@ def terminal_close_reason(process):
             return None
         signal_status = getattr(process, "signalstatus", None)
         exit_status = getattr(process, "exitstatus", None)
-    except Exception:
+    except Exception as original:
+        if observation is not None: observation["failures"].append(original)
         return "terminal_unknown"
     if isinstance(signal_status, int) and not isinstance(signal_status, bool):
         if signal_status != 0:
@@ -146,14 +160,15 @@ def terminal_close_reason(process):
         return "terminal_exited_nonzero"
     return "terminal_unknown"
 
-def observed_q_exit(process):
+def observed_q_exit(process, observation=None):
     # Called only after bounded non-live observation. wait() is the actual
     # owned terminal wait; EOF or isalive(False) alone never proves normal q.
     try:
         waited = process.wait()
-    except Exception:
+    except Exception as original:
+        if observation is not None: observation["failures"].append(original)
         return "terminal_unknown"
-    reason = terminal_close_reason(process)
+    reason = terminal_close_reason(process, observation)
     if reason == "terminal_exited_zero" and (not isinstance(waited, int) or isinstance(waited, bool) or waited != 0):
         return "terminal_unknown"
     return reason or "terminal_unknown"
@@ -187,7 +202,7 @@ def constrained_child_environment(api_url, nonce, term=None):
         environment["TERM"] = term
     return environment
 
-def direct_constructor_assertion(executable, candidate_identity, runner=subprocess.run, nonce=None):
+def direct_constructor_assertion(executable, candidate_identity, runner=subprocess.run, nonce=None, observation=None):
     # Run the candidate outside ConPTY first. The owned executable handle is
     # retained by the caller; stderr is processed only in memory and discarded.
     nonce = nonce or secrets.token_hex(32)
@@ -195,44 +210,64 @@ def direct_constructor_assertion(executable, candidate_identity, runner=subproce
         return None
     environment = constrained_child_environment("://invalid", nonce)
     try:
-        completed = runner([executable], cwd=os.path.dirname(executable), env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=5, check=False)
+        completed = runner([executable, "--compat-v1"], cwd=os.path.dirname(executable), env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=5, check=False)
         terminal_text = completed.stderr.decode("utf-8", "replace") if isinstance(completed.stderr, bytes) else ""
         frame = STARTUP_MARKER_PATTERN.fullmatch(terminal_text)
         boundary = startup_boundary_from_terminal_text(terminal_text, nonce, candidate_identity)
         if completed.returncode != 2 or frame is None or boundary != "api_url_invalid":
             return None
-    except Exception:
+    except Exception as original:
+        if observation is not None: observation["failures"].append(original)
         return None
     return {"exit": "exit_code_2", "startupBoundary": "api_url_invalid", "candidateIdentity": candidate_identity}
 
-def acknowledge_shutdown(process, acknowledgement_file, token):
+def close_terminal_once(process, observation, failure_owner):
+    closes=observation.setdefault("terminalCloses",[])
+    for item in closes:
+        if item["process"] is process: return item
+    item={"process":process,"attempted":True,"completed":False,"original":None}
+    closes.append(item)
     try:
         process.close(force=True)
+        item["completed"]=True
+    except Exception as original:
+        item["original"]=original
+        observation[failure_owner].append(original)
+    return item
+
+def acknowledge_shutdown(process, acknowledgement_file, token, observation=None):
+    if observation is None: observation={"failures":[],"cleanupFailures":[]}
+    try:
+        closed=close_terminal_once(process,observation,"failures")
+        if not closed["completed"]: return False
         if process.isalive(): return False
         with open(acknowledgement_file, "x", encoding="utf-8") as marker: marker.write(token + "\n")
         return True
-    except Exception:
+    except Exception as original:
+        if observation is not None: observation["failures"].append(original)
         return False
 
-def check_shutdown(process, request_file, acknowledgement_file, token):
+def check_shutdown(process, request_file, acknowledgement_file, token, observation=None):
     if request_file and os.path.exists(request_file):
         try:
             with open(request_file, "r", encoding="utf-8") as request: requested = request.read()
-        except Exception:
+        except Exception as original:
+            if observation is not None: observation["failures"].append(original)
             requested = ""
-        if requested == token + "\n" and acknowledge_shutdown(process, acknowledgement_file, token): raise ShutdownRequested()
+        if requested == token + "\n" and acknowledge_shutdown(process, acknowledgement_file, token, observation): raise ShutdownRequested()
         raise RuntimeError("cleanup-unconfirmed")
 
-def wait_for(process, expected, timeout, request_file=None, acknowledgement_file=None, token=None, startup_probe_nonce=None, candidate_identity=None, clock=time.monotonic, select_fn=select.select, sleeper=time.sleep):
+def wait_for(process, expected, timeout, request_file=None, acknowledgement_file=None, token=None, startup_probe_nonce=None, candidate_identity=None, clock=time.monotonic, select_fn=select.select, sleeper=time.sleep, observation=None):
     deadline, text = clock() + timeout, ""
     while clock() < deadline:
-        check_shutdown(process, request_file, acknowledgement_file, token)
+        check_shutdown(process, request_file, acknowledgement_file, token, observation)
         if all(value in text for value in expected): return text
         readable, _, _ = select_fn([process], [], [], min(0.1, max(0, deadline - clock())))
         if readable:
             try: text += process.read()
-            except EOFError:
-                closed_reason = terminal_close_reason(process)
+            except EOFError as original:
+                if observation is not None: observation["failures"].append(original)
+                closed_reason = terminal_close_reason(process, observation)
                 if closed_reason is not None:
                     raise TerminalClosed(closed_reason, startup_boundary_from_terminal_text(text, startup_probe_nonce, candidate_identity))
                 # pywinpty can surface a transient EOF while the owned process
@@ -241,31 +276,41 @@ def wait_for(process, expected, timeout, request_file=None, acknowledgement_file
                 sleeper(min(0.05, max(0, deadline - clock())))
     return text if all(value in text for value in expected) else None
 
-def wait_for_file(file_name, timeout, process=None, request_file=None, acknowledgement_file=None, token=None, clock=time.monotonic, sleeper=time.sleep):
+def wait_for_file(file_name, timeout, process=None, request_file=None, acknowledgement_file=None, token=None, clock=time.monotonic, sleeper=time.sleep, observation=None):
     deadline = clock() + timeout
     while clock() < deadline:
-        if process is not None: check_shutdown(process, request_file, acknowledgement_file, token)
+        if process is not None: check_shutdown(process, request_file, acknowledgement_file, token, observation)
         if os.path.exists(file_name): return True
         sleeper(0.05)
     return False
 
-def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, pty_process=PtyProcess, wait=wait_for, wait_file=wait_for_file, backend=CONPTY_BACKEND, startup_probe_nonce=None, source_commit=None, expected_binary_sha256=None, identity_acquirer=acquire_candidate_identity, held_candidate=None, direct_constructor=None):
+def _probe_attempt(executable, mode, api_url, ready_file, reconnect_file, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, pty_process=PtyProcess, wait=wait_for, wait_file=wait_for_file, backend=CONPTY_BACKEND, startup_probe_nonce=None, source_commit=None, expected_binary_sha256=None, identity_acquirer=acquire_candidate_identity, held_candidate=None, direct_constructor=None, observation=None):
+    observation = observation if observation is not None else {"failures": [], "cleanupFailures": []}
     process, stage, candidate_identity = None, "launch", None
     owns_candidate = held_candidate is None
+    actual_wait_file = wait_file
+    def wait_file(*args):
+        return actual_wait_file(*args, observation=observation) if actual_wait_file is wait_for_file else actual_wait_file(*args)
+    actual_wait = wait
+    def wait(*args):
+        return actual_wait(*args, observation=observation) if actual_wait is wait_for else actual_wait(*args)
     def fail_probe(failed_stage, reason=None, outcome_receipt=None):
-        return fail(failed_stage, reason, outcome_receipt, direct_constructor)
+        safe_stage = failed_stage if failed_stage in RECEIPT_STAGES else "launch"
+        result = {"ok": False, "stage": safe_stage, "receipt": outcome_receipt or receipt(safe_stage, "error", "stage_failed")}
+        if direct_constructor is not None: result["directConstructor"] = direct_constructor
+        return 1, result
     try:
         if pty_process is None: return fail_probe(stage)
         startup_probe_nonce = startup_probe_nonce or secrets.token_hex(32)
         if len(startup_probe_nonce) != 64 or any(character not in "0123456789abcdef" for character in startup_probe_nonce):
             return fail_probe(stage)
         if held_candidate is None:
-            executable, held_candidate = identity_acquirer(executable, source_commit, expected_binary_sha256)
+            executable, held_candidate = identity_acquirer(executable, source_commit, expected_binary_sha256, observation=observation) if identity_acquirer is acquire_candidate_identity else identity_acquirer(executable, source_commit, expected_binary_sha256)
         else:
             executable = held_candidate.path
         candidate_identity = held_candidate.receipt
         environment = constrained_child_environment(api_url, startup_probe_nonce, term="xterm-256color")
-        process = pty_process.spawn([executable], cwd=os.path.dirname(executable), env=environment, dimensions=(40, 120), backend=backend)
+        process = pty_process.spawn([executable, "--compat-v1"], cwd=os.path.dirname(executable), env=environment, dimensions=(40, 120), backend=backend)
         expected = ("Service Lasso TUI", "Runtime API unavailable", "Press r to retry")
         stage = "startup"
         if not wait(process, expected, 20, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, startup_probe_nonce, candidate_identity):
@@ -277,14 +322,16 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
                 try:
                     readable, _, _ = select.select([process], [], [], 0.1)
                     if readable: process.read()
-                except EOFError: break
+                except EOFError as original:
+                    observation["failures"].append(original)
+                    break
             if process.isalive(): return fail_probe(stage, outcome_receipt=receipt(stage, "error", "stage_failed", candidate_identity=candidate_identity))
-            closed_reason = observed_q_exit(process)
+            closed_reason = observed_q_exit(process, observation)
             if closed_reason != "terminal_exited_zero":
                 return fail_probe(stage, outcome_receipt=receipt(stage, "error", closed_reason, candidate_identity=candidate_identity))
             result = {"ok": True, "mode": mode, "exit": "q", "receipt": receipt(stage, "normal", "completed", candidate_identity=candidate_identity)}
             if direct_constructor is not None: result["directConstructor"] = direct_constructor
-            emit(result); return 0
+            return 0, result
         if not ready_file or not reconnect_file:
             return fail_probe("setup", outcome_receipt=receipt("startup", "error", "stage_failed", candidate_identity=candidate_identity))
         with open(ready_file, "x", encoding="utf-8") as marker: marker.write("unavailable-rendered\n")
@@ -295,9 +342,10 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
         # transition, then exercise the documented reconnect key in that process.
         stage = "reconnect"
         try:
-            check_shutdown(process, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token)
+            check_shutdown(process, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, observation)
             process.write("r")
-        except Exception:
+        except Exception as original:
+            observation["failures"].append(original)
             return fail_probe(stage, "pty-write-failed", receipt(stage, "error", "stage_failed", candidate_identity=candidate_identity))
         if not wait(process, ("Runtime identity:", "Services needing attention"), 20, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, startup_probe_nonce, candidate_identity):
             return fail_probe(stage, "connected-screen-not-observed", receipt(stage, "timeout", "timed_out", candidate_identity=candidate_identity))
@@ -316,44 +364,73 @@ def probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_reques
             try:
                 readable, _, _ = select.select([process], [], [], 0.1)
                 if readable: process.read()
-            except EOFError: break
+            except EOFError as original:
+                observation["failures"].append(original)
+                break
         if process.isalive():
             return fail_probe(stage, outcome_receipt=receipt(stage, "timeout", "timed_out", candidate_identity=candidate_identity))
-        closed_reason = observed_q_exit(process)
+        closed_reason = observed_q_exit(process, observation)
         if closed_reason != "terminal_exited_zero":
             return fail_probe(stage, outcome_receipt=receipt(stage, "error", closed_reason, candidate_identity=candidate_identity))
         result = {"ok": True, "mode": mode, "reconnect": "r", "navigation": ["d", "?"], "narrowResize": narrow_resize, "exit": "q", "receipt": receipt(stage, "normal", "completed", candidate_identity=candidate_identity)}
         if direct_constructor is not None: result["directConstructor"] = direct_constructor
-        emit(result); return 0
-    except ShutdownRequested:
+        return 0, result
+    except ShutdownRequested as original:
+        observation["failures"].append(original)
         receipt_stage = stage if stage in RECEIPT_STAGES else "exit"
         return fail_probe(receipt_stage, "shutdown-requested", receipt(receipt_stage, "error", "shutdown_requested", candidate_identity=candidate_identity))
     except TerminalClosed as closed:
+        observation["failures"].append(closed)
         receipt_stage = stage if stage in RECEIPT_STAGES else "launch"
         return fail_probe(receipt_stage, outcome_receipt=receipt(receipt_stage, "error", closed.reason, closed.startup_boundary if receipt_stage == "startup" else None, candidate_identity))
-    except Exception:
+    except Exception as original:
+        observation["failures"].append(original)
         receipt_stage = stage if stage in RECEIPT_STAGES else "launch"
         return fail_probe(stage, "pty-operation-failed" if stage == "reconnect" else None, receipt(receipt_stage, "error", "stage_failed", candidate_identity=candidate_identity))
     finally:
         if process is not None:
-            try: process.close(force=True)
-            except Exception: pass
+            close_terminal_once(process,observation,"cleanupFailures")
         if owns_candidate and held_candidate is not None:
-            held_candidate.close()
+            try: held_candidate.close()
+            except Exception as original: observation["cleanupFailures"].append(original)
 
-def discriminate_constructor_then_probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, pty_process=PtyProcess, wait=wait_for, wait_file=wait_for_file, backend=CONPTY_BACKEND, source_commit=None, expected_binary_sha256=None, identity_acquirer=acquire_candidate_identity, direct_assertion=direct_constructor_assertion):
+def probe(*args, observation=None, **kwargs):
+    # Caller-local originals survive result selection. Close is an attempted
+    # teardown only, never EOF, descendant absence or native acknowledgement.
+    observation = observation if observation is not None else {"failures": [], "cleanupFailures": []}
+    code, result = _probe_attempt(*args, observation=observation, **kwargs)
+    if observation["cleanupFailures"] and result["ok"]:
+        stage = result.get("stage", "exit")
+        identity = result["receipt"].get("candidateIdentity")
+        result = {"ok": False, "stage": stage, "receipt": receipt(stage, "error", "stage_failed", candidate_identity=identity), **({"directConstructor": result["directConstructor"]} if "directConstructor" in result else {})}
+        code = 1
+    emit(result)
+    return code
+
+def discriminate_constructor_then_probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, pty_process=PtyProcess, wait=wait_for, wait_file=wait_for_file, backend=CONPTY_BACKEND, source_commit=None, expected_binary_sha256=None, identity_acquirer=acquire_candidate_identity, direct_assertion=direct_constructor_assertion, observation=None):
+    observation = observation if observation is not None else {"failures": [], "cleanupFailures": []}
     held_candidate = None
+    code, result = 1, None
     try:
-        executable, held_candidate = identity_acquirer(executable, source_commit, expected_binary_sha256)
-        direct_constructor = direct_assertion(executable, held_candidate.receipt)
+        executable, held_candidate = identity_acquirer(executable, source_commit, expected_binary_sha256, observation=observation) if identity_acquirer is acquire_candidate_identity else identity_acquirer(executable, source_commit, expected_binary_sha256)
+        direct_constructor = direct_assertion(executable, held_candidate.receipt, observation=observation) if direct_assertion is direct_constructor_assertion else direct_assertion(executable, held_candidate.receipt)
         if direct_constructor is None:
-            return fail("direct-constructor", outcome_receipt=receipt("direct-constructor", "error", "stage_failed", candidate_identity=held_candidate.receipt))
-        return probe(executable, mode, api_url, ready_file, reconnect_file, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, pty_process=pty_process, wait=wait, wait_file=wait_file, backend=backend, source_commit=source_commit, expected_binary_sha256=expected_binary_sha256, identity_acquirer=identity_acquirer, held_candidate=held_candidate, direct_constructor=direct_constructor)
-    except Exception:
-        return fail("direct-constructor", outcome_receipt=receipt("direct-constructor", "error", "stage_failed", candidate_identity=held_candidate.receipt if held_candidate is not None else None))
+            result = {"ok": False, "stage": "direct-constructor", "receipt": receipt("direct-constructor", "error", "stage_failed", candidate_identity=held_candidate.receipt)}
+        else:
+            code, result = _probe_attempt(executable, mode, api_url, ready_file, reconnect_file, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, pty_process=pty_process, wait=wait, wait_file=wait_file, backend=backend, source_commit=source_commit, expected_binary_sha256=expected_binary_sha256, identity_acquirer=identity_acquirer, held_candidate=held_candidate, direct_constructor=direct_constructor, observation=observation)
+    except Exception as original:
+        observation["failures"].append(original)
+        result = {"ok": False, "stage": "direct-constructor", "receipt": receipt("direct-constructor", "error", "stage_failed", candidate_identity=held_candidate.receipt if held_candidate is not None else None)}
     finally:
         if held_candidate is not None:
-            held_candidate.close()
+            try: held_candidate.close()
+            except Exception as original: observation["cleanupFailures"].append(original)
+    if observation["cleanupFailures"] and result["ok"]:
+        stage = result.get("stage", "exit")
+        result = {"ok": False, "stage": stage, "receipt": receipt(stage, "error", "stage_failed", candidate_identity=result["receipt"].get("candidateIdentity")), **({"directConstructor": result["directConstructor"]} if "directConstructor" in result else {})}
+        code = 1
+    emit(result)
+    return code
 
 def main():
     parser = argparse.ArgumentParser(add_help=False)

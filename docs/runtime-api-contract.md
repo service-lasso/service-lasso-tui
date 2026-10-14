@@ -1,6 +1,9 @@
-# Runtime API contract
+# Historical compatibility-v1 runtime API contract
 
-The client targets Service Lasso Core `develop` HTTP contracts. It sends
+This route table describes the explicit `--compat-v1` client. The default
+operator-v2 client follows the separately selected contract and remains subject
+to complete current Core/TUI integration and native acceptance. The compatibility
+client targets Service Lasso Core `develop` HTTP contracts. It sends
 `SERVICE_LASSO_API_TOKEN` only as `x-service-lasso-admin-token`; no token is
 accepted on the command line, rendered, or included in errors.
 
@@ -24,8 +27,16 @@ accepted on the command line, rendered, or included in errors.
 Set `SERVICE_LASSO_API_URL` or pass `--api` to target a runtime. The default is
 `http://127.0.0.1:17883`. Connection errors are displayed in the TUI and can be
 retried with `r`; they are never presented as healthy runtime state. On a
-non-2xx response the client retains only the method, path, and HTTP status; it
-does not parse, render, or retain the server response body. Redirect responses
+non-2xx response ordinary errors expose only the fixed safe method, route and
+HTTP status. Current unrun source privately retains the actual returned response,
+body, bounded `io.ReadAll` bytes and read/close failures behind the failed request;
+it never renders or serializes that private observation as ordinary error output.
+The existing 1 MiB plus one read remains partial when the body exceeds that bound;
+it proves neither complete response capture nor durable/native custody, ACK,
+finite retention lifetime or whole-runtime budget. Reconciliation retains the
+same partial private observations within its existing 4096-plus-one bound;
+genuine 404 endpoint absence remains useful and reads no body. Complete capture
+and downstream semantic-refusal continuity remain unfinished. Redirect responses
 also fail closed and are never followed, so an operator token cannot be sent to
 another origin or a downgraded transport.
 

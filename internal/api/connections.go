@@ -1,8 +1,9 @@
 package api
 
 import (
-	"encoding/json"
-	"fmt"
+ "github.com/service-lasso/service-lasso-tui/internal/lifetime"
+	"io"
+ "errors"
 	"os"
 	"sort"
 	"strings"
@@ -27,6 +28,7 @@ type connectionFile struct {
 // flags > SERVICE_LASSO_API_* environment > selected profile > loopback default.
 // Token values themselves only ever come from a named process environment variable.
 type ConnectionOptions struct {
+ Receiver *lifetime.Receiver
 	ConfigPath string
 	Profile    string
 	APIURL     string
@@ -35,12 +37,44 @@ type ConnectionOptions struct {
 }
 
 type ConnectionManager struct {
+ receiver *lifetime.Receiver
 	profiles map[string]ConnectionProfile
 	current  string
 	env      func(string) string
+ operatorV2 bool
 }
 
 func ResolveConnections(options ConnectionOptions) (*ConnectionManager, *Client, error) {
+ return resolveConnections(options,false)
+}
+
+func ResolveOperatorConnections(options ConnectionOptions)(*ConnectionManager,*Client,error){
+ return resolveConnections(options,true)
+}
+
+func resolveConnections(options ConnectionOptions,operatorV2 bool)(*ConnectionManager,*Client,error){
+ return resolveConnectionsWithOpener(options,operatorV2,func(path string)(io.ReadCloser,error){return os.Open(path)})
+}
+
+// This caller-local seam preserves the actual file/read/close observations.
+// It supplies no complete-file, durable capture or later manager lifetime claim.
+type connectionInputObservation struct{
+ Path string
+ File io.ReadCloser
+ Raw []byte
+ Limit int
+ OpenAttempted,ReadAttempted,CloseAttempted bool
+ OpenError,ReadError,CloseError error
+}
+func retainConnectionInput(err error,observation *connectionInputObservation)error{
+ if err==nil||observation==nil{return err}
+ switch failure:=err.(type){case *OperatorError:failure.input=observation;case *ConfigurationError:failure.input=observation}
+ return err
+}
+func resolveConnectionsWithOpener(options ConnectionOptions,operatorV2 bool,open func(string)(io.ReadCloser,error))(managerResult *ConnectionManager,clientResult *Client,failure error){
+	occurrence:=&connectionOccurrence{Options:options,Opener:open};if err:=options.Receiver.Enroll(&occurrence.Original,"api.connections",occurrence);err!=nil{return nil,nil,err};defer func(){occurrence.Manager=managerResult;occurrence.Client=clientResult;occurrence.Failure=failure}()
+ var observation *connectionInputObservation
+	defer func(){failure=retainConnectionInput(failure,observation)}()
 	env := options.Env
 	if env == nil {
 		env = os.Getenv
@@ -49,18 +83,26 @@ func ResolveConnections(options ConnectionOptions) (*ConnectionManager, *Client,
 	profiles := map[string]ConnectionProfile{}
 	defaultProfile := ""
 	if path != "" {
-		contents, err := os.ReadFile(path)
+		observation=&connectionInputObservation{Path:path,Limit:maxResponseBytes,OpenAttempted:true};occurrence.Input=observation
+		file, err := open(path)
+		observation.File=file;observation.OpenError=err
 		if err != nil {
-			return nil, nil, fmt.Errorf("read connection configuration: %w", err)
+			return nil, nil, &OperatorError{Stage: "configuration", cause: err}
 		}
-		var config connectionFile
-		if err := json.Unmarshal(contents, &config); err != nil {
-			return nil, nil, fmt.Errorf("decode connection configuration: %w", err)
+		observation.ReadAttempted=true
+		contents, readErr := io.ReadAll(io.LimitReader(file, maxResponseBytes+1))
+		observation.Raw=contents;observation.ReadError=readErr
+		observation.CloseAttempted=true
+		closeErr:=file.Close();observation.CloseError=closeErr;err=errors.Join(readErr,closeErr)
+		if err != nil { return nil, nil, &OperatorError{Stage: "configuration", cause: err} }
+		var config connectionFile;occurrence.Destination=&config
+		if err := decodeResponse(contents, &config); err != nil {
+			return nil, nil, &OperatorError{Stage: "configuration", cause: err}
 		}
-		if len(config.Profiles) == 0 {
-			return nil, nil, fmt.Errorf("connection configuration has no profiles")
+		if len(config.Profiles) == 0 || len(config.Profiles) > 32 {
+			return nil, nil, &OperatorError{Stage: "configuration"}
 		}
-		if err := validateLoadedProfiles(config.Profiles); err != nil {
+		if err := validateLoadedProfilesForMode(config.Profiles,operatorV2); err != nil {
 			return nil, nil, err
 		}
 		profiles, defaultProfile = config.Profiles, config.Default
@@ -71,7 +113,7 @@ func ResolveConnections(options ConnectionOptions) (*ConnectionManager, *Client,
 		var ok bool
 		profile, ok = profiles[selected]
 		if !ok {
-			return nil, nil, fmt.Errorf("unknown connection profile %q", selected)
+			return nil, nil, &OperatorError{Stage: "configuration"}
 		}
 	} else {
 		selected = "default"
@@ -80,7 +122,7 @@ func ResolveConnections(options ConnectionOptions) (*ConnectionManager, *Client,
 	apiURL := firstNonEmpty(options.APIURL, env("SERVICE_LASSO_API_URL"), profile.URL, "http://127.0.0.1:17883")
 	tokenEnv := firstNonEmpty(options.TokenEnv, env("SERVICE_LASSO_API_TOKEN_ENV"), profile.TokenEnv, "SERVICE_LASSO_API_TOKEN")
 	profiles[selected] = ConnectionProfile{URL: apiURL, TokenEnv: tokenEnv, AuthMode: profile.AuthMode, Scopes: profile.Scopes}
-	manager := &ConnectionManager{profiles: profiles, current: selected, env: env}
+	manager := &ConnectionManager{profiles: profiles, current: selected, env: env,operatorV2:operatorV2,receiver:options.Receiver}
 	client, err := manager.Client(selected)
 	if err != nil {
 		return nil, nil, err
@@ -111,43 +153,54 @@ func (m *ConnectionManager) Current() string { return m.current }
 func (m *ConnectionManager) Client(name string) (*Client, error) {
 	profile, ok := m.profiles[name]
 	if !ok {
-		return nil, fmt.Errorf("unknown connection profile %q", name)
+		return nil, &OperatorError{Stage: "configuration"}
 	}
-	mode, err := validateProfileAdmission(profile)
+	mode, err := validateProfileAdmissionForMode(profile,m.operatorV2)
 	if err != nil {
-		return nil, fmt.Errorf("connection profile %q is not admissible: %w", name, err)
+		return nil, err
 	}
 	if profile.TokenEnv == "" {
-		return nil, fmt.Errorf("connection profile %q has no credential environment reference", name)
+		return nil, &OperatorError{Stage: "configuration"}
 	}
 	token := m.env(profile.TokenEnv)
 	if token == "" {
-		return nil, fmt.Errorf("connection profile %q credential is unavailable", name)
+		return nil, &OperatorError{Stage: "configuration"}
 	}
-	return NewClientWithAuth(profile.URL, nil, token, mode, profile.Scopes...)
+	if m.operatorV2{client,err:=NewOperatorClientWithAuth(profile.URL,nil,token,mode,profile.Scopes...);if client!=nil{client.receiver=m.receiver};return client,err}
+	client,err:=NewClientWithAuth(profile.URL,nil,token,mode,profile.Scopes...);if client!=nil{client.receiver=m.receiver};return client,err
 }
 
 func validateLoadedProfiles(profiles map[string]ConnectionProfile) error {
+ return validateLoadedProfilesForMode(profiles,false)
+}
+
+func validateLoadedProfilesForMode(profiles map[string]ConnectionProfile,operatorV2 bool)error{
 	for name, profile := range profiles {
+		if !safeIdentifier(name, 80) || len(profile.TokenEnv) > 128 || len(profile.Scopes) > 16 { return &OperatorError{Stage: "configuration"} }
 		// An incomplete profile may receive a loopback URL through normal
 		// resolution. Once it names a URL, admit it before any profile can be
 		// selected and before its credential reference is read.
 		if profile.URL == "" {
 			continue
 		}
-		if _, err := validateProfileAdmission(profile); err != nil {
-			return fmt.Errorf("connection profile %q is not admissible: %w", name, err)
+		if _, err := validateProfileAdmissionForMode(profile,operatorV2); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
 func validateProfileAdmission(profile ConnectionProfile) (AuthMode, error) {
+ return validateProfileAdmissionForMode(profile,false)
+}
+
+func validateProfileAdmissionForMode(profile ConnectionProfile,operatorV2 bool)(AuthMode,error){
 	mode := profile.AuthMode
 	if mode == "" {
 		mode = AuthModeLocalAdmin
 	}
-	if _, err := NewClientWithAuth(profile.URL, nil, "", mode, profile.Scopes...); err != nil {
+	_,err:=newClientWithAuth(profile.URL,nil,"",mode,operatorV2,profile.Scopes...)
+	if err != nil {
 		return "", err
 	}
 	return mode, nil
@@ -161,6 +214,12 @@ func hasRequiredScopes(scopes []string) bool {
 		}
 	}
 	return needed["service-lasso:read"] && needed["service-lasso:lifecycle:write"]
+}
+
+func hasConnectionScopes(scopes []string,operatorV2 bool)bool{
+ if !operatorV2{return hasRequiredScopes(scopes)}
+ for _,scope:=range scopes{if scope=="service-lasso:read"{return true}}
+ return false
 }
 
 func (m *ConnectionManager) Switch(name string) (*Client, error) {

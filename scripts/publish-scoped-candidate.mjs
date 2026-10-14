@@ -12,8 +12,17 @@ import { assertManifest, assertPreflight, assertPublicationDirectory, candidateI
 
 const ROOT = "https://api.github.com/repos/service-lasso/service-lasso-tui";
 const SHA = /^[a-f0-9]{40}$/u;
-const fail = message => { throw new Error(message); };
+const fail = (message, ...causes) => { throw new Error(message, causes.length ? { cause: causes[0] } : undefined); };
 const canonical = value => JSON.stringify(value && typeof value === "object" ? Array.isArray(value) ? value.map(item => parseStrictJSON(canonical(item))) : Object.fromEntries(Object.keys(value).sort().map(key => [key, parseStrictJSON(canonical(value[key]))])) : value);
+
+// Retain both originals privately; this does not qualify the journal's native
+// owner, before-exit capture, or finite lifetime.
+export async function writePublicationJournalHandle(handle, content) {
+  const causes=[];
+  try{await handle.writeFile(content);await handle.sync();}catch(cause){causes.push(cause);}
+  try{await handle.close();}catch(cause){causes.push(cause);}
+  if(causes.length)fail("publication journal write or close denied",new AggregateError(causes,"private publication journal failures"));
+}
 
 // One deadline covers response headers AND the entire streamed body. Never log
 // provider exception messages: they may contain credential-bearing URLs.
@@ -34,7 +43,7 @@ export async function providerJSON(fetchImpl, token, route, { method = "GET", bo
       for await (const chunk of response.body) { const bytes = Buffer.from(chunk); size += bytes.length; if (size > 1048576) fail("provider metadata bound exceeded"); chunks.push(bytes); }
       return parseStrictJSON(Buffer.concat(chunks));
     })()]);
-  } catch { fail("provider request or metadata denied"); } finally { clearTimeout(timer); controller.abort(); }
+  } catch (cause) { fail("provider request or metadata denied", cause); } finally { clearTimeout(timer); controller.abort(); }
 }
 
 export async function resolveCandidateTag({ identity, read }) {
@@ -74,7 +83,10 @@ export async function publishCandidate({ assetDirectory, identity, token, fetchI
   await mkdir(journalDirectory, {mode:0o700});
   const publication = release => ({repository:"service-lasso/service-lasso-tui",releaseId:release.id,tag:release.tag_name,targetCommit:identity.sourceCommit,draft:release.draft,prerelease:release.prerelease,immutable:release.immutable===true,assets:release.assets.map(asset=>({id:asset.id,name:asset.name,url:asset.url,size:asset.size,sha256:held.inventory[asset.name]?.sha256})).sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0)});
   const journal = async (phase,release) => durableJournal(path.join(journalDirectory,`${phase}.json`),JSON.stringify({schema:"service-lasso.tui-publication-journal.v1",scope:SCOPE,source:manifest.source,run,phase,manifest:{name:"candidate-manifest.json",sha256:hash(admittedManifestBytes),size:admittedManifestBytes.length},qualification:qualified.ref,publication:publication(release)})+"\n");
-  async function durableJournal(file,content) { const handle=await open(file,"wx",0o600);try{await handle.writeFile(content);await handle.sync();}finally{await handle.close();} }
+  async function durableJournal(file,content) {
+    let handle;try{handle=await open(file,"wx",0o600);}catch(cause){fail("publication journal unavailable",cause);}
+    await writePublicationJournalHandle(handle,content);
+  }
   const read = (route, options) => providerJSON(fetchImpl, token, route, options);
   const policy = async () => {
     const value = { immutableReleases: await read("/immutable-releases"), environment: await read("/environments/development-candidate"), branchProtection: await read("/branches/develop/protection") };
@@ -115,7 +127,7 @@ export async function publishCandidate({ assetDirectory, identity, token, fetchI
         const response = await fetchImpl(`https://uploads.github.com/repos/service-lasso/service-lasso-tui/releases/${created.id}/assets?name=${encodeURIComponent(name)}`, { method: "POST", redirect: "error", signal: controller.signal, headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "Content-Type": "application/octet-stream" }, body: held.bytes[name] });
         if (response.status !== 201) fail("candidate upload denied");
       })(), new Promise((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error("candidate upload deadline")); }, 30000); })]);
-    } catch { fail("candidate upload denied"); } finally { clearTimeout(timer); controller.abort(); }
+    } catch (cause) { fail("candidate upload denied", cause); } finally { clearTimeout(timer); controller.abort(); }
   }
   const draft = await read(`/releases/${created.id}`);
   if (draft?.id !== created.id) fail("draft numeric identity mismatch");

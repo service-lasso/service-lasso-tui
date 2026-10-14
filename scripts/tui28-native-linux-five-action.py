@@ -4,6 +4,15 @@ from tui28_json import strict_load, strict_loads
 
 ALLOWED_ENV=("HOME","LANG","LC_ALL","PATH","SHELL","TERM","TMPDIR","USER")
 OWNED_TERMINALS=[]
+SAFE_CONFIGURATION_DIAGNOSTIC="connection configuration unavailable; check profile settings"
+def assert_safe_missing_credential(text,env):
+    """Inspect captured bytes in memory; never include private values in failures."""
+    if SAFE_CONFIGURATION_DIAGNOSTIC not in text: raise RuntimeError("safe configuration diagnostic unavailable")
+    forbidden=['"missing"','SERVICE_LASSO_MISSING_TOKEN']
+    for key in ("SERVICE_LASSO_API_TOKEN","SERVICE_LASSO_DENIED_TOKEN","SERVICE_LASSO_INVALID_TOKEN","SERVICE_LASSO_CONNECTIONS_CONFIG"):
+        forbidden.append(key)
+        if env.get(key): forbidden.append(env[key])
+    if any(value in text for value in forbidden): raise RuntimeError("configuration diagnostic privacy denied")
 def write_json(path,value):
     with open(path,"w",encoding="utf-8",newline="") as out:
         json.dump(value,out,separators=(",",":")); out.flush(); os.fsync(out.fileno())
@@ -43,14 +52,20 @@ class BoundProcess:
     def wait(self,timeout):
         deadline=time.monotonic()+timeout
         while time.monotonic()<deadline:
+            terminal=getattr(self,"tui28_terminal",None)
+            if terminal is not None: terminal.read()
             result=self.poll()
-            if result is not None: return result
+            if result is not None:
+                if time.monotonic()>=deadline: break
+                return result
             if self.reaped_unowned: raise ChildReapedUnowned("owned child was reaped outside BoundProcess")
             time.sleep(.02)
         raise subprocess.TimeoutExpired("held executable",timeout)
     def wait_until_observed(self):
         """No second deadline: the owner stays alive until it observes its child."""
         while True:
+            terminal=getattr(self,"tui28_terminal",None)
+            if terminal is not None: terminal.read()
             result=self.poll()
             if result is not None: return result
             if self.reaped_unowned: raise ChildReapedUnowned("owned child was reaped outside BoundProcess")
@@ -66,13 +81,27 @@ def retain_terminal_child(terminal,pid):
     child=BoundProcess(pid); child.tui20_birth=None
     if terminal is not None:
         terminal.child=child
-        OWNED_TERMINALS.append(terminal)
+        child.tui28_terminal=terminal
+        if not any(owned is terminal for owned in OWNED_TERMINALS): OWNED_TERMINALS.append(terminal)
     return child
+def close_acquired_terminal_descriptor(terminal, name):
+    item=terminal.acquisition["descriptors"][name]
+    if item["attempted"]: return
+    item["attempted"]=True
+    try: os.close(item["descriptor"])
+    except BaseException as original:
+        item["original"]=original
+        terminal.acquisition["originals"].append(original)
+        raise
+    else: item["completed"]=True
 def fexecve_child(fd,argv,env,master,slave,terminal=None):
     pid=os.fork()
     if pid:
+        if terminal is not None: terminal.acquisition["pid"]=pid
         child=retain_terminal_child(terminal,pid)
-        os.close(slave); return child
+        if terminal is not None: close_acquired_terminal_descriptor(terminal,"slave")
+        else: os.close(slave)
+        return child
     try:
         os.close(master); os.dup2(slave,0); os.dup2(slave,1); os.dup2(slave,2)
         if slave>2: os.close(slave)
@@ -102,22 +131,47 @@ def darwin_execve_child(launch,argv,env,master,slave,terminal=None):
 class Terminal:
     def __init__(self, held, executable, profile, env):
         self.master,self.slave=pty.openpty()
-        self.text=""; self.label=profile; self.exit_reason=None; self.child=None
-        args=[executable,"--profile",profile]
-        if sys_platform()=="linux": self.child=fexecve_child(held,args,env,self.master,self.slave,self)
+        self.text=""; self.label=profile; self.exit_reason=None; self.child=None; self.read_observations=[]
+        # This retained driver asserts the historical v1 lifecycle screens and
+        # routes. Current v2 installed acceptance must use its own real caller.
+        args=[executable,"--compat-v1","--profile",profile]
+        if sys_platform()=="linux":
+            self.acquisition={"pid":None,"originals":[],"descriptors":{name:{"descriptor":descriptor,"attempted":False,"completed":False,"original":None} for name,descriptor in (("master",self.master),("slave",self.slave))}}
+            OWNED_TERMINALS.append(self)
+            try:
+                self.child=fexecve_child(held,args,env,self.master,self.slave,self)
+                self.child.tui20_birth=process_birth(self.child.pid)
+            except BaseException as original:
+                # A post-fork child remains registered for the actual recovery owner.
+                if not self.acquisition["originals"] or self.acquisition["originals"][-1] is not original: self.acquisition["originals"].append(original)
+                if self.child is None and self.acquisition["pid"] is None:
+                    for name in ("slave","master"):
+                        try: close_acquired_terminal_descriptor(self,name)
+                        except BaseException: pass  # Original owned before continuing eligible peer close.
+                raise
         elif sys_platform()=="darwin":
             self.child=darwin_execve_child(held,args,env,self.master,self.slave,self)
         else: raise RuntimeError("native held-executable launch unsupported on this platform")
         # Registration precedes every fallible post-fork observation. Unknown
         # birth stays owned and cannot be used as proof of process absence.
-        self.child.tui20_birth=process_birth(self.child.pid)
+        if sys_platform()!="linux": self.child.tui20_birth=process_birth(self.child.pid)
     def write(self,value): os.write(self.master,value.encode())
     def resize(self,rows,columns): fcntl.ioctl(self.master,termios.TIOCSWINSZ,struct.pack("HHHH",rows,columns,0,0))
     def read(self):
         ready,_,_=select.select([self.master],[],[],.1)
         if ready:
-            try: chunk=os.read(self.master,65536).decode("utf-8","replace")
-            except OSError: chunk=""
+            observation={"descriptor":self.master,"raw":None,"original":None,"emptyRaw":False}
+            self.read_observations.append(observation)
+            try:
+                observation["raw"]=os.read(self.master,65536)
+                observation["emptyRaw"]=observation["raw"]==b""
+                chunk=observation["raw"].decode("utf-8","replace")
+            except OSError as original:
+                observation["original"]=original
+                chunk=""
+            except Exception as original:
+                observation["original"]=original
+                raise
             # Terminal bytes are required in memory for the bounded interaction
             # assertions, but are never written to a receipt, artifact, or log.
             self.text+=chunk
@@ -150,6 +204,36 @@ class Terminal:
         self.exit_reason=reason
         if result!=expected: raise RuntimeError("unexpected terminal exit")
         return reason
+    def recover_raw_pid_until_observed(self):
+        owner=self.acquisition
+        observations=owner.setdefault("waitObservations",[])
+        while True:
+            self.read()
+            item={"pid":owner["pid"],"returned":None,"original":None}
+            observations.append(item)
+            try: item["returned"]=os.waitpid(owner["pid"],os.WNOHANG)
+            except Exception as original:
+                item["original"]=original
+                owner["originals"].append(original)
+                self.exit_reason="terminal_unknown"
+                # External reaping/error is unknown, never proof of absence.
+                time.sleep(.02)
+                continue
+            pid,status=item["returned"]
+            if pid==owner["pid"]:
+                owner["exitStatus"]=status
+                try:
+                    result=os.waitstatus_to_exitcode(status)
+                    self.exit_reason=terminal_exit_reason(result)
+                except BaseException as original:
+                    owner["originals"].append(original)
+                    raise
+                finally:
+                    for name in ("slave","master"):
+                        try: close_acquired_terminal_descriptor(self,name)
+                        except BaseException: pass  # Exact original already belongs to owner.
+                return {"terminal":self.label,"outcome":self.exit_reason,"recovery":"owned_exit_observed","observed":True}
+            time.sleep(.02)
     def recover_until_observed(self):
         """Keep this helper, its PTY, and its held launch object alive until exit."""
         if self.child.reaped_unowned:
@@ -172,7 +256,7 @@ def sha256_fd(fd):
         digest.update(data)
     os.lseek(fd,0,os.SEEK_SET)
     return digest.hexdigest()
-def hold_candidate(executable,commit):
+def hold_candidate(executable,commit,observations=None):
     info=os.lstat(executable)
     if os.name=="nt" or not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode) or len(commit)!=40: raise RuntimeError("candidate executable invalid")
     fd=os.open(executable,os.O_RDONLY|getattr(os,"O_NOFOLLOW",0))
@@ -180,9 +264,14 @@ def hold_candidate(executable,commit):
         opened=os.fstat(fd)
         if not stat.S_ISREG(opened.st_mode) or (opened.st_dev,opened.st_ino)!=(info.st_dev,info.st_ino): raise RuntimeError("candidate executable changed during acquisition")
         return fd,{"sourceCommit":commit,"binarySHA256":sha256_fd(fd)},(info.st_dev,info.st_ino)
-    except Exception:
-        os.close(fd); raise
-def linux_sealed_execution(held,identity):
+    except BaseException as original:
+        item={"stage":"candidate_acquisition","descriptor":fd,"original":original,"closeAttempted":True,"closeCompleted":False,"closeOriginal":None}
+        if observations is not None: observations.append(item)
+        try: os.close(fd)
+        except BaseException as secondary: item["closeOriginal"]=secondary
+        else: item["closeCompleted"] = True
+        raise
+def linux_sealed_execution(held,identity,observations=None):
     """Copy verified bytes into a kernel-sealed anonymous executable object."""
     required=("MFD_ALLOW_SEALING","F_ADD_SEALS","F_GET_SEALS","F_SEAL_WRITE","F_SEAL_GROW","F_SEAL_SHRINK","F_SEAL_SEAL")
     if not hasattr(os,"memfd_create") or any(not hasattr(fcntl if name.startswith("F_") else os,name) for name in required): raise RuntimeError("Linux sealed execution unavailable")
@@ -198,11 +287,17 @@ def linux_sealed_execution(held,identity):
         fcntl.fcntl(sealed,fcntl.F_ADD_SEALS,seals)
         if fcntl.fcntl(sealed,fcntl.F_GET_SEALS)&seals!=seals: raise RuntimeError("sealed executable immutability unavailable")
         try: os.pwrite(sealed,b"X",0)
-        except OSError: pass
+        except OSError as original:
+            if observations is not None: observations.append({"stage":"sealed_write_refusal","descriptor":sealed,"original":original,"expected":True})
         else: raise RuntimeError("sealed executable accepted an in-place write")
         return sealed,{"platform":"linux","mechanism":"memfd-fexecve-seals","seals":["write","grow","shrink","seal"],"inPlaceWriteDenied":True}
-    except Exception:
-        os.close(sealed); raise
+    except BaseException as original:
+        item={"stage":"sealed_acquisition","descriptor":sealed,"original":original,"closeAttempted":True,"closeCompleted":False,"closeOriginal":None}
+        if observations is not None: observations.append(item)
+        try: os.close(sealed)
+        except BaseException as secondary: item["closeOriginal"]=secondary
+        else: item["closeCompleted"] = True
+        raise
 class DarwinActivationFailure(RuntimeError):
     def __init__(self,recovery): super().__init__("Darwin system immutable activation unavailable"); self.recovery=recovery
 def darwin_system_immutable_execution(held,identity,root):
@@ -276,38 +371,172 @@ def release_darwin_system_immutable_execution(launch):
     except OSError:
         return {"outcome":"failed","closedReason":"protected_artifact_removal_failed","recoveryRetained":True}
     return {"outcome":"succeeded","closedReason":"released_and_removed","recoveryRetained":False}
-def cleanup_execution(launch_fd,darwin_protected,held,live_child=False):
-    try:
-        if live_child: return {"outcome":"failed","closedReason":"live_child_unresolved","recoveryRetained":True}
-        if darwin_protected is not None: result=release_darwin_system_immutable_execution(darwin_protected)
-        elif launch_fd is not None:
-            os.close(launch_fd); result={"outcome":"succeeded","closedReason":"sealed_descriptor_closed","recoveryRetained":False}
-        else: result={"outcome":"succeeded","closedReason":"no_execution_object","recoveryRetained":False}
-        if held is not None: os.close(held)
-        return result
-    except OSError:
-        return {"outcome":"failed","closedReason":"descriptor_close_failed","recoveryRetained":darwin_protected is not None}
+def cleanup_execution(launch_fd,darwin_protected,held,live_child=False,observations=None):
+    if observations is None: observations=[]
+    observation={"launchFD":launch_fd,"heldFD":held,"operations":[],"raised":None}
+    observations.append(observation)
+    if live_child: return {"outcome":"failed","closedReason":"live_child_unresolved","recoveryRetained":True}
+    failures=[]; attempted_descriptors=[]
+    def attempt(stage,descriptor,operation):
+        item={"stage":stage,"descriptor":descriptor,"attempted":True,"completed":False,"original":None}
+        observation["operations"].append(item)
+        try: value=operation()
+        except BaseException as original:
+            item["original"]=original; failures.append(item)
+            return None
+        item["completed"]=True
+        return value
+    def close(stage,descriptor):
+        if descriptor is None or descriptor in attempted_descriptors: return
+        attempted_descriptors.append(descriptor)
+        attempt(stage,descriptor,lambda:os.close(descriptor))
+    result={"outcome":"succeeded","closedReason":"no_execution_object","recoveryRetained":False}
+    if darwin_protected is not None:
+        result=attempt("darwin_release",None,lambda:release_darwin_system_immutable_execution(darwin_protected))
+    elif launch_fd is not None:
+        close("launch_close",launch_fd)
+        result={"outcome":"succeeded","closedReason":"sealed_descriptor_closed","recoveryRetained":False}
+    # A failed/ambiguous close is never retried. The independent held input is
+    # still attempted once; actual success is separate from native EOF proof.
+    close("held_close",held)
+    if failures:
+        first=failures[0]
+        if not isinstance(first["original"],OSError):
+            observation["raised"]=first
+            raise first["original"]
+        return {"outcome":"failed","closedReason":"descriptor_close_failed","recoveryRetained":True}
+    return result
 class CleanupReceiptPersistenceFailure(RuntimeError):
     def __init__(self,cleanup_outcome):
         super().__init__("mandatory cleanup receipt persistence failed")
         self.cleanup_outcome=cleanup_outcome
 
-def finalize_native_outcome(root,outcome,launch_fd,darwin_protected,held,live_child=False,primary_persisted=False,recovery_observation=None,cleanup=cleanup_execution,writer=write_json):
-    """Record primary state first; cleanup recording can never mask that state."""
+def finalize_native_outcome(root,outcome,launch_fd,darwin_protected,held,live_child=False,primary_persisted=False,recovery_observation=None,cleanup=cleanup_execution,writer=write_json,originals=None,handoff=None):
+    """Attempt primary persistence before independently eligible cleanup."""
     if live_child: raise RuntimeError("external recovery owner must observe a live child before finalization")
-    if not primary_persisted: persist_primary_outcome(root,outcome,writer)
-    cleanup_outcome=cleanup(launch_fd,darwin_protected,held,live_child)
-    if recovery_observation is not None: cleanup_outcome={**cleanup_outcome,"recoveryObservation":recovery_observation}
-    try: persist_cleanup_outcome(root,cleanup_outcome,writer)
-    except OSError as error: raise CleanupReceiptPersistenceFailure(cleanup_outcome) from error
+    if originals is None: originals=[]
+    primary=None
+    if not primary_persisted:
+        try: persist_primary_outcome(root,outcome,writer)
+        except BaseException as original:
+            primary=original
+            originals.append({"stage":"primary_receipt","original":original})
+    try:
+        cleanup_outcome=cleanup(launch_fd,darwin_protected,held,live_child)
+        if recovery_observation is not None: cleanup_outcome={**cleanup_outcome,"recoveryObservation":recovery_observation}
+        try: persist_cleanup_outcome(root,cleanup_outcome,writer)
+        except OSError as error: raise CleanupReceiptPersistenceFailure(cleanup_outcome) from error
+    except BaseException as original:
+        if primary is None: raise
+        if handoff is None or not handoff["present"]:
+            originals.append({"stage":"cleanup_after_primary_receipt","original":original})
+    if primary is not None:
+        if handoff is not None: handoff["present"]=True
+        raise primary
     return cleanup_outcome
-def bound_execution(held,identity,root):
+def bound_execution(held,identity,root,observations=None):
     if sys_platform()=="linux":
-        fd,binding=linux_sealed_execution(held,identity); return fd,None,binding
+        fd,binding=linux_sealed_execution(held,identity,observations); return fd,None,binding
     if sys_platform()=="darwin":
         launch,binding=darwin_system_immutable_execution(held,identity,root); return launch,launch,binding
     raise RuntimeError("native immutable execution unavailable on this platform")
-def bound_replacement_probe(launch_fd,held,executable,inode_identity,digest_identity,profile,env):
+def bound_replacement_probe_linux(launch_fd,held,executable,inode_identity,digest_identity,profile,env,observations):
+    """Keep actual Linux probe failures before independent eligible finalization."""
+    owner={"stage":"replacement_probe","originals":[],"operations":[],"terminals":[]}
+    observations.append(owner)
+    def attempt(stage,action,secondary=False):
+        item={"stage":stage,"attempted":True,"completed":False,"original":None}
+        owner["operations"].append(item)
+        try:
+            value=action(); item["result"]=value; item["completed"]=True; return value
+        except BaseException as original:
+            item["original"]=original; entry={"stage":stage,"original":original}; owner["originals"].append(entry)
+            if not secondary: owner["activeFailure"]=entry
+            raise
+    def cleanup(stage,action):
+        try: attempt(stage,action,True)
+        except BaseException: pass  # Exact original is already owned above.
+    def preserve_body(stage,failure):
+        active=owner.get("activeFailure")
+        if active is not None and active["original"] is failure:
+            owner.setdefault("propagated",[]).append({"stage":stage,"entry":active})
+        else:
+            entry={"stage":stage,"original":failure}; owner["originals"].append(entry); owner["activeFailure"]=entry
+    def probe_terminal():
+        term=attempt("terminal_acquisition",lambda:Terminal(launch_fd,executable,profile,env))
+        owner["terminals"].append(term)
+        before=len(owner["originals"]); exit_value=None
+        try: attempt("terminal_wait",lambda:term.wait((SAFE_CONFIGURATION_DIAGNOSTIC,),30))
+        finally:
+            cleanup("terminal_close",lambda:term.close(2))
+        if len(owner["originals"])!=before:
+            owner["activeFailure"]=owner["originals"][before]; raise owner["activeFailure"]["original"]
+        exit_value=owner["operations"][-1].get("result")
+        attempt("terminal_privacy",lambda:assert_safe_missing_credential(term.text,env))
+        return exit_value
+    directory=os.path.dirname(executable); original=os.path.join(directory,".tui20-held-original"); replacement=os.path.join(directory,".tui20-untrusted-replacement")
+    staged=replacement+".link"; staged_identity=None; results=[]; linked=False
+    try:
+        if os.path.lexists(original) or os.path.lexists(replacement) or os.path.lexists(staged): raise RuntimeError("bound-launch probe paths already exist")
+        attempt("original_link",lambda:os.link(executable,original)); linked=True
+        for name,reparse in (("rename",False),("reparse",True)):
+            stream=attempt("replacement_acquisition",lambda:open(replacement,"wb"))
+            try: attempt("replacement_write",lambda:stream.write(b"untrusted replacement must never execute\n"))
+            finally: cleanup("replacement_close",stream.close)
+            if owner["originals"]:
+                owner["activeFailure"]=owner["originals"][0]; raise owner["activeFailure"]["original"]
+            os.chmod(replacement,0o700)
+            if reparse:
+                os.symlink(replacement,staged); staged_stat=os.lstat(staged)
+                if not stat.S_ISLNK(staged_stat.st_mode): raise RuntimeError("bound-launch staged link type changed")
+                staged_identity=(staged_stat.st_dev,staged_stat.st_ino); os.replace(staged,executable)
+            else: os.replace(replacement,executable)
+            named=os.lstat(executable); held_stat=os.fstat(held)
+            if (held_stat.st_dev,held_stat.st_ino)!=inode_identity or (not reparse and (named.st_dev,named.st_ino)==inode_identity): raise RuntimeError("held executable binding changed")
+            exit_value=probe_terminal()
+            results.append({"attack":name,"heldCandidateLaunch":True,"terminalExit":exit_value})
+            os.replace(original,executable); os.link(executable,original)
+        modifier=attempt("modifier_acquisition",lambda:os.open(executable,os.O_RDWR)); original_byte=None
+        try:
+            original_byte=attempt("original_byte",lambda:os.pread(modifier,1,0))
+            if len(original_byte)!=1: raise RuntimeError("source candidate mutation probe unavailable")
+            attempt("mutation_write",lambda:os.pwrite(modifier,bytes([original_byte[0]^0x01]),0)); attempt("mutation_sync",lambda:os.fsync(modifier))
+            if sha256_fd(held)==digest_identity["binarySHA256"]: raise RuntimeError("source candidate mutation probe did not alter held inode")
+            exit_value=probe_terminal()
+            results.append({"attack":"inplace-content-mutation","heldCandidateLaunch":True,"terminalExit":exit_value,"sourceDigestChanged":True})
+        except BaseException as failure:
+            preserve_body("mutation_body",failure)
+            raise
+        finally:
+            if original_byte is not None:
+                cleanup("restoration_write",lambda:os.pwrite(modifier,original_byte,0))
+                cleanup("restoration_sync",lambda:os.fsync(modifier))
+            cleanup("modifier_close",lambda:os.close(modifier))
+        if owner["originals"]:
+            owner["activeFailure"]=owner["originals"][0]; raise owner["activeFailure"]["original"]
+        if sha256_fd(held)!=digest_identity["binarySHA256"]: raise RuntimeError("source candidate mutation restoration failed")
+    except BaseException as failure:
+        preserve_body("probe_body",failure)
+    finally:
+        if linked:
+            def restore_staged():
+                if staged_identity is not None and os.path.lexists(staged):
+                    staged_stat=os.lstat(staged)
+                    if stat.S_ISLNK(staged_stat.st_mode) and (staged_stat.st_dev,staged_stat.st_ino)==staged_identity: os.unlink(staged)
+            def restore_original():
+                if os.path.lexists(original):
+                    alias=os.lstat(original)
+                    if (alias.st_dev,alias.st_ino)!=inode_identity or not stat.S_ISREG(alias.st_mode): raise RuntimeError("bound-launch original alias identity changed")
+                    named=os.lstat(executable) if os.path.lexists(executable) else None
+                    if named is not None and stat.S_ISREG(named.st_mode) and (named.st_dev,named.st_ino)==inode_identity: os.unlink(original)
+                    else: os.replace(original,executable)
+            cleanup("staged_cleanup",restore_staged)
+            cleanup("replacement_cleanup",lambda:os.unlink(replacement) if os.path.lexists(replacement) else None)
+            cleanup("original_restoration",restore_original)
+    if owner["originals"]: raise owner["originals"][0]["original"]
+    return results
+def bound_replacement_probe(launch_fd,held,executable,inode_identity,digest_identity,profile,env,observations=None):
+    if sys.platform=='linux': return bound_replacement_probe_linux(launch_fd,held,executable,inode_identity,digest_identity,profile,env,[] if observations is None else observations)
     """Prove pathname replacement and mutable source bytes cannot alter the sealed launch."""
     directory=os.path.dirname(executable); original=os.path.join(directory,".tui20-held-original"); replacement=os.path.join(directory,".tui20-untrusted-replacement")
     if os.path.lexists(original) or os.path.lexists(replacement) or os.path.lexists(replacement+".link"): raise RuntimeError("bound-launch probe paths already exist")
@@ -327,7 +556,7 @@ def bound_replacement_probe(launch_fd,held,executable,inode_identity,digest_iden
             named=os.lstat(executable)
             held_stat=os.fstat(held)
             if (held_stat.st_dev,held_stat.st_ino)!=inode_identity or (not reparse and (named.st_dev,named.st_ino)==inode_identity): raise RuntimeError("held executable binding changed")
-            term=Terminal(launch_fd,executable,profile,env); term.wait(('connection profile "missing" credential is unavailable',),30); exit_value=term.close(2)
+            term=Terminal(launch_fd,executable,profile,env); term.wait((SAFE_CONFIGURATION_DIAGNOSTIC,),30); exit_value=term.close(2); assert_safe_missing_credential(term.text,env)
             results.append({"attack":name,"heldCandidateLaunch":True,"terminalExit":exit_value})
             os.replace(original,executable); os.link(executable,original)
         modifier=os.open(executable,os.O_RDWR)
@@ -336,7 +565,7 @@ def bound_replacement_probe(launch_fd,held,executable,inode_identity,digest_iden
             if len(original_byte)!=1: raise RuntimeError("source candidate mutation probe unavailable")
             os.pwrite(modifier,bytes([original_byte[0]^0x01]),0); os.fsync(modifier)
             if sha256_fd(held)==digest_identity["binarySHA256"]: raise RuntimeError("source candidate mutation probe did not alter held inode")
-            term=Terminal(launch_fd,executable,profile,env); term.wait(('connection profile "missing" credential is unavailable',),30); exit_value=term.close(2)
+            term=Terminal(launch_fd,executable,profile,env); term.wait((SAFE_CONFIGURATION_DIAGNOSTIC,),30); exit_value=term.close(2); assert_safe_missing_credential(term.text,env)
             results.append({"attack":"inplace-content-mutation","heldCandidateLaunch":True,"terminalExit":exit_value,"sourceDigestChanged":True})
         finally:
             if 'original_byte' in locals(): os.pwrite(modifier,original_byte,0); os.fsync(modifier)
@@ -405,7 +634,7 @@ def recovery_dependency_live(url,name):
     with urllib.request.urlopen(url,timeout=2) as response:
         value=strict_load(response)
     if value!={"owner":"tui20-external-recovery-parent","dependency":name}: raise RuntimeError("external recovery dependency ownership unavailable")
-def recovery_immutable_execution():
+def recovery_immutable_execution(observations=None):
     """The recovery owner, not the failed helper, holds this sealed launch object."""
     if sys_platform()!="linux" or not hasattr(os,"memfd_create"): raise RuntimeError("external recovery process proof requires Linux sealed execution")
     sealed=os.memfd_create("tui20-external-recovery-owner",os.MFD_ALLOW_SEALING)
@@ -415,12 +644,18 @@ def recovery_immutable_execution():
         fcntl.fcntl(sealed,fcntl.F_ADD_SEALS,seals)
         if fcntl.fcntl(sealed,fcntl.F_GET_SEALS)&seals!=seals: raise RuntimeError("external recovery immutable execution unavailable")
         return sealed,seals
-    except Exception:
-        os.close(sealed); raise
-def recovery_owner_self_test(root,core_url,jwks_url):
+    except BaseException as original:
+        item={"stage":"recovery_sealed_acquisition","descriptor":sealed,"original":original,"closeAttempted":True,"closeCompleted":False,"closeOriginal":None}
+        if observations is not None: observations.append(item)
+        try: os.close(sealed)
+        except BaseException as secondary: item["closeOriginal"]=secondary
+        else: item["closeCompleted"]=True
+        raise
+
+def recovery_owner_self_test(root,core_url,jwks_url,observations=None):
     """Prove a crashed helper cannot tear down the distinct PTY/resource owner."""
     os.makedirs(root,exist_ok=True)
-    master,slave=pty.openpty(); sealed,seals=recovery_immutable_execution(); pid=os.fork()
+    master,slave=pty.openpty(); sealed,seals=recovery_immutable_execution(observations); pid=os.fork()
     if pid==0:
         os.close(master); time.sleep(.25); os.close(slave); os._exit(0)
     os.close(slave); live=BoundProcess(pid)
@@ -479,19 +714,35 @@ def start_owned_runtime(args,retain):
     if ready.get("event")!="ready" or not all(isinstance(ready.get(key),str) and ready[key] for key in ("url","token","deniedToken")) or not isinstance(ready.get("jwksPort"),int):
         raise OwnedRuntimeAcquisitionFailure(runtime,"owned Core runtime handoff invalid")
     return runtime,ready
-def stop_owned_runtime(runtime):
-    """Retain the owner handle through a natural, directly observed close."""
+def stop_owned_runtime(runtime,observations=None):
+    """Keep actual shutdown originals privately; the existing wait is unbounded."""
+    if observations is None: observations=[]
+    observation={"runtime":runtime,"stdin":None,"operations":[]}
+    observations.append(observation)
+    def observe(stage,operation):
+        item={"stage":stage,"attempted":True,"completed":False,"value":None,"original":None}
+        observation["operations"].append(item)
+        try: item["value"]=operation()
+        except BaseException as original:
+            item["original"]=original
+            raise
+        item["completed"]=True
+        return item["value"]
     requested=False
-    if runtime.poll() is None:
+    live=observe("poll",lambda:runtime.poll()) is None
+    stream=observe("stdin",lambda:runtime.stdin); observation["stdin"]=stream
+    if live:
         try:
-            runtime.stdin.write("close\n"); runtime.stdin.flush(); requested=True
+            observe("write",lambda:stream.write("close\n"))
+            observe("flush",lambda:stream.flush()); requested=True
         except Exception:
-            # EOF is the existing graceful path; never abandon the owned wait.
+            # Preserve the useful existing EOF fallback; its raw failure is above.
             pass
-    try: runtime.stdin.close()
+    try: observe("close",lambda:stream.close())
     except (OSError,ValueError): pass
-    runtime.wait()
-    return terminal_exit_reason(runtime.returncode),requested
+    observe("wait",lambda:runtime.wait())
+    result=observe("returncode",lambda:runtime.returncode)
+    return terminal_exit_reason(result),requested
 
 def owned_runtime_birth_absent(runtime):
     birth=getattr(runtime,"tui20_birth",None)
@@ -511,13 +762,35 @@ def retain_primary_and_recover(root,outcome,terminal):
     persist_primary_outcome(root,outcome)
     outcome["recoveryObservation"]=terminal.recover_until_observed()
     return True
-def main():
+def main(observation=None):
+    # Invocation-local originals are transient; no durable/native capture claim.
+    if observation is None: observation={}
+    observation.setdefault("bodyPrimaryPresent",False)
+    observation.setdefault("bodyPrimary",None)
+    observation.setdefault("finalizationOriginals",[])
+    observation.setdefault("executionCleanup",[])
+    try:
+        result=_main_attempt(observation)
+    except BaseException as original:
+        if observation["bodyPrimaryPresent"]:
+            if original is not observation["bodyPrimary"]:
+                observation["finalizationOriginals"].append({"stage":"boundary","original":original})
+            raise observation["bodyPrimary"]
+        raise
+    if observation["bodyPrimaryPresent"]: raise observation["bodyPrimary"]
+    if observation["finalizationOriginals"]: raise observation["finalizationOriginals"][0]["original"]
+    if observation.get("finalizationFailure") is not None:
+        raise RuntimeError("native owner finalization unavailable")
+    return result
+def _main_attempt(observation):
+    if observation is None: observation={}
+    shutdown_observations=observation.setdefault("runtimeShutdown",[])
     if sys.platform!="linux": raise RuntimeError("scoped Linux owner requires Linux")
     OWNED_TERMINALS.clear()
     parser=argparse.ArgumentParser(); parser.add_argument("--root",required=True); parser.add_argument("--executable"); parser.add_argument("--source-commit"); parser.add_argument("--core-commit"); parser.add_argument("--runtime-script"); parser.add_argument("--node"); parser.add_argument("--external-runtime",action="store_true"); parser.add_argument("--adverse-controller-crash",action="store_true"); parser.add_argument("--adverse-owner-death",action="store_true"); parser.add_argument("--controller-pid",type=int); parser.add_argument("--recovery-self-test",action="store_true"); parser.add_argument("--recovery-owner-self-test",action="store_true"); parser.add_argument("--core-url"); parser.add_argument("--jwks-url"); parser.add_argument("--invalid-ready-receipt",action="store_true"); parser.add_argument("--inject-finalization-cleanup-failure",action="store_true"); parser.add_argument("--runtime-ready-mode",choices=("normal","timeout","eof")); parser.add_argument("--shutdown-pipe-failure",action="store_true"); args=parser.parse_args()
     if args.recovery_owner_self_test:
         if not args.core_url or not args.jwks_url: raise RuntimeError("external recovery dependency endpoints are required")
-        recovery_owner_self_test(args.root,args.core_url,args.jwks_url); return
+        recovery_owner_self_test(args.root,args.core_url,args.jwks_url,observation.setdefault("recoveryAcquisition",[])); return
     if args.recovery_self_test: recovery_self_test(args.root); return
     if not args.executable or not args.source_commit or not args.core_commit or (not args.external_runtime and (not args.runtime_script or not args.node)): raise RuntimeError("native executable, source identity, and owned runtime are required")
     if args.adverse_controller_crash and not args.controller_pid: raise RuntimeError("adverse controller proof requires controller identity")
@@ -543,9 +816,9 @@ def main():
         if ready.get("coreCommit")!=args.core_commit or ready.get("runtimePathReceipt")!=paths: raise RuntimeError("Core fixture receipt invalid")
         token,denied,url=runtime_handoff["token"],runtime_handoff["deniedToken"],runtime_handoff["url"]
         env={key:os.environ[key] for key in ALLOWED_ENV if os.environ.get(key)}; env.update({"TERM":"xterm-256color","SERVICE_LASSO_API_TOKEN":token,"SERVICE_LASSO_DENIED_TOKEN":denied,"SERVICE_LASSO_INVALID_TOKEN":"tui20-invalid-token","SERVICE_LASSO_CONNECTIONS_CONFIG":os.path.join(args.root,"connections.json")})
-        held,identity,held_inode=hold_candidate(args.executable,args.source_commit); outcome["candidateIdentity"]=identity
+        held,identity,held_inode=hold_candidate(args.executable,args.source_commit,observation.setdefault("acquisition",[])); outcome["candidateIdentity"]=identity
         if runtime is not None: write_owner_birth(args,runtime,identity)
-        launch_fd,darwin_protected,binding=bound_execution(held,identity,args.root); outcome["heldExecutableBinding"]=binding
+        launch_fd,darwin_protected,binding=bound_execution(held,identity,args.root,observation.setdefault("acquisition",[])); outcome["heldExecutableBinding"]=binding
         if args.adverse_controller_crash:
             term=Terminal(launch_fd,args.executable,"native",env); term.wait(("Runtime identity:",),30); detail(term)
             runtime_pid=runtime.pid if runtime is not None else runtime_handoff["_runtimePID"]; runtime_birth=runtime.tui20_birth if runtime is not None else runtime_handoff["_runtimeBirth"]
@@ -574,11 +847,12 @@ def main():
         for profile,label,expected,audit_expected in (("missing","missing-credential",2,0),("invalid","invalid-credential",0,0),("denied","scope-denied",0,5)):
             count=len(operations(url,token)); audit=audit_count(url,token)
             if profile=="missing":
-                outcome["heldExecutableBinding"]["replacementProbe"]=bound_replacement_probe(launch_fd,held,args.executable,held_inode,identity,profile,env)
-                term=Terminal(launch_fd,args.executable,profile,env); term.wait(('connection profile "missing" credential is unavailable',),30)
+                outcome["heldExecutableBinding"]["replacementProbe"]=bound_replacement_probe(launch_fd,held,args.executable,held_inode,identity,profile,env,observation.setdefault("replacementProbe",[]))
+                term=Terminal(launch_fd,args.executable,profile,env); term.wait((SAFE_CONFIGURATION_DIAGNOSTIC,),30)
             else:
                 term=Terminal(launch_fd,args.executable,profile,env); term.wait(("Runtime identity:",),30); detail(term); term.write("i"); term.wait(("Runtime API unavailable:",),30)
             outcome["terminals"].append({"terminal":label,"exit":term.close(expected)})
+            if profile=="missing": assert_safe_missing_credential(term.text,env)
             after=len(operations(url,token)); audit_after=audit_count(url,token); adverse.append({"case":label,"beforeOperationCount":count,"afterOperationCount":after,"noOperation":after==count,"coreDeniedAuditBefore":audit,"coreDeniedAuditAfter":audit_after,"coreDeniedAuditDelta":audit_after-audit})
             if after!=count or audit_after-audit!=audit_expected: raise RuntimeError("adverse lifecycle receipt invalid")
         term=Terminal(launch_fd,args.executable,"native",env); term.wait(("Runtime identity:",),30); detail(term)
@@ -613,52 +887,91 @@ def main():
         if unrelated(url,token)!=before: raise RuntimeError("unrelated state changed")
         write_json(os.path.join(args.root,"operation-audit.json"),{"operations":records,"coreAudit":audit_matches}); outcome.update({"outcome":"succeeded","actions":["install","config","start","stop","restart"],"adverseAudit":adverse,"reloadDenied":True,"cancellation":{"advertised":False,"supportedActionTested":False},"reconnect":{"completedOperationNoReplay":True,"pendingReconciliation":"blocked_core_1553_no_adapter"},"unrelatedService":{**before,"unchangedAfterFiveActions":True},"fixtureOperationCount":len(records),"keyboard":{"previewEscapeNoSubmission":True,"helpRendered":True,"nativeResizeRendered":True,"unsupportedRunningCancellationDenied":True}})
     except OwnedRuntimeAcquisitionFailure as failure:
+        observation["bodyPrimaryPresent"]=True; observation["bodyPrimary"]=failure
         runtime=failure.runtime
         outcome["failureReason"]="native_harness_assertion_failed"
         raise
     except TerminalUnresolved as unresolved:
+        observation["bodyPrimaryPresent"]=True; observation["bodyPrimary"]=unresolved
         primary_persisted=retain_primary_and_recover(args.root,outcome,unresolved.terminal)
         raise
     except DarwinActivationFailure as failure:
+        observation["bodyPrimaryPresent"]=True; observation["bodyPrimary"]=failure
         launch_fd=darwin_protected=failure.recovery
         outcome["heldExecutableBinding"]={"platform":"darwin","mechanism":"system-immutable-held-directory-execve","systemImmutableLeaf":True,"systemImmutableParent":False,"partialActivationRecovery":True}
         outcome["failureReason"]="native_harness_assertion_failed"; raise
-    except Exception:
+    except Exception as original:
+        observation["bodyPrimaryPresent"]=True; observation["bodyPrimary"]=original
         observed=OWNED_TERMINALS[-1] if OWNED_TERMINALS else term
         if observed is not None and observed.exit_reason is not None and not any(item.get("terminal")==observed.label and item.get("exit")==observed.exit_reason for item in outcome["terminals"]): outcome["terminals"].append({"terminal":observed.label,"exit":observed.exit_reason})
-        if observed is not None and observed.child.returncode is None: primary_persisted=retain_primary_and_recover(args.root,outcome,observed)
+        if observed is not None and observed.child is None and getattr(observed,"acquisition",{}).get("pid") is not None:
+            outcome["failureReason"]="native_harness_assertion_failed"
+            try:
+                persist_primary_outcome(args.root,outcome)
+                primary_persisted=True
+            except BaseException as secondary:
+                observation["finalizationOriginals"].append({"stage":"raw_pid_primary_persistence","original":secondary})
+            try: outcome["recoveryObservation"]=observed.recover_raw_pid_until_observed()
+            except BaseException as secondary:
+                observation["finalizationOriginals"].append({"stage":"raw_pid_recovery","original":secondary})
+        elif observed is not None and observed.child is not None and observed.child.returncode is None: primary_persisted=retain_primary_and_recover(args.root,outcome,observed)
         else: outcome["failureReason"]="native_harness_assertion_failed"
         raise
+    except BaseException as original:
+        observation["bodyPrimaryPresent"]=True; observation["bodyPrimary"]=original
+        raise
     finally:
-        # Cleanup is reported separately and cannot relabel a true child exit.
-        live_child=any(owned.child.poll() is None for owned in OWNED_TERMINALS)
-        try:
-            cleanup=lambda *values: (_ for _ in ()).throw(RuntimeError("injected native finalization cleanup failure")) if args.inject_finalization_cleanup_failure else cleanup_execution(*values)
-            cleanup_outcome=finalize_native_outcome(args.root,outcome,launch_fd,darwin_protected,held,live_child,primary_persisted,outcome.get("recoveryObservation"),cleanup=cleanup)
-            if cleanup_outcome["outcome"]!="succeeded": finalization_failure="cleanup_failed"
-        except CleanupReceiptPersistenceFailure as error:
-            finalization_failure="cleanup_receipt_persistence_failed"
-            # Retain true OS cleanup state separately from its missing durability.
-            # The already-persisted primary is never rewritten by this failure.
-            cleanup_receipt_failure={key:error.cleanup_outcome[key] for key in ("outcome","closedReason","recoveryRetained")}
-        except Exception as error:
-            finalization_failure="injected_cleanup_failure" if args.inject_finalization_cleanup_failure else "finalization_failure"
-            outcome["finalizationFailure"]=finalization_failure
-        finally:
-            if args.external_runtime:
-                # This is the owner's outcome only. Core belongs to the durable
-                # observer; no owner declaration can attest its shutdown.
-                handoff=locals().get("runtime_handoff",{})
-                cleanup_receipt_evidence={"cleanupOutcome":cleanup_receipt_failure} if cleanup_receipt_failure is not None else {}
-                write_json(os.path.join(args.root,"external-owner-finalization.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"runtimePID":handoff.get("_runtimePID"),"runtimeBirth":handoff.get("_runtimeBirth"),"sourceCommit":args.source_commit,"binarySHA256":binary_sha256,"finalizationFailure":finalization_failure,"liveTuiChildRetained":live_child,"primaryOutcome":outcome["outcome"],**cleanup_receipt_evidence})
-            # This is deliberately nested: a persistence or cleanup failure must
-            # never strand the real owner child once no TUI child remains live.
-            if runtime is not None and not live_child:
-                runtime_exit,shutdown_requested=stop_owned_runtime(runtime)
+        # Keep the actual terminal result separate from owner finalization.
+        def attempt_finalization(stage,operation,handoff=None):
+            try: return True,operation()
+            except BaseException as original:
+                if handoff is None or not handoff["present"]: observation["finalizationOriginals"].append({"stage":stage,"original":original})
+                return False,None
+        live_observed,live_child=attempt_finalization("terminal_poll",lambda:any((owned.child is not None and owned.child.poll() is None) or (owned.child is None and getattr(owned,"acquisition",{}).get("pid") is not None and "exitStatus" not in owned.acquisition) for owned in OWNED_TERMINALS))
+        if not live_observed: live_child=True
+        cleanup_handoff={"present":False}
+        def cleanup(*values):
+            cleanup_handoff["present"]=False
+            if args.inject_finalization_cleanup_failure: raise RuntimeError("injected native finalization cleanup failure")
+            start=len(observation["executionCleanup"])
+            try: return cleanup_execution(*values,observations=observation["executionCleanup"])
+            except BaseException as original:
+                components=observation["executionCleanup"][start:]
+                raised=components[-1]["raised"] if components else None
+                cleanup_handoff["present"]=raised is not None and raised["original"] is original
+                raise
+            finally:
+                # Transfer each actual operation occurrence before receipt writes.
+                for component in observation["executionCleanup"][start:]:
+                    for item in component["operations"]:
+                        if item["original"] is not None:
+                            observation["finalizationOriginals"].append({"stage":"execution_"+item["stage"],"original":item["original"]})
+        cleanup_ok,cleanup_outcome=attempt_finalization("native_finalization",lambda:finalize_native_outcome(args.root,outcome,launch_fd,darwin_protected,held,live_child,primary_persisted,outcome.get("recoveryObservation"),cleanup=cleanup,originals=observation["finalizationOriginals"],handoff=cleanup_handoff),cleanup_handoff)
+        def classify_cleanup():
+            if cleanup_ok:
+                return ("cleanup_failed" if cleanup_outcome["outcome"]!="succeeded" else None),None
+            original=observation["finalizationOriginals"][-1]["original"]
+            if isinstance(original,CleanupReceiptPersistenceFailure):
+                return "cleanup_receipt_persistence_failed",{key:original.cleanup_outcome[key] for key in ("outcome","closedReason","recoveryRetained")}
+            outcome["finalizationFailure"]="injected_cleanup_failure" if args.inject_finalization_cleanup_failure else "finalization_failure"
+            return outcome["finalizationFailure"],None
+        classified,classification=attempt_finalization("cleanup_classification",classify_cleanup)
+        if classified: finalization_failure,cleanup_receipt_failure=classification
+        else: finalization_failure="finalization_failure"
+        observation["finalizationFailure"]=finalization_failure
+        if args.external_runtime:
+            handoff=locals().get("runtime_handoff",{})
+            cleanup_receipt_evidence={"cleanupOutcome":cleanup_receipt_failure} if cleanup_receipt_failure is not None else {}
+            attempt_finalization("external_owner_receipt",lambda:write_json(os.path.join(args.root,"external-owner-finalization.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"runtimePID":handoff.get("_runtimePID"),"runtimeBirth":handoff.get("_runtimeBirth"),"sourceCommit":args.source_commit,"binarySHA256":binary_sha256,"finalizationFailure":finalization_failure,"liveTuiChildRetained":live_child,"primaryOutcome":outcome["outcome"],**cleanup_receipt_evidence}))
+        # A receipt failure cannot bypass this independently eligible peer.
+        if runtime is not None and not live_child:
+            def finish_runtime():
+                runtime_exit,shutdown_requested=stop_owned_runtime(runtime,shutdown_observations)
                 birth_absent=owned_runtime_birth_absent(runtime)
                 write_json(os.path.join(args.root,"owner-runtime-recovery.json"),{"outcome":"observed_closed" if birth_absent else "exit_observed_birth_absence_unproven","runtimePID":runtime.pid,"runtimeBirth":runtime.tui20_birth,"runtimeChildExit":runtime_exit,"shutdownRequested":shutdown_requested,"actualExitObserved":True,"runtimeBirthAbsentObserved":birth_absent,"runtimeChildStillLiveAfterClose":False if birth_absent else None})
                 if args.invalid_ready_receipt:
                     write_json(os.path.join(args.root,"owner-preflight-cleanup.json"),{"outcome":"failed","preflight":"runtime_receipt_invalid","ownerDrivenRuntimeShutdown":shutdown_requested,"runtimeChildExit":runtime_exit,"retainedOwnedRuntime":False,"actualExitObserved":True})
                 if finalization_failure is not None:
                     write_json(os.path.join(args.root,"owner-finalization-failure-proof.json"),{"outcome":"failed","finalizationFailure":finalization_failure,"ownerDrivenRuntimeShutdown":shutdown_requested,"runtimeChildExit":runtime_exit,"retainedOwnedRuntime":False,"runtimeChildStillLiveAfterClose":runtime.poll() is None,"actualExitObserved":True,**({"cleanupOutcome":cleanup_receipt_failure} if cleanup_receipt_failure is not None else {})})
+            attempt_finalization("runtime_peer",finish_runtime)
 if __name__=="__main__": main()

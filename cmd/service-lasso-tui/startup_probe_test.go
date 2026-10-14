@@ -109,11 +109,11 @@ func TestStartupProbeDoesNotEmitRawErrorWhenExplicitlyEnabled(t *testing.T) {
 	}
 }
 
-func TestNormalStartupFailureRetainsTheOperatorError(t *testing.T) {
+func TestNormalStartupFailureUsesSafeStageClassification(t *testing.T) {
 	t.Setenv(startupProbeNonceEnvironment, "")
 	var output bytes.Buffer
-	reportStartupFailure(&output, startupBoundaryProgramRunError, errors.New("operator-visible error"))
-	if output.String() != "operator-visible error\n" {
+	reportStartupFailure(&output, startupBoundaryProgramRunError, errors.New("SECRET https://private/token /private/path \x1b[2J"))
+	if output.String() != api.SafeError(errors.New("ignored"))+"\n" {
 		t.Fatalf("normal error output = %q", output.String())
 	}
 }

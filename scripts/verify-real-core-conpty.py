@@ -20,7 +20,7 @@ def child_environment(api_url):
     return environment
 
 
-def wait_for(process, expected, timeout_seconds):
+def wait_for(process, expected, timeout_seconds, observation=None):
     deadline = time.monotonic() + timeout_seconds
     text = ""
     while time.monotonic() < deadline:
@@ -30,10 +30,13 @@ def wait_for(process, expected, timeout_seconds):
         if readable:
             try:
                 text += process.read()
-            except EOFError:
+            except EOFError as original:
+                if observation is not None: observation["failures"].append(original)
                 break
     return all(value in text for value in expected)
 
+
+_production_wait_for = wait_for
 
 def emit(result):
     print(json.dumps(result, separators=(",", ":")))
@@ -46,12 +49,13 @@ def fail(stage, closed_reason=None):
     emit(result)
     return 1
 
-def observed_q_exit(process):
+def observed_q_exit(process, observation=None):
     try:
         waited = process.wait()
         signal_status = getattr(process, "signalstatus", None)
         exit_status = getattr(process, "exitstatus", None)
-    except Exception:
+    except Exception as original:
+        if observation is not None: observation["failures"].append(original)
         return "terminal_unknown"
     if isinstance(signal_status, int) and not isinstance(signal_status, bool):
         if signal_status != 0: return "terminal_signaled"
@@ -72,20 +76,27 @@ def is_amd64_helper():
     return machine in ("amd64", "x8664") and details["pointerBits"] == 64
 
 
-def probe(executable, mode, api_url):
+def _probe_attempt(executable, mode, api_url, observation):
+    def fail_attempt(stage, closed_reason=None):
+        result = {"ok": False, "stage": stage}
+        if closed_reason is not None: result["receipt"] = {"stage": "exit", "outcome": "error", "closedReason": closed_reason}
+        return 1, result
+    actual_wait = wait_for
+    def wait(*args):
+        return actual_wait(*args, observation=observation) if actual_wait is _production_wait_for else actual_wait(*args)
     process = None
     stage = "launch"
     try:
-        process = PtyProcess.spawn([executable], cwd=os.path.dirname(executable), env=child_environment(api_url), dimensions=(40, 120), backend=Backend.ConPTY)
+        process = PtyProcess.spawn([executable, "--compat-v1"], cwd=os.path.dirname(executable), env=child_environment(api_url), dimensions=(40, 120), backend=Backend.ConPTY)
         stage = "startup"
         expected = "Runtime identity:" if mode == "connected" else "Runtime API unavailable"
-        if not wait_for(process, ("Service Lasso TUI", "q quit", expected), 20):
-            return fail(stage)
+        if not wait(process, ("Service Lasso TUI", "q quit", expected), 20):
+            return fail_attempt(stage)
         if mode == "connected":
             stage = "navigation"
             process.write("d?")
-            if not wait_for(process, ("d dashboard", "esc back"), 5):
-                return fail(stage)
+            if not wait(process, ("d dashboard", "esc back"), 5):
+                return fail_attempt(stage)
         stage = "exit"
         process.write("q")
         deadline = time.monotonic() + 5
@@ -94,23 +105,33 @@ def probe(executable, mode, api_url):
                 readable, _, _ = select.select([process], [], [], 0.1)
                 if readable:
                     process.read()
-            except EOFError:
+            except EOFError as original:
+                if observation is not None: observation["failures"].append(original)
                 break
         if process.isalive():
-            return fail(stage)
-        closed_reason = observed_q_exit(process)
-        if closed_reason != "terminal_exited_zero": return fail(stage, closed_reason)
-        emit({"ok": True, "mode": mode, "navigation": "help" if mode == "connected" else "not_applicable", "exit": "q", "receipt": {"stage": "exit", "outcome": "normal", "closedReason": "completed"}})
-        return 0
-    except Exception:
-        return fail(stage)
+            return fail_attempt(stage)
+        closed_reason = observed_q_exit(process, observation)
+        if closed_reason != "terminal_exited_zero": return fail_attempt(stage, closed_reason)
+        result = {"ok": True, "mode": mode, "navigation": "help" if mode == "connected" else "not_applicable", "exit": "q", "receipt": {"stage": "exit", "outcome": "normal", "closedReason": "completed"}}
+        return 0, result
+    except Exception as original:
+        observation["failures"].append(original)
+        return fail_attempt(stage)
     finally:
         if process is not None:
             try:
                 process.close(force=True)
-            except Exception:
-                pass
+            except Exception as original:
+                observation["cleanupFailures"].append(original)
 
+
+def probe(executable, mode, api_url, observation=None):
+    observation = observation if observation is not None else {"failures": [], "cleanupFailures": []}
+    code, result = _probe_attempt(executable, mode, api_url, observation)
+    if observation["cleanupFailures"] and result["ok"]:
+        code, result = 1, {"ok": False, "stage": "exit"}
+    emit(result)
+    return code
 
 def main():
     parser = argparse.ArgumentParser(add_help=False)

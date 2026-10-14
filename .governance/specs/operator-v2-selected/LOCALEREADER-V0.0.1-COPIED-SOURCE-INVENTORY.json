@@ -1,0 +1,32 @@
+[
+  {
+    "path": "localereader_test.go",
+    "length": 855,
+    "sha256": "6B3D64F78CBD9F7BBC2BFF918D91518BA86637D713866CA35069388FF66BE23D"
+  },
+  {
+    "path": "localereader_unix.go",
+    "length": 112,
+    "sha256": "118533C51D4075A98D426A3CC6EFAA2A3A93C51A6C12E79ED1D887D2AF3AB089"
+  },
+  {
+    "path": "localereader_windows.go",
+    "length": 1767,
+    "sha256": "6485C4A99A326C60154BFBB842292D864C918F39C76E5FB769B4BCFA31E66E94"
+  },
+  {
+    "path": "localereader.go",
+    "length": 298,
+    "sha256": "F24F37E05DC8F6423923E95D0E506CCB5E9E910DC54DEAC138313AD1D384D661"
+  },
+  {
+    "path": "README.md",
+    "length": 269,
+    "sha256": "0C5C52517F13BECD7A1E1234F1E8A5BA370F5A5078CEE9AC058C2D534E267FCB"
+  },
+  {
+    "path": "cmd/acptee/main.go",
+    "length": 145,
+    "sha256": "AF39680160D6862DE7D50D83D33802F2672CECC97475DE3B443EC54B9E0574DD"
+  }
+]

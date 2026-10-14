@@ -1,3 +1,4 @@
+import { PublicationError, withPublicationCleanup } from "./publication-failure.mjs";
 import { createHash } from "node:crypto";
 import { lstat, mkdir, open, readFile, readdir, rm } from "node:fs/promises";
 import path from "node:path";
@@ -22,7 +23,7 @@ const PLATFORM_ARCHIVES = Object.freeze({
   "win32-amd64": { extension: "zip", executable: "service-lasso-tui.exe" },
 });
 
-function fail(message) { throw new Error(message); }
+function fail(message,...causes) { throw new PublicationError(message,causes.length?{cause:causes[0]}:undefined); }
 function object(value, name) { if (!value || typeof value !== "object" || Array.isArray(value)) fail(`${name} must be an object`); return value; }
 function exactKeys(value, keys, name) { const actual = Object.keys(object(value, name)).sort(); const expected = [...keys].sort(); if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) fail(`${name} has an unexpected shape`); }
 function positiveBoundedSize(value, name) { if (!Number.isSafeInteger(value) || value <= 0 || value > MAX_ASSET_BYTES) fail(`${name} size is invalid`); return value; }
@@ -104,16 +105,14 @@ export async function readBoundedRegularLocalAsset(assetDirectory, name, maxByte
   const entryIdentity = fileIdentity(entry);
   if (beforeOpen) await beforeOpen(file);
   const handle = await open(file, "r");
-  try {
+  return withPublicationCleanup(async()=>{
     const opened = await handle.stat();
     if (!opened.isFile() || !sameFileIdentity(entryIdentity, fileIdentity(opened)) || opened.size <= 0 || opened.size > maxBytes) fail(`local candidate asset changed while opening for ${name}`);
     const bytes = await handle.readFile();
     const completed = await handle.stat();
     if (bytes.length !== entry.size || !sameFileIdentity(entryIdentity, fileIdentity(completed))) fail(`local candidate asset changed while reading for ${name}`);
     return bytes;
-  } finally {
-    await handle.close();
-  }
+  },()=>handle.close(),"candidate asset read and close denied");
 }
 
 function assertChecksumManifestBytes(bytes, manifest) {
@@ -256,10 +255,20 @@ async function streamResponse(response, destination, expectedSize) {
   const contentLength = response.headers?.get?.("content-length");
   if (contentLength !== null && contentLength !== undefined && (!/^\d+$/u.test(contentLength) || Number(contentLength) !== expectedSize)) fail("public asset declared body size mismatches provider size");
   if (!response.body || typeof response.body[Symbol.asyncIterator] !== "function") fail("public asset response body is missing");
-  const output = await open(destination, "wx"); const hash = createHash("sha256"); let size = 0;
-  try { for await (const chunk of response.body) { const bytes = Buffer.from(chunk); size += bytes.length; if (size > expectedSize || size > MAX_ASSET_BYTES) fail("public asset body exceeds its bound"); hash.update(bytes); await output.write(bytes); } } finally { await output.close(); }
-  if (size !== expectedSize) fail("public asset body is truncated or size-mismatched");
-  return { size, sha256: hash.digest("hex") };
+  const output = await open(destination, "wx");
+  return streamResponseToHandle(response,output,expectedSize);
+}
+
+export async function streamResponseToHandle(response,output,expectedSize){
+  return withPublicationCleanup(async()=>{
+    const hash = createHash("sha256"); let size = 0;
+    const contentLength=response.headers?.get?.("content-length");
+    if(contentLength!==null&&contentLength!==undefined&&(!/^\d+$/u.test(contentLength)||Number(contentLength)!==expectedSize))fail("public asset declared body size mismatches provider size");
+    if(!response.body||typeof response.body[Symbol.asyncIterator]!=="function")fail("public asset response body is missing");
+    for await (const chunk of response.body) { const bytes = Buffer.from(chunk); size += bytes.length; if (size > expectedSize || size > MAX_ASSET_BYTES) fail("public asset body exceeds its bound"); hash.update(bytes); const observation=await output.write(bytes);if(observation.bytesWritten!==bytes.length)fail("public asset write incomplete",observation);}
+    if (size !== expectedSize) fail("public asset body is truncated or size-mismatched");
+    return { size, sha256: hash.digest("hex") };
+  },()=>output.close(),"candidate asset stream and close denied");
 }
 
 async function fetchPublicAssetUnbounded(initialURL, expectedSize, destination, fetchImpl) {
@@ -304,7 +313,7 @@ async function fetchDraftAssetUnbounded(asset, expectedSize, destination, token,
 async function boundedDownload(operation, fetchImpl) {
   const controller = new AbortController(); let timer;
   try {
-    return await Promise.race([operation(async (url, options) => { try { return await fetchImpl(url, { ...options, signal: controller.signal }); } catch { fail("candidate transport denied"); } }), new Promise((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error("candidate download deadline exceeded")); }, 30000); })]);
+    return await Promise.race([operation(async (url, options) => { try { return await fetchImpl(url, { ...options, signal: controller.signal }); } catch(cause) { fail("candidate transport denied",cause); } }), new Promise((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error("candidate download deadline exceeded")); }, 30000); })]);
   } finally { clearTimeout(timer); controller.abort(); }
 }
 async function fetchPublicAsset(url, size, destination, fetchImpl) { return boundedDownload(fetcher => fetchPublicAssetUnbounded(url, size, destination, fetcher), fetchImpl); }
@@ -314,7 +323,7 @@ export async function verifyDraftAssetBytes({ release, manifest, localAssets, he
   const receipt = assertDraftReleaseReceipt(release, manifest, localAssets);
   if (!heldBytes || typeof heldBytes !== "object") fail("draft held candidate bytes are missing");
   await mkdir(downloadDir, { recursive: true }); let total = 0; const verified = [];
-  try {
+  await withPublicationCleanup(async()=>{
     for (let index = 0; index < receipt.assets.length; index += 1) {
       const name = receipt.assets[index]; const remote = release.assets.find(asset => asset.name === name); const expected = heldBytes[name];
       if (!Buffer.isBuffer(expected) || expected.length !== localAssets[name].size || createHash("sha256").update(expected).digest("hex") !== localAssets[name].sha256) fail(`draft held candidate bytes are invalid for ${name}`);
@@ -323,14 +332,14 @@ export async function verifyDraftAssetBytes({ release, manifest, localAssets, he
       if (result.sha256 !== localAssets[name].sha256 || result.sha256 !== remote.digest.slice("sha256:".length) || result.size !== expected.length) fail(`draft asset byte receipt is invalid for ${name}`);
       total += result.size; verified.push({ name, ...result });
     }
-  } finally { await rm(downloadDir, { recursive: true, force: true }); }
+  },()=>rm(downloadDir, { recursive: true, force: true }),"candidate asset verification and cleanup denied");
   return { ...receipt, totalBytes: total, verified };
 }
 
 export async function verifyPublicAssetBytes({ release, manifest, localAssets, assetDirectory, downloadDir, fetchImpl = fetch }) {
   await assertActualLocalAssets({ assetDirectory, manifest, localAssets });
   const receipt = assertReleaseReceipt(release, manifest, localAssets); await mkdir(downloadDir, { recursive: true }); let total = 0; const verified = [];
-  try {
+  await withPublicationCleanup(async()=>{
     for (let index = 0; index < receipt.assets.length; index += 1) {
       const name = receipt.assets[index]; const remote = release.assets.find(asset => asset.name === name); const local = localAssets[name];
       if (total + remote.size > MAX_TOTAL_BYTES) fail("public asset inventory exceeds temporary storage bound");
@@ -338,7 +347,7 @@ export async function verifyPublicAssetBytes({ release, manifest, localAssets, a
       if (result.sha256 !== local.sha256 || result.sha256 !== remote.digest.slice("sha256:".length) || result.size !== local.size || result.size !== remote.size) fail(`public asset byte receipt is invalid for ${name}`);
       total += result.size; verified.push({ name, ...result });
     }
-  } finally { await rm(downloadDir, { recursive: true, force: true }); }
+  },()=>rm(downloadDir, { recursive: true, force: true }),"candidate asset verification and cleanup denied");
   return { ...receipt, totalBytes: total, verified };
 }
 

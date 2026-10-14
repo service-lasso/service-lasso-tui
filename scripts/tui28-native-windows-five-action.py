@@ -7,6 +7,15 @@ from winpty.enums import Backend
 from winpty.ptyprocess import PtyProcess
 
 ALLOWED_ENV=("APPDATA","COMSPEC","LOCALAPPDATA","PATHEXT","PATH","SYSTEMROOT","TEMP","TMP","USERPROFILE","WINDIR")
+SAFE_CONFIGURATION_DIAGNOSTIC="connection configuration unavailable; check profile settings"
+def assert_safe_missing_credential(text,env):
+    """Inspect captured bytes in memory; never include private values in failures."""
+    if SAFE_CONFIGURATION_DIAGNOSTIC not in text: raise RuntimeError("safe configuration diagnostic unavailable")
+    forbidden=['"missing"','SERVICE_LASSO_MISSING_TOKEN']
+    for key in ("SERVICE_LASSO_API_TOKEN","SERVICE_LASSO_DENIED_TOKEN","SERVICE_LASSO_INVALID_TOKEN","SERVICE_LASSO_CONNECTIONS_CONFIG"):
+        forbidden.append(key)
+        if env.get(key): forbidden.append(env[key])
+    if any(value in text for value in forbidden): raise RuntimeError("configuration diagnostic privacy denied")
 def write_json(path,value):
     with open(path,"w",encoding="utf-8",newline="") as f: json.dump(value,f,separators=(",",":")); f.flush(); os.fsync(f.fileno())
 def hold_candidate(executable,source,expected):
@@ -46,9 +55,10 @@ def terminal_exit(process):
 def drain(process,transcript):
     try: chunk=process.tui28_queue.get(timeout=.1)
     except queue.Empty: return ""
-    if getattr(process,"tui28_reader_failed",False): raise RuntimeError("native terminal reader failed")
-    if chunk is None: return None
-    # The bounded renderer assertion consumes terminal bytes in memory only.
+    if chunk is None:
+        if getattr(process,"tui28_reader_failed",False): raise RuntimeError("native terminal reader failed")
+        return None
+    # pywinpty supplies decoded text, not original ConPTY bytes.
     transcript[0]+=chunk
     if len(transcript[0])>4*1024*1024: raise RuntimeError("terminal quota")
     return chunk
@@ -123,7 +133,7 @@ def action(p,t,key,name,url,token):
     else: raise RuntimeError("retained operation readback unavailable")
     if t[0].count("Core operation")<frozen.count("Core operation")+1: raise RuntimeError("operation result was not rendered")
     return observed_running
-def main():
+def _main_attempt(observation):
     parser=argparse.ArgumentParser(); parser.add_argument("--root",required=True); parser.add_argument("--executable",required=True); parser.add_argument("--source-commit",required=True); parser.add_argument("--core-commit",required=True); parser.add_argument("--external-runtime",action="store_true"); args=parser.parse_args()
     if not args.external_runtime: raise RuntimeError("external observer required")
     ready=strict_loads(sys.stdin.readline(1048577))
@@ -134,10 +144,13 @@ def main():
     if not token or not denied or not url: raise RuntimeError("owned in-memory credential handoff unavailable")
     with open(os.path.join(args.root,"connections.json"),encoding="utf-8") as f: connections=strict_load(f)
     env={key:os.environ[key] for key in ALLOWED_ENV if os.environ.get(key)}; env.update({"TERM":"xterm-256color","SERVICE_LASSO_API_TOKEN":token,"SERVICE_LASSO_DENIED_TOKEN":denied,"SERVICE_LASSO_INVALID_TOKEN":"tui20-invalid-token","SERVICE_LASSO_CONNECTIONS_CONFIG":os.path.join(args.root,"connections.json")})
-    executable,held,identity,held_directory=hold_candidate(args.executable,args.source_commit,ready["_binarySHA256"]); outcome={"outcome":"failed","candidateIdentity":identity,"coreCommit":args.core_commit,"runtimePathReceipt":paths,"terminals":[]}; open_processes=[]
+    executable,held,identity,held_directory=hold_candidate(args.executable,args.source_commit,ready["_binarySHA256"]); observation["candidate"]={"file":held,"directory":held_directory}; outcome={"outcome":"failed","candidateIdentity":identity,"coreCommit":args.core_commit,"runtimePathReceipt":paths,"terminals":[]}; open_processes=[]
     def launch(profile,label):
-        p=PtyProcess.spawn([executable,"--profile",profile],cwd=os.path.dirname(executable),env=env,dimensions=(44,150),backend=Backend.ConPTY)
+        # Retained v1 screen/route assertions use the explicit compatibility
+        # client; current installed v2 acceptance requires a separate caller.
+        p=PtyProcess.spawn([executable,"--compat-v1","--profile",profile],cwd=os.path.dirname(executable),env=env,dimensions=(44,150),backend=Backend.ConPTY)
         open_processes.append(p) # Ownership precedes birth/reader/persistence.
+        observation["processes"].append(p)
         p.tui28_label=label; p.tui28_queue=queue.Queue(maxsize=64); p.tui28_birth=None
         p.tui28_birth=process_birth(p.pid)
         if p.tui28_birth["parentPID"]!=os.getpid() or os.path.normcase(os.path.abspath(p.tui28_birth["image"]))!=os.path.normcase(executable): raise RuntimeError("actual terminal image/parent custody denied")
@@ -147,7 +160,8 @@ def main():
                 except EOFError:
                     if p.isalive(): time.sleep(.05);continue
                     p.tui28_queue.put(None);return
-                except Exception:
+                except Exception as original:
+                    observation["originals"].append({"phase":"terminal_reader","process":p,"original":original})
                     p.tui28_reader_failed=True;p.tui28_queue.put(None);return
                 if not chunk:
                     if p.isalive(): time.sleep(.05);continue
@@ -157,10 +171,10 @@ def main():
         write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"coreRuntimePID":ready["_runtimePID"],"sourceCommit":args.source_commit,"binarySHA256":identity["binarySHA256"],"ownerBirth":process_birth(os.getpid()),"runtimeBirth":ready["_runtimeBirth"],"tuiChildPID":p.pid,"tuiChildBirth":p.tui28_birth,"phase":"live_terminal"})
         return p,[""]
     def finish(p,t,label,expected="terminal_exited_zero"):
-        outcome["terminals"].append({"terminal":label,"exit":close_terminal(p,t,expected)}); open_processes.remove(p)
-        while p.tui28_reader.is_alive(): drain(p,t)
-        p.tui28_reader.join()
+        outcome["terminals"].append({"terminal":label,"exit":close_terminal(p,t,expected)})
+        complete_reader(p,t,observation)
         write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"coreRuntimePID":ready["_runtimePID"],"sourceCommit":args.source_commit,"binarySHA256":identity["binarySHA256"],"ownerBirth":process_birth(os.getpid()),"runtimeBirth":ready["_runtimeBirth"],"tuiChildPID":p.pid,"tuiChildBirth":p.tui28_birth,"phase":"normal_q_exit"})
+        open_processes.remove(p)
     try:
         # Real Windows sharing denials protect the held execution bytes. The
         # confined replacement fixture is retained on failure, never swept.
@@ -176,7 +190,7 @@ def main():
         if wrote or replaced: raise RuntimeError("held Windows candidate mutation was not denied")
         write_json(os.path.join(args.root,"owner-private-windows-mutation.json"),{"classification":"owner-private","sourceCommit":args.source_commit,"binarySHA256":identity["binarySHA256"],"inPlaceWriteDenied":True,"replacementDenied":True})
         before_unrelated=unrelated_snapshot(url,token); adverse=[]
-        p,t=launch("missing","missing-credential"); before=len(records(url,token)); audit_before=denial_audit_count(url,token); wait_for(p,('connection profile "missing" credential is unavailable',),30,t); finish(p,t,"missing-credential","terminal_exit_code_2"); after=len(records(url,token)); audit_after=denial_audit_count(url,token); adverse.append({"case":"missing-credential","beforeOperationCount":before,"afterOperationCount":after,"noOperation":after==before,"coreDeniedAuditBefore":audit_before,"coreDeniedAuditAfter":audit_after,"coreDeniedAuditDelta":audit_after-audit_before})
+        p,t=launch("missing","missing-credential"); before=len(records(url,token)); audit_before=denial_audit_count(url,token); wait_for(p,(SAFE_CONFIGURATION_DIAGNOSTIC,),30,t); finish(p,t,"missing-credential","terminal_exit_code_2"); assert_safe_missing_credential(t[0],env); after=len(records(url,token)); audit_after=denial_audit_count(url,token); adverse.append({"case":"missing-credential","beforeOperationCount":before,"afterOperationCount":after,"noOperation":after==before,"coreDeniedAuditBefore":audit_before,"coreDeniedAuditAfter":audit_after,"coreDeniedAuditDelta":audit_after-audit_before})
         for profile,label in (("invalid","invalid-credential"),("denied","scope-denied")):
             p,t=launch(profile,label); before=len(records(url,token)); audit_before=denial_audit_count(url,token); wait_for(p,("Runtime identity:",),30,t); detail(p,t); p.write("i"); wait_for(p,("Runtime API unavailable:",),30,t); finish(p,t,label); after=len(records(url,token)); audit_after=denial_audit_count(url,token); adverse.append({"case":label,"beforeOperationCount":before,"afterOperationCount":after,"noOperation":after==before,"coreDeniedAuditBefore":audit_before,"coreDeniedAuditAfter":audit_after,"coreDeniedAuditDelta":audit_after-audit_before})
         expected_denials={"missing-credential":0,"invalid-credential":0,"scope-denied":5}
@@ -211,14 +225,22 @@ def main():
         if after_unrelated!=before_unrelated: raise RuntimeError("unrelated runtime or lifecycle state changed")
         write_json(os.path.join(args.root,"operation-audit.json"),{"operations":audit,"coreAudit":audit_matches}); outcome.update({"outcome":"succeeded","actions":["install","config","start","stop","restart"],"adverseAudit":adverse,"reloadDenied":True,"cancellation":{"advertised":False,"supportedActionTested":False},"reconnect":{"completedOperationNoReplay":True,"pendingReconciliation":"blocked_core_1553_no_adapter"},"unrelatedService":{**before_unrelated,"unchangedAfterFiveActions":True},"fixtureOperationCount":len(audit),"keyboard":{"previewEscapeNoSubmission":True,"helpRendered":True,"nativeResizeRendered":True,"unsupportedRunningCancellationDenied":True}})
     except Exception as error:
+        observation["originals"].append({"phase":"lifecycle","original":error})
+        observation["primaryPresent"]=True; observation["primary"]=error
         # Error text can carry a URL or server response; retain a closed reason only.
         outcome["failureReason"]="native_harness_assertion_failed" if isinstance(error,RuntimeError) else "native_harness_unexpected_failure"
+        raise
+    except BaseException as primary:
+        observation["originals"].append({"phase":"lifecycle_control","original":primary})
+        observation["primaryPresent"]=True; observation["primary"]=primary
         raise
     finally:
         # Persist the failed primary before recovering any still-live terminal.
         primary_sink_failed=False
         try: write_json(os.path.join(args.root,"native-exit-receipt.json"),outcome)
-        except OSError: primary_sink_failed=True
+        except OSError as original:
+            observation["originals"].append({"phase":"primary_receipt","original":original})
+            primary_sink_failed=True
         for p in open_processes:
             try:
                 if p.isalive(): p.write("q")
@@ -227,27 +249,66 @@ def main():
                 while p.isalive(): drain(p,[""]); time.sleep(.05)
                 observed=p.wait()
                 if observed!=getattr(p,"exitstatus",None): raise RuntimeError("unowned terminal wait")
-                while p.tui28_reader.is_alive(): drain(p,[""])
-                p.tui28_reader.join()
                 outcome["terminals"].append({"terminal":p.tui28_label,"exit":terminal_exit(p) or "terminal_unknown"})
-            except Exception:
+            except Exception as original:
+                observation["originals"].append({"phase":"terminal_recovery","process":p,"original":original})
                 # Unknown observation is never accepted. The exception keeps
                 # the owner alive rather than releasing a still-live child.
                 if p.isalive():
                     while p.isalive(): time.sleep(.1)
                     p.wait()
                 outcome["terminals"].append({"terminal":p.tui28_label,"exit":"terminal_unknown"})
+            # Reader ownership survives both process exit and recovery failure.
+            # An unknown join propagates before either candidate handle closes.
+            complete_reader(p,[""],observation)
         cleanup_failure="finalization_failure" if primary_sink_failed else None
         cleanup={"outcome":"succeeded","closedReason":"held_candidate_handle_closed","recoveryRetained":False}
         try:
             held.close()
             kernel=ctypes.WinDLL("kernel32",use_last_error=True);kernel.CloseHandle.argtypes=[wintypes.HANDLE];kernel.CloseHandle.restype=wintypes.BOOL
             if not kernel.CloseHandle(held_directory): raise OSError("candidate parent handle close failed")
-        except Exception:
+        except Exception as original:
+            observation["originals"].append({"phase":"candidate_cleanup","original":original})
             cleanup_failure="cleanup_failed";cleanup={"outcome":"failed","closedReason":"descriptor_close_failed","recoveryRetained":False}
         try: write_json(os.path.join(args.root,"native-cleanup-receipt.json"),cleanup)
-        except OSError: cleanup_failure="cleanup_receipt_persistence_failed"
+        except OSError as original:
+            observation["originals"].append({"phase":"cleanup_receipt","original":original})
+            cleanup_failure="cleanup_receipt_persistence_failed"
         try: write_json(os.path.join(args.root,"native-exit-receipt.json"),outcome)
-        except OSError: cleanup_failure=cleanup_failure or "finalization_failure"
+        except OSError as original:
+            observation["originals"].append({"phase":"final_receipt","original":original})
+            cleanup_failure=cleanup_failure or "finalization_failure"
         write_json(os.path.join(args.root,"external-owner-finalization.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"runtimePID":ready["_runtimePID"],"runtimeBirth":ready["_runtimeBirth"],"sourceCommit":args.source_commit,"binarySHA256":identity["binarySHA256"],"finalizationFailure":cleanup_failure,"liveTuiChildRetained":False,"primaryOutcome":outcome["outcome"],**({"cleanupOutcome":cleanup} if cleanup_failure=="cleanup_receipt_persistence_failed" else {})})
+def complete_reader(process,transcript,observation):
+    if getattr(process,"tui28_reader_joined",False): return
+    if getattr(process,"tui28_reader_join_failed",False):
+        raise process.tui28_reader_join_original
+    failures=[]
+    while process.tui28_reader.is_alive() or not process.tui28_queue.empty():
+        try: drain(process,transcript)
+        except Exception as original:
+            observation["originals"].append({"phase":"reader_drain","process":process,"original":original})
+            failures.append(original)
+    try: process.tui28_reader.join()
+    except BaseException as original:
+        process.tui28_reader_join_failed=True
+        process.tui28_reader_join_original=original
+        observation["originals"].append({"phase":"reader_join","process":process,"original":original})
+        raise
+    process.tui28_reader_joined=True
+    if failures: raise failures[0]
+
+def main(observation=None):
+    # Optional caller retention is process-local, never a durable native sink.
+    if observation is None: observation={}
+    observation.update({"originals":[],"processes":[],"candidate":None,"primaryPresent":False,"primary":None})
+    try: return _main_attempt(observation)
+    except BaseException as original:
+        if observation["primaryPresent"]:
+            if original is not observation["primary"]:
+                observation["originals"].append({"phase":"finalization","original":original})
+            raise observation["primary"]
+        observation["originals"].append({"phase":"invocation","original":original})
+        raise
+
 if __name__=="__main__": main()

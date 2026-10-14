@@ -34,8 +34,8 @@ test("the source gate rejects an overlay while the invalid URL keeps its typed b
     await run("git", ["-C", checkout, "checkout", "--detach", "FETCH_HEAD"]);
     const sourcePath = path.join(checkout, "internal", "api", "client.go");
     const altered = (await readFile(sourcePath, "utf8")).replace(
-      "return nil, &ConfigurationError{Kind: ConfigurationErrorInvalidURL}",
-      'return nil, fmt.Errorf("foreign client failure")',
+      /(if authMode != AuthModeLocalAdmin && authMode != AuthModeOAuthBearer \{\r?\n\t\t)return nil, &ConfigurationError\{Kind: ConfigurationErrorInvalidURL\}/u,
+      '$1return nil, fmt.Errorf("foreign client failure")',
     );
     assert.notEqual(altered, await readFile(sourcePath, "utf8"), "overlay fixture did not alter the imported client");
     const replacement = path.join(root, "client.go");

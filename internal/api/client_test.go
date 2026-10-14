@@ -280,14 +280,15 @@ func TestDurableLifecycleUsesPreviewOneFrozenSubmitAndSafeReadback(t *testing.T)
 		{action: "stop", coreAction: "service_stop"},
 		{action: "restart", coreAction: "service_restart"},
 	}
-	var submits atomic.Int32
+	var readAction string
+ var submits atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("x-service-lasso-admin-token") != "local-token" {
 			t.Fatalf("wrong auth mode: %q", r.Header.Get("Authorization"))
 		}
 		switch r.URL.Path {
 		case "/api/operator/lifecycle/services/echo/availability":
-			_, _ = w.Write([]byte(`{"actions":[{"action":"install","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"config","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"start","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"stop","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"restart","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"reload","available":false,"reason":"durable_operation_unavailable","permission":"service-lasso:lifecycle:write","requiresConfirmation":false}]}`))
+			_, _ = w.Write([]byte(`{"contractVersion":"service-lasso-durable-lifecycle-operation.v1","serviceId":"echo","actions":[{"action":"install","available":true,"reason":null,"permission":"service-lasso:config:write","requiresConfirmation":true},{"action":"config","available":true,"reason":null,"permission":"service-lasso:config:write","requiresConfirmation":true},{"action":"start","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"stop","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"restart","available":true,"reason":null,"permission":"service-lasso:lifecycle:write","requiresConfirmation":true},{"action":"reload","available":false,"reason":"durable_operation_unavailable","permission":"service-lasso:lifecycle:write","requiresConfirmation":true}]}`))
 		case "/api/operator/lifecycle/operations":
 			var body map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&body)
@@ -301,15 +302,17 @@ func TestDurableLifecycleUsesPreviewOneFrozenSubmitAndSafeReadback(t *testing.T)
 			}
 			if body["execute"] == true {
 				submits.Add(1)
-				if body["confirmationPhrase"] != "confirm "+action || body["confirmationId"] != "mcp-confirmation-12345678" {
+ readAction = coreAction
+ w.WriteHeader(http.StatusAccepted)
+				if body["confirmationPhrase"] != "confirm "+action || body["confirmationId"] != "mcp-confirmation-12345678-1234-1234-1234-123456789abc" {
 					t.Fatalf("missing frozen confirmation: %#v", body)
 				}
-				_, _ = w.Write([]byte(`{"accepted":true,"operation":{"operationId":"mcp-operation-12345678","action":"` + coreAction + `","status":"running","phase":"executing","progress":50,"outcome":null,"cancellationSupported":false,"ownership":"own","summary":"SECRET /private/path"}}`))
+				_, _ = w.Write([]byte(`{"contractVersion":"service-lasso-mcp-operation-accepted.v1","accepted":true,"operation":{"operationId":"mcp-operation-12345678-1234-1234-1234-123456789abc","action":"` + coreAction + `","status":"running","phase":"executing","progress":50,"outcome":null,"cancellationSupported":false,"ownership":"own","targetIds":["echo"],"summary":"SECRET /private/path"}}`))
 				return
 			}
-			_, _ = w.Write([]byte(`{"action":"` + coreAction + `","preflight":{"targets":["echo"],"effects":["The runtime will apply the requested lifecycle action."]},"confirmation":{"id":"mcp-confirmation-12345678","status":"pending","confirmationPhrase":"confirm ` + action + `"}}`))
-		case "/api/operator/lifecycle/operations/mcp-operation-12345678":
-			_, _ = w.Write([]byte(`{"operation":{"operationId":"mcp-operation-12345678","action":"service_start","status":"succeeded","phase":"completed","progress":100,"outcome":"succeeded","cancellationSupported":false,"ownership":"own","summary":"SECRET /private/path"}}`))
+			_, _ = w.Write([]byte(`{"contractVersion":"service-lasso-mcp-guarded-action.v1","ok":true,"status":"preflight","action":"` + coreAction + `","preflight":{"executable":true,"targets":["echo"],"effects":["The runtime will apply the requested lifecycle action."]},"confirmation":{"required":true,"id":"mcp-confirmation-12345678-1234-1234-1234-123456789abc","status":"pending","confirmationPhrase":"confirm ` + action + `"}}`))
+		case "/api/operator/lifecycle/operations/mcp-operation-12345678-1234-1234-1234-123456789abc":
+			_, _ = w.Write([]byte(`{"contractVersion":"service-lasso-mcp-operation.v1","operation":{"operationId":"mcp-operation-12345678-1234-1234-1234-123456789abc","action":"` + readAction + `","status":"succeeded","phase":"completed","progress":100,"outcome":"succeeded","cancellationSupported":false,"ownership":"own","targetIds":["echo"],"summary":"SECRET /private/path"}}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -338,7 +341,7 @@ func TestDurableLifecycleUsesPreviewOneFrozenSubmitAndSafeReadback(t *testing.T)
 				t.Fatalf("submit = %#v, %v", operation, err)
 			}
 			operation, err = client.Operation(context.Background(), operation.ID)
-			if err != nil || operation.Outcome != "succeeded" || operation.CancellationSupported {
+			if err != nil || operation.Outcome != "succeeded" || operation.Action != workflow.coreAction || operation.CancellationSupported {
 				t.Fatalf("readback = %#v, %v", operation, err)
 			}
 		})
@@ -367,14 +370,14 @@ func TestOAuthBearerIsExplicitAndMalformedOperationNeverRenders(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer remote-token" || r.Header.Get("x-service-lasso-admin-token") != "" {
 			t.Fatalf("wrong headers")
 		}
-		_, _ = w.Write([]byte(`{"operation":{"operationId":"mcp-operation-12345678","action":"service_start\u001b[2J","status":"running","phase":"executing","progress":50,"outcome":null,"cancellationSupported":false,"ownership":"own"}}`))
+		_, _ = w.Write([]byte(`{"contractVersion":"service-lasso-mcp-operation.v1","operation":{"operationId":"mcp-operation-12345678-1234-1234-1234-123456789abc","action":"service_start\u001b[2J","status":"running","phase":"executing","progress":50,"outcome":null,"cancellationSupported":false,"ownership":"own","targetIds":["echo"]}}`))
 	}))
 	defer server.Close()
 	client, err := NewClientWithAuth(server.URL, server.Client(), "remote-token", AuthModeOAuthBearer, "service-lasso:read", "service-lasso:lifecycle:write")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Operation(context.Background(), "mcp-operation-12345678"); err == nil {
+	if _, err := client.Operation(context.Background(), "mcp-operation-12345678-1234-1234-1234-123456789abc"); err == nil {
 		t.Fatal("unsafe operation payload was accepted")
 	}
 }

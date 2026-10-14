@@ -5,6 +5,15 @@ from winpty.enums import Backend
 from winpty.ptyprocess import PtyProcess
 
 ALLOWED_ENV=("APPDATA","COMSPEC","LOCALAPPDATA","PATHEXT","PATH","SYSTEMROOT","TEMP","TMP","USERPROFILE","WINDIR")
+SAFE_CONFIGURATION_DIAGNOSTIC="connection configuration unavailable; check profile settings"
+def assert_safe_missing_credential(text,env):
+    """Inspect captured bytes in memory; never include private values in failures."""
+    if SAFE_CONFIGURATION_DIAGNOSTIC not in text: raise RuntimeError("safe configuration diagnostic unavailable")
+    forbidden=['"missing"','SERVICE_LASSO_MISSING_TOKEN']
+    for key in ("SERVICE_LASSO_API_TOKEN","SERVICE_LASSO_DENIED_TOKEN","SERVICE_LASSO_INVALID_TOKEN","SERVICE_LASSO_CONNECTIONS_CONFIG"):
+        forbidden.append(key)
+        if env.get(key): forbidden.append(env[key])
+    if any(value in text for value in forbidden): raise RuntimeError("configuration diagnostic privacy denied")
 def write_json(path,value):
     with open(path,"w",encoding="utf-8",newline="") as f: json.dump(value,f,separators=(",",":"))
 def hold_candidate(executable,source):
@@ -108,12 +117,12 @@ def main():
     env={key:os.environ[key] for key in ALLOWED_ENV if os.environ.get(key)}; env.update({"TERM":"xterm-256color","SERVICE_LASSO_API_TOKEN":token,"SERVICE_LASSO_DENIED_TOKEN":denied,"SERVICE_LASSO_INVALID_TOKEN":"tui20-invalid-token","SERVICE_LASSO_CONNECTIONS_CONFIG":os.path.join(args.root,"connections.json")})
     executable,held,identity=hold_candidate(args.executable,args.source_commit); outcome={"outcome":"failed","candidateIdentity":identity,"coreCommit":args.core_commit,"runtimePathReceipt":paths,"terminals":[]}; open_processes=[]
     def launch(profile,label):
-        p=PtyProcess.spawn([executable,"--profile",profile],cwd=os.path.dirname(executable),env=env,dimensions=(44,150),backend=Backend.ConPTY); open_processes.append(p); return p,[""]
+        p=PtyProcess.spawn([executable,"--compat-v1","--profile",profile],cwd=os.path.dirname(executable),env=env,dimensions=(44,150),backend=Backend.ConPTY); open_processes.append(p); return p,[""]
     def finish(p,t,label,expected="terminal_exited_zero"):
         outcome["terminals"].append({"terminal":label,"exit":close_terminal(p,t,expected)}); open_processes.remove(p)
     try:
         before_unrelated=unrelated_snapshot(url,token); adverse=[]
-        p,t=launch("missing","missing-credential"); before=len(records(url,token)); audit_before=denial_audit_count(url,token); wait_for(p,('connection profile "missing" credential is unavailable',),30,t); finish(p,t,"missing-credential","terminal_exit_code_2"); after=len(records(url,token)); audit_after=denial_audit_count(url,token); adverse.append({"case":"missing-credential","beforeOperationCount":before,"afterOperationCount":after,"noOperation":after==before,"coreDeniedAuditBefore":audit_before,"coreDeniedAuditAfter":audit_after,"coreDeniedAuditDelta":audit_after-audit_before})
+        p,t=launch("missing","missing-credential"); before=len(records(url,token)); audit_before=denial_audit_count(url,token); wait_for(p,(SAFE_CONFIGURATION_DIAGNOSTIC,),30,t); finish(p,t,"missing-credential","terminal_exit_code_2"); assert_safe_missing_credential(t[0],env); after=len(records(url,token)); audit_after=denial_audit_count(url,token); adverse.append({"case":"missing-credential","beforeOperationCount":before,"afterOperationCount":after,"noOperation":after==before,"coreDeniedAuditBefore":audit_before,"coreDeniedAuditAfter":audit_after,"coreDeniedAuditDelta":audit_after-audit_before})
         for profile,label in (("invalid","invalid-credential"),("denied","scope-denied")):
             p,t=launch(profile,label); before=len(records(url,token)); audit_before=denial_audit_count(url,token); wait_for(p,("Runtime identity:",),30,t); detail(p,t); p.write("i"); wait_for(p,("Runtime API unavailable:",),30,t); finish(p,t,label); after=len(records(url,token)); audit_after=denial_audit_count(url,token); adverse.append({"case":label,"beforeOperationCount":before,"afterOperationCount":after,"noOperation":after==before,"coreDeniedAuditBefore":audit_before,"coreDeniedAuditAfter":audit_after,"coreDeniedAuditDelta":audit_after-audit_before})
         expected_denials={"missing-credential":0,"invalid-credential":0,"scope-denied":5}

@@ -81,7 +81,7 @@ func TestResolveConnectionsRejectsUnknownSelectedProfile(t *testing.T) {
 					return test.env[key]
 				},
 			})
-			if err == nil || !strings.Contains(err.Error(), "unknown connection profile") {
+			if err == nil || !strings.Contains(err.Error(), "connection configuration unavailable") {
 				t.Fatalf("ResolveConnections() error = %v, want unknown profile", err)
 			}
 		})

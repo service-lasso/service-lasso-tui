@@ -1,0 +1,12 @@
+/* UNRUN actual startup traversal with controlled child-context/route bodies. */
+#define SERVICE_LASSO_OWNED_SEPOL 1
+#include "../public_startup_linux.h"
+#include <assert.h>
+#include <errno.h>
+static unsigned payload_calls,route_calls;static long payload_failure,route_failure;
+long sl_linux_interpret_candidate_payload_context(sl_linux_candidate_payload_context *p){payload_calls++;p->attempted=p->returned=1;p->result=payload_failure;return payload_failure;}
+long sl_linux_interpret_candidate_routes(sl_linux_candidate_routes *r){route_calls++;r->attempted=r->returned=1;r->result=route_failure;return route_failure;}
+#include "../candidate_startup_routes_linux.c"
+typedef struct {sl_linux_public_startup startup;sl_linux_candidate_payload_context payload[1];sl_linux_candidate_routes routes[1];sl_linux_candidate_roles roles[1];sl_linux_candidate_policy policy[1];sl_linux_control_access access[1];} fixture;
+static void prepare(fixture *f){sl_linux_public_startup *s=&f->startup;s->returned=s->candidate_roles_returned=1;s->stage=SL_STARTUP_ACQUIRED;s->candidate_payloads=f->payload;s->candidate_payload_capacity=s->actual_parse_capacity=s->actual_policy_capacity=s->actual_candidate_role_capacity=s->actual_candidate_policy_capacity=1;s->candidate_routes=f->routes;s->candidate_route_capacity=s->actual_control_access_capacity=1;s->actual_candidate_roles=f->roles;s->actual_candidate_policies=f->policy;s->actual_control_access=f->access;s->mounts.selinux_count=1;f->payload[0].policy_original=f->policy;f->routes[0].roles_original=f->roles;f->routes[0].control_original=f->access;f->routes[0].payload_original=&f->payload[0].reachable;f->access[0].attempted=1;}
+int main(void){fixture cases[4]={0};for(unsigned i=0;i<4;i++){fixture *f=&cases[i];prepare(f);payload_failure=i==1?-81:0;route_failure=i==2?-82:0;if(i==3)f->routes[0].payload_original=NULL;unsigned pb=payload_calls,rb=route_calls;long result=sl_linux_interpret_startup_candidate_routes(&f->startup);assert(f->startup.candidate_routes_returned);if(i==3)assert(result==-EINVAL&&payload_calls==pb&&route_calls==rb);else if(i==1)assert(result==-81&&payload_calls==pb+1&&route_calls==rb);else{assert(payload_calls==pb+1&&route_calls==rb+1);assert(result==(i==2?-82:0));}pb=payload_calls;assert(sl_linux_interpret_startup_candidate_routes(&f->startup)==-EINVAL&&payload_calls==pb);}return 0;}

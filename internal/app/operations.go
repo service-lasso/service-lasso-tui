@@ -2,12 +2,9 @@ package app
 
 import (
 	"encoding/json"
-	"bytes"
-	"io"
-    "unicode/utf8"
-	"fmt"
-	"os"
+		"os"
 	"path/filepath"
+ "github.com/service-lasso/service-lasso-tui/internal/api"
 )
 
 // persistedOperation is deliberately closed and metadata-only. In particular it
@@ -27,7 +24,7 @@ type operationStore interface {
 	Clear(persistedOperation) error
 }
 
-type fileOperationStore struct{ path string }
+type fileOperationStore struct{ path string; held heldOperationStore }
 
 func defaultOperationStore() operationStore {
 	dir, err := os.UserConfigDir()
@@ -38,48 +35,42 @@ func defaultOperationStore() operationStore {
 }
 
 func (s fileOperationStore) Load() (*persistedOperation, error) {
-	    entry, err := os.Lstat(s.path)
-    if os.IsNotExist(err) { return nil, nil }
-    if err != nil || !entry.Mode().IsRegular() || entry.Size() <= 0 || entry.Size() > 4096 { return nil, fmt.Errorf("operation reconciliation metadata is invalid") }
-    raw, err := os.ReadFile(s.path)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read operation reconciliation metadata: %w", err)
-	}
+	raw,err:=s.readRaw();if err!=nil{return nil,err};if raw==nil{return nil,nil}
 	var value persistedOperation
-	if err := decodeOperationMetadata(raw, &value); err != nil || value.Version != 2 || value.OperationID == "" || value.ConnectionName == "" || value.Binding == "" {
-		return nil, fmt.Errorf("operation reconciliation metadata is invalid")
+	if err := decodeOperationMetadata(raw, &value); err != nil { return nil,storageErrorCause(err) }
+	if value.Version != 2 || value.OperationID == "" || value.ConnectionName == "" || value.Binding == "" {
+		return nil, &api.OperatorError{Stage: "storage"}
 	}
 	return &value, nil
 }
 
 func (s fileOperationStore) Save(value persistedOperation) error {
 	if value.Version != 2 || value.OperationID == "" || value.ConnectionName == "" || value.Binding == "" {
-		return fmt.Errorf("refuse unsafe operation reconciliation metadata")
+		return &api.OperatorError{Stage: "storage"}
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0700); err != nil {
-		return err
-	}
-	    raw, err := json.Marshal(value)
-    if err != nil || len(raw) > 4096 { return fmt.Errorf("operation reconciliation metadata is invalid") }
-    // Sync the completed temporary body before the atomic replacement. A failed
-    // write leaves the previous retained operation intact.
-    temporary, err := os.CreateTemp(filepath.Dir(s.path), ".operation-reconciliation-*")
-    if err != nil { return err }
-    name := temporary.Name()
-    defer os.Remove(name)
-    if err = temporary.Chmod(0600); err == nil { _, err = temporary.Write(raw) }
-    if err == nil { err = temporary.Sync() }
-    closeErr := temporary.Close()
-    if err != nil { return err }; if closeErr != nil { return closeErr }
-    return os.Rename(name, s.path)
+	raw, err := json.Marshal(value)
+	if err != nil { return storageErrorCause(err) }
+	if len(raw) > 4096 { return storageError() }
+	if _,err:=api.DecodeOperatorSavedV2(raw);err!=nil{return storageErrorCause(err)}
+	return s.publication(func(s fileOperationStore)error{
+		current,err:=s.readRaw();if err!=nil{return err}
+		// Readbacks also call Save. A late A response must not replace B before
+		// Clear(A) compares ownership. Only absence can publish a new legacy ID;
+		// the identical owner is a no-op that preserves its exact original bytes.
+		if current!=nil{
+			var retained persistedOperation
+			if err:=decodeOperationMetadata(current,&retained);err!=nil{return storageErrorCause(err)}
+			if retained!=value{return storageError()}
+			return nil
+		}
+		return s.publishRaw(raw)
+	})
 }
 
 func (s fileOperationStore) Clear(expected persistedOperation) error {
 	// Only the exact record this submission persisted may be removed. Invalid
 	// metadata and another actor/connection's record remain recovery evidence.
+	return s.publication(func(s fileOperationStore)error{
 	retained, err := s.Load()
 	if err != nil {
 		return err
@@ -88,30 +79,16 @@ func (s fileOperationStore) Clear(expected persistedOperation) error {
 		return nil
 	}
 	if *retained != expected {
-		return fmt.Errorf("retained operation changed; reconciliation metadata was not removed")
+		return &api.OperatorError{Stage: "storage"}
 	}
-	if err := os.Remove(s.path); err != nil && !os.IsNotExist(err) {
+	if err := s.held.remove(); err != nil {
 		return err
 	}
 	return nil
+	})
 }
 
 func decodeOperationMetadata(raw []byte, destination *persistedOperation) error {
-    if !utf8.Valid(raw) { return fmt.Errorf("invalid reconciliation encoding") }
-    decoder := json.NewDecoder(bytes.NewReader(raw))
-    token, err := decoder.Token()
-    if err != nil || token != json.Delim('{') { return fmt.Errorf("invalid reconciliation object") }
-    keys := map[string]bool{}
-    for decoder.More() {
-        token, err = decoder.Token(); key, ok := token.(string)
-        if err != nil || !ok || keys[key] { return fmt.Errorf("duplicate reconciliation field") }
-        keys[key] = true
-        if key != "version" && key != "operationId" && key != "connectionName" && key != "reconciliationContext" { return fmt.Errorf("unknown reconciliation field") }
-        var value json.RawMessage
-        if decoder.Decode(&value) != nil { return fmt.Errorf("invalid reconciliation value") }
-    }
-    token, err = decoder.Token()
-    if err != nil || token != json.Delim('}') || len(keys) != 4 { return fmt.Errorf("incomplete reconciliation object") }
-    if _, err = decoder.Token(); err != io.EOF { return fmt.Errorf("trailing reconciliation data") }
-    return json.Unmarshal(raw,destination)
+	value,err:=api.DecodeOperatorSavedV2(raw);if err!=nil{return err}
+	*destination=persistedOperation{Version:value.Version,OperationID:value.OperationID,ConnectionName:value.ConnectionName,Binding:value.ReconciliationContext};return nil
 }

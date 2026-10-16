@@ -425,3 +425,21 @@ Allocation-frontier handling is source implementation only, not an executed
 OOM/reservation proof; no huge allocation stunt or fake native positive is used.
 No local target execution/admission. Commit is immediately pushed, then new
 freeze and fresh DIFFERENT ENTIRE review are required for changed exact bytes.
+
+### Selected cross-repository pair-wiring pre-code review
+
+Parent selected TUI1-PAIR-WIRING-PRECODE-20261016.md as documentation only,
+mapped in active SPEC004, backlog and project intent. It pins the actual current
+Core develop/PR1775 consumer files and exact blobs, which still reject schema4;
+historical Core119 worker attribution is not a receiving implementation. The
+proposal maps strict closed v2 native wrappers to the existing ordered schema4
+pair contract through producer/evidence/assembler/verifier/publisher, retaining
+legacy schemas1/2/3, all fixed names/caps/public receipts/provider/source and
+policy bindings. Existing Core2633 native evidence pin is not changed.
+
+Commit and immediate push of this document mapping are selected before fresh
+bounded independent cross-repository intent review. No new producer/assembler/
+verifier body or activation is selected. Genuine entry/profile/family ownership
+and actual Core consumer remain required before positive packaging/native
+claims. d720 ENTIRE60 SOURCE_GO and natural Windows/Linux fixture passes stay
+historical for their exact bytes; no local target execution admission follows.

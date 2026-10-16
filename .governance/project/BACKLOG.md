@@ -1510,3 +1510,6 @@ Issue1 overlay module/test gate pre-code mapping: .governance/project/TUI1-OVERL
 Issue1 paired source emitter pre-code mapping: .governance/project/TUI1-PAIRED-SOURCE-EMITTER-20261016.md. Actual held-file caller only; genuine issuer/provider/ROOT/finance/Centry and whole qualification remain required. UNRUN.
 
 Issue1 Clear original lifetime pre-code mapping: .governance/project/TUI1-CLEAR-ORIGINAL-LIFETIME-20261016.md. Independent native read-only owner before delete; once-close delete owner before absence/readback, unchanged exclusion and separate release outcomes. UNRUN.
+
+### Issue1 selected pair-wiring pre-code intent review
+Parent selected TUI1-PAIR-WIRING-PRECODE-20261016.md for independent cross-repository intent review only. Existing SPEC004 packaging B maps the actual current Core consumer pins/files/blobs, strict v2 native wrapper to schema4 ordered owner/payload archive, preserved historical schema1/2/3, unchanged caps/public receipts/provider/source-policy bindings and actual last-borrower readiness. Producer/assembler/verifier implementation is not yet selected; genuine entry/profile/family and Core consumer remain unconnected, with no activation or Core2633 repin.

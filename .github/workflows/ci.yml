@@ -147,7 +147,7 @@ jobs:
           python scripts/producer-child-continuity.test.py
           python scripts/posix-read-continuity.test.py
           node --test scripts/release-probe-finalization.test.mjs
-          node --test scripts/held-overlay-inputs.test.mjs scripts/linux-candidate-build-plan.test.mjs scripts/candidate-profile-source.test.mjs scripts/windows-payload-first-executor.test.mjs scripts/owned-overlay-command.test.mjs
+          node --test scripts/held-overlay-inputs.test.mjs scripts/linux-candidate-build-plan.test.mjs scripts/candidate-profile-source.test.mjs scripts/windows-payload-first-executor.test.mjs scripts/owned-overlay-command.test.mjs scripts/file-backed-command-completion.test.mjs
           node --test scripts/scoped-candidate.test.mjs scripts/native-producer-child.test.mjs scripts/native-producer-handoff.test.mjs scripts/required-native-dependency.test.mjs
           node --test scripts/tui20-native-core.recovery.test.mjs scripts/verify-tui20-native-public-receipt.test.mjs scripts/verify-real-core-conpty.test.mjs scripts/verify-release-asset-conpty.test.mjs scripts/verify-candidate-publication.test.mjs scripts/verify-candidate-publication-fresh-job.test.mjs
       - name: Test actual native custody producer and receipt consumer
@@ -254,7 +254,7 @@ jobs:
           python scripts/producer-child-continuity.test.py
           python scripts/posix-read-continuity.test.py
           node --test scripts/release-probe-finalization.test.mjs
-          node --test scripts/held-overlay-inputs.test.mjs scripts/linux-candidate-build-plan.test.mjs scripts/candidate-profile-source.test.mjs scripts/windows-payload-first-executor.test.mjs scripts/owned-overlay-command.test.mjs
+          node --test scripts/held-overlay-inputs.test.mjs scripts/linux-candidate-build-plan.test.mjs scripts/candidate-profile-source.test.mjs scripts/windows-payload-first-executor.test.mjs scripts/owned-overlay-command.test.mjs scripts/file-backed-command-completion.test.mjs
           node --test scripts/scoped-candidate.test.mjs scripts/native-producer-child.test.mjs scripts/native-producer-handoff.test.mjs scripts/required-native-dependency.test.mjs
           node --test scripts/tui20-native-core.recovery.test.mjs scripts/verify-tui20-native-public-receipt.test.mjs scripts/verify-real-core-conpty.test.mjs scripts/verify-release-asset-conpty.test.mjs scripts/verify-candidate-publication.test.mjs scripts/verify-candidate-publication-fresh-job.test.mjs
       - name: Test actual native custody producer and receipt consumer

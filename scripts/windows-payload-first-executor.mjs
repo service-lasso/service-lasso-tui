@@ -3,6 +3,8 @@ import {spawn} from 'node:child_process';
 import path from 'node:path';
 import {HeldOverlayInputs, requireEmittedQueryPair} from './held-overlay-inputs.mjs';
 import {windowsPayloadFirstBuildPlan} from './native-owner-build-plan.mjs';
+import {CommandFailureLedger} from './command-failure-ledger.mjs';
+import {completeFileBackedCommand} from './file-backed-command-completion.mjs';
 
 const same=(a,b)=>a.dev===b.dev&&a.ino===b.ino;
 const key=value=>path.resolve(value).toLowerCase();
@@ -75,6 +77,8 @@ export async function executeWindowsPayloadFirstBuild(inputs){
    path.join(sourceRoot,'go.mod'),path.join(sourceRoot,'go.sum'),
    path.join(sourceRoot,'scripts/windows-payload-first-executor.mjs'),
    path.join(sourceRoot,'scripts/held-overlay-inputs.mjs'),
+   path.join(sourceRoot,'scripts/command-failure-ledger.mjs'),
+   path.join(sourceRoot,'scripts/file-backed-command-completion.mjs'),
    path.join(sourceRoot,'scripts/native-owner-build-plan.mjs'),
    path.join(sourceRoot,'scripts/emit-windows-query-regions.mjs'),
    path.join(sourceRoot,'scripts/generate-windows-query-regions.mjs'),
@@ -114,7 +118,7 @@ export async function executeWindowsPayloadFirstBuild(inputs){
    await held.revalidate();
    const destinations=destination?(Array.isArray(destination)?destination:[destination]):[];
    for(const file of destinations)await absent(file);
-   const row={phase,command:program,argv:[...argv],cwd:sourceRoot,environment:owner.environment,state:'opening-streams',errors:[]};
+   const row={phase,command:program,argv:[...argv],cwd:sourceRoot,environment:owner.environment,state:'opening-streams',failures:new CommandFailureLedger()};
    owner.commands.push(row);
    for(const channel of ['stdout','stderr']){
     const file=output('command-'+(owner.commands.length-1)+'.'+channel);
@@ -126,34 +130,7 @@ export async function executeWindowsPayloadFirstBuild(inputs){
    const child=spawn(program,row.argv,{cwd:sourceRoot,env:owner.environment,
     stdio:['ignore',row.stdout.handle.fd,row.stderr.handle.fd],windowsHide:true});
    row.child=child;
-   await new Promise(resolve=>{
-    child.on('error',original=>{row.errors.push(original);});
-    child.once('exit',(code,signal)=>{row.exitOriginal={code,signal};});
-    child.once('close',(code,signal)=>{row.closeOriginal={code,signal};row.state='closed';resolve();});
-   });
-   let primaryPresent=false;
-   try{
-    // Actual direct-child close is retained, never promoted to family closure.
-    for(const channel of ['stdout','stderr']){
-     const stream=row[channel];await stream.handle.sync();
-     Object.assign(stream,await held.read(stream.handle,stream));
-     await retainOutput(stream.path);
-    }
-    await held.revalidate();
-    if(row.errors.length)throw row.errors[0];
-    if(row.closeOriginal.code!==0||row.closeOriginal.signal!==null)throw new Error('payload-first command failed');
-   }catch(original){primaryPresent=true;row.primaryOriginal=original;throw original;}
-   finally{
-    // Attempt every output, including both emitter files, after every closed
-    // child outcome/readback failure. Missing or partial originals stay private.
-    row.outputOriginals=[];
-    for(const file of destinations){
-     try{await lstat(file);await retainOutput(file);}
-     catch(original){row.outputOriginals.push({path:file,original});owner.secondaryOriginals.push(original);}
-    }
-    if(!primaryPresent&&row.outputOriginals.length)throw row.outputOriginals[0].original;
-   }
-   return row.stdout.bytes;
+   return completeFileBackedCommand(row,owner,destinations);
   }
   if(decode(await command('source-head',git,['rev-parse','HEAD'])).trim()!==expectedSourceCommit)throw new Error('source head differs');
   if(decode(await command('source-clean',git,['status','--porcelain=v1','--untracked-files=all'])).trim())throw new Error('source tree is not clean');

@@ -387,3 +387,41 @@ error identities. Both source-test job bodies include the same fixture. No
 local target execution/admission; each commit is immediately pushed and the
 new exact head requires fresh DIFFERENT ENTIRE review. Genuine query profile,
 actual entry and native family binding remain separate unresolved debt.
+
+### Second iteration: shared first-cause and independent settlement pipeline
+
+Fresh DIFFERENT ENTIRE57 review of bab8 returned SOURCE_NO_GO: the SAME stable
+first-cause/independent-capture signature remained at buffered preparation and
+the Windows executor's serial sync/readback. This is implementation iteration2;
+the counter is not reset for a different helper/reviewer. A third equivalent
+failure triggers the governed scoped circuit breaker.
+
+The aggregate source repair uses invocation-private CommandFailureLedger for
+both actual command paths. Child/transport errors are recorded at occurrence,
+before later captures. Each buffered channel prepares inside its own protected
+attempt, then persists if actual preparation completed. Each file-backed
+channel separately attempts sync, complete readback and named original
+retention even after the preceding operation failed. Every destination and
+post-borrower revalidation is independently attempted before the SAME first
+opaque original is thrown. All later occurrences stay with the actual rooted
+command owner. No opaque original serialization, authority registry, public
+command seam, retry/timer/kill or native-family completion grant is added.
+
+The source audit covers both command/transport paths, all capture preparation/
+persistence/readback/retention stages, destinations and post-borrower validation.
+Pre-spawn refusal has no born child or capture borrower; opened handles remain
+with the failed attempt. Gate final input revalidation/close and both metadata
+writes already have independent attempts. File-backed compiler descendants and
+late borrowers still require genuine enclosing custody, currently UNCONNECTED.
+
+UNRUN fixtures use actual child and filesystem failures: stdout persistence
+cannot skip complete stderr or changed-original revalidation; closed parent
+stdout handle while a real child owns its inherited duplicate cannot skip
+stderr sync/readback/retention or revalidation; actual failed spawn stays first
+through missing named-output and changed-input failures. Existing transport-
+error/live-input/actual-close and two-persistence-error cases remain mandatory.
+Raw read occurrences and exact first/later error identities are asserted.
+Allocation-frontier handling is source implementation only, not an executed
+OOM/reservation proof; no huge allocation stunt or fake native positive is used.
+No local target execution/admission. Commit is immediately pushed, then new
+freeze and fresh DIFFERENT ENTIRE review are required for changed exact bytes.

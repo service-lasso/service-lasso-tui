@@ -53,6 +53,7 @@ try {
   await original(path.join(sourceRoot,'scripts/test-windows-owned-overlay.mjs'));
   await original(path.join(sourceRoot,'scripts/held-overlay-inputs.mjs'));
   await original(path.join(sourceRoot,'scripts/owned-overlay-command.mjs'));
+  await original(path.join(sourceRoot,'scripts/command-failure-ledger.mjs'));
   record.phase='acquire-authentic-query-profile';
   const profileBytes=await original(queryProfile);
   record.phase='decode-authentic-query-profile';

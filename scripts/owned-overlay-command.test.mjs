@@ -45,6 +45,7 @@ test('actual transport error cannot settle command or release input before real 
   await assert.rejects(pending,original=>original===marker);
   assert.equal(owner.closeObserved,true);
   assert.equal(owner.originals[0],marker);
+  assert.equal(owner.revalidationCompleted,true);
   assert.equal(original.closeAttempted,undefined);
   }finally{
    child.stdin.end();
@@ -61,11 +62,12 @@ test('real stdout persistence failure still captures complete actual stderr',asy
   });
   assert.equal(owner.closeObserved,true);assert.equal(owner.captures.length,2);
   assert.equal(owner.captures[1].completed,true);
+  assert.equal(owner.revalidationCompleted,true);
   assert.equal(await readFile(path.join(root,'stderr'),'utf8'),'actual stderr original');
  });
 });
 test('real failed spawn keeps primary identity while both persistence attempts fail independently',async()=>{
- await fixture(async({held,owner})=>{
+ await fixture(async({held,owner,original})=>{
   owner.command=path.join(owner.cwd,'genuinely-absent-program');
   await mkdir(owner.stdoutPath);await mkdir(owner.stderrPath);
   await assert.rejects(runOwnedOverlayCommand(owner,held),original=>{
@@ -75,5 +77,20 @@ test('real failed spawn keeps primary identity while both persistence attempts f
   assert.equal(owner.originals.length,3);
   assert.equal(owner.originals[1],owner.captures[0].original);
   assert.equal(owner.originals[2],owner.captures[1].original);
+  assert.equal(owner.revalidationCompleted,true);assert.equal(original.reads.length,3);
+ });
+});
+test('stdout persistence failure cannot skip stderr or actual changed-input revalidation',async()=>{
+ await fixture(async({held,root,original,owner})=>{
+  await mkdir(owner.stdoutPath);
+  owner.argv=['-e','require("node:fs").writeFileSync("input","changed original");process.stderr.write("retained stderr");'];
+  await assert.rejects(runOwnedOverlayCommand(owner,held),original=>original===owner.captures[0].original);
+  assert.equal(owner.closeObserved,true);assert.equal(owner.captures[1].completed,true);
+  assert.equal(await readFile(path.join(root,'stderr'),'utf8'),'retained stderr');
+  assert.equal(owner.revalidationCompleted,false);assert.equal(original.reads.length,3);
+  assert.equal(owner.failures.occurrences[0].phase,'stdout-persist');
+  assert.equal(owner.failures.occurrences.at(-1).phase,'post-borrower-revalidate');
+  assert.equal(owner.originals.length,2);
+  assert.equal(original.reads.at(-1).bytes.toString(),'changed original');
  });
 });

@@ -124,3 +124,12 @@ No fake positive JSON or generated main is supplied. The preceding six-file
 unit remains separately mapped in its own static-caller record; these three
 new executor source/fixture/precode files and the shared workflow/issue additions
 are the separately identifiable executor unit awaiting fresh ENTIRE review.
+
+The bab8 full57 review found the same first-cause/independent-capture signature
+at this executor's serial stdout/stderr sync/read/retention. Iteration2 repairs
+both paths with one private failure-ledger pattern. Actual file-backed child
+completion now records errors before capture, independently attempts each
+channel sync/read/retention, every destination and final revalidation, then
+throws the same earliest original. New real-child/filesystem fixtures retain
+all later failures and require the other channel and revalidation attempts.
+This remains UNRUN locally and unconnected to genuine native family/entry.

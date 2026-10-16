@@ -81,7 +81,7 @@ test("fresh job binds checked source before consuming its artifact and runs the 
   const preflight = {
     immutableReleases: { enabled: true },
     environment: { name: "development-candidate", protection_rules: [{ type: "wait_timer", wait_timer: 10 }], deployment_branch_policy: { protected_branches: true, custom_branch_policies: false } },
-    branchProtection: { required_status_checks: { strict: true, contexts: ["Linux test and build", "Windows test and build", "macOS test and build", "Release asset cross-compilation"] }, required_pull_request_reviews: { required_approving_review_count: 0 }, allow_force_pushes: { enabled: false } },
+    branchProtection: { required_status_checks: { strict: true, contexts: ["Linux test and build", "Windows test and build", "Windows owned GOROOT overlay tests", "macOS test and build", "Release asset cross-compilation"] }, required_pull_request_reviews: { required_approving_review_count: 0 }, allow_force_pushes: { enabled: false } },
   };
   await Promise.all([
     writeFile(path.join(artifact, "immutable-releases.json"), JSON.stringify(preflight.immutableReleases)),

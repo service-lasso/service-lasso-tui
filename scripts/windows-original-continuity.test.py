@@ -96,7 +96,10 @@ class WindowsOriginalContinuity(unittest.TestCase):
             def join(self): events.append("join")
         process=SimpleNamespace(pid=456,exitstatus=0,isalive=lambda:False,wait=lambda:events.append("wait") or 0)
         held=SimpleNamespace(close=lambda:events.append("candidate-close")); directory=object()
-        args=SimpleNamespace(root="controlled-root",executable="controlled-executable",source_commit="a"*40,core_commit="c"*40,external_runtime=True)
+        # Real hold_candidate returns an absolute held executable. Preserve
+        # that tuple in this nonnative fixture so the actual parent/image guard
+        # is reached and passes before testing finish-receipt failure recovery.
+        args=SimpleNamespace(root="controlled-root",executable=str(Path("controlled-executable").resolve()),source_commit="a"*40,core_commit="c"*40,external_runtime=True)
         paths={"coreReadback":True,"uniqueOwnedPaths":["workspaceRoot","instanceRegistryPath","hostPortRegistryPath"],"runtimeInstanceBound":True}
         ready={"token":"controlled-token","deniedToken":"controlled-denied","url":"http://controlled","_binarySHA256":"b"*64,"_runtimePID":123,"_runtimeBirth":{}}
         opened=mock_open(); opens=[]; observation={}

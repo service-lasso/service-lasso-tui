@@ -9,6 +9,7 @@ import { assertSourcePolicy } from "./scoped-policy.mjs";
 import { parseStrictJSON } from "./scoped-json.mjs";
 import { candidateIdentity } from "./verify-scoped-candidate-publication.mjs";
 import { createNativeArchive, verifyNativeArchive } from "./scoped-native-archive.mjs";
+import {createNativeOwnerArchive,nativeOwnerMemberInventory,nativeOwnerLayout,assertCoreNativeOwnerAsset} from './native-owner-package.mjs';
 import { verifyNativePublicReceipt } from "./scoped-native-public.mjs";
 import { SCOPE, CORE_COMMIT, PUBLIC_RECEIPTS, hash, exact, assertNativeWrapper, assertProviderJob } from "./scoped-native-contract.mjs";
 import { currentAttempt } from "./scoped-actions.mjs";
@@ -20,7 +21,39 @@ export function assertNativeOutcome(value,{source,binary}){
   if(value.unrelatedService?.unchangedAfterFiveActions!==true||!Array.isArray(value.terminals)||value.terminals.length!==5||value.terminals.some(item=>item.exit!==(item.terminal==="missing-credential"?"terminal_exit_code_2":"terminal_exited_zero"))||new Set(value.terminals.map(item=>item.terminal)).size!==5||!Array.isArray(value.adverseAudit)||value.adverseAudit.length!==3)throw new Error("native terminal/error proof denied");
   const expected={"missing-credential":0,"invalid-credential":0,"scope-denied":5};if(new Set(value.adverseAudit.map(item=>item.case)).size!==3||value.terminals.map(item=>item.terminal).sort().join(",")!==["missing-credential","invalid-credential","scope-denied","allowed","reconnect"].sort().join(","))throw new Error("native error/terminal inventory denied");for(const item of value.adverseAudit)if(!(item.case in expected)||item.noOperation!==true||item.beforeOperationCount!==item.afterOperationCount||item.coreDeniedAuditDelta!==expected[item.case]||item.coreDeniedAuditAfter-item.coreDeniedAuditBefore!==expected[item.case])throw new Error("native adverse audit denied");
 }
-export async function produceNative({root,output,version,windowsQueryProfile,python=process.platform==="win32"?"python":"python3",token,fetchImpl=fetch}) {
+// Exact pair-byte packaging, not an issuer/qualification constructor. Genuine
+// retained owner/payload and receipt provenance must already be supplied by the
+// real enclosing native producer; the default acquisition below remains closed.
+export function packageNativeOwnerCandidate({source,run,version,platform,jobId,members,receiptOriginals}){
+  candidateIdentity({sourceRef:source?.ref,sourceCommit:source?.commit,version,tag:`candidate-${version}`});
+  const target=`${platform}-amd64`,layout=nativeOwnerLayout(target);
+  const archiveName=`service-lasso-tui-${version}-${target}.${platform==='win32'?'zip':'tar.gz'}`;
+  const archive=createNativeOwnerArchive(target,members),inventory=nativeOwnerMemberInventory(target,members);
+  assertCoreNativeOwnerAsset({platform:target,name:archiveName,sha256:hash(archive),executable:layout[0].path,members:inventory},archive);
+  exact(receiptOriginals,PUBLIC_RECEIPTS);
+  const files={[archiveName]:archive};
+  for(const name of PUBLIC_RECEIPTS){
+    if(!Buffer.isBuffer(receiptOriginals[name]))throw new Error('actual public receipt originals required');
+    files[name]=receiptOriginals[name];
+  }
+  const wrapper={schema:'service-lasso.tui-native-candidate.v2',scope:SCOPE,source,run,platform,jobId,
+    archive:{name:archiveName,sha256:hash(archive),size:archive.length},
+    binary:{name:layout[0].path,sha256:inventory[0].sha256,size:inventory[0].size},members:inventory,
+    receipts:PUBLIC_RECEIPTS.map(name=>({name,sha256:hash(files[name]),size:files[name].length})),outcome:'success'};
+  assertNativeWrapper(wrapper,{source,run,version,platform,bodies:files});
+  return {wrapper,files};
+}
+export async function produceNative(){
+  await assertSourcePolicy();
+  // There is NO genuine installer/profile/entry/family constructor connected
+  // yet, nor accepted Core schema4 receiver. No caller option, shape, digest,
+  // executor return or generic callback can open this production boundary.
+  // In particular, do not execute the old Go-only pipeline as a v1 fallback.
+  throw new Error('genuine native-owner production acquisition unavailable');
+}
+// Historical source path retained for its existing Go-only pipeline semantics.
+// It is private/uninvoked by the current CLI and cannot produce a v2 wrapper.
+async function produceLegacyNativeSingleBody({root,output,version,windowsQueryProfile,python=process.platform==="win32"?"python":"python3",token,fetchImpl=fetch}) {
   await assertSourcePolicy();const platform=process.platform;if(!["win32","linux"].includes(platform)||process.arch!=="x64")throw new Error("native host denied");
   if(platform==='win32'&&(typeof windowsQueryProfile!=='string'||!path.isAbsolute(windowsQueryProfile)||windowsQueryProfile.includes('\0')))throw new Error('reviewed query profile required');
   if(platform==='linux'&&windowsQueryProfile!==undefined)throw new Error('foreign query profile');

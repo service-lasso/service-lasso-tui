@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { SCOPE, CORE_COMMIT, PUBLIC_RECEIPTS, hash } from "./scoped-native-contract.mjs";
 import { createNativeArchive, crc32 } from "./scoped-native-archive.mjs";
+import {packageNativeOwnerCandidate} from './produce-scoped-native.mjs';
+import {nativeOwnerLayout,nativeOwnerMemberInventory} from './native-owner-package.mjs';
 export const SOURCE={repository:"service-lasso/service-lasso-tui",commit:"a".repeat(40),ref:"refs/heads/develop"};
 export const RUN={id:55,attempt:2,workflowSha:SOURCE.commit};
 export const VERSION="2026.10.4-aaaaaaa";
@@ -21,7 +23,8 @@ export function artifactZIP(files){
   }
   const central=Buffer.concat(centrals),end=Buffer.alloc(22);end.writeUInt32LE(0x06054b50);end.writeUInt16LE(Object.keys(files).length,8);end.writeUInt16LE(Object.keys(files).length,10);end.writeUInt32LE(central.length,12);end.writeUInt32LE(offset,16);return Buffer.concat([...locals,central,end]);
 }
-export async function fixture(){
+export async function fixture({nativeVersion=1}={}){
+  if(![1,2].includes(nativeVersion))throw new Error('fixture native version');
   const root=await mkdtemp(path.join(os.tmpdir(),"tui-scoped-fixture-")),native=path.join(root,"native");await mkdir(native);const objects=[];
   const jobs=[{id:100,name:"validate-source",head_sha:SOURCE.commit,run_id:RUN.id,run_attempt:RUN.attempt,status:"completed",conclusion:"success"},{id:103,name:"aggregate",head_sha:SOURCE.commit,run_id:RUN.id,run_attempt:RUN.attempt,status:"completed",conclusion:"success"}];
   for(const [index,platform] of ["win32","linux"].entries()){
@@ -34,8 +37,23 @@ export async function fixture(){
       "input-custody.json":{schemaVersion:1,kind:"tui20-native-input-custody",source:{tuiCommit:SOURCE.commit,tuiTree:"c".repeat(40),tuiDirtyHash:EMPTY,tuiInventoryHash:hash(Buffer.from("fixture source inventory"))},core:{requestedCommit:CORE_COMMIT},ownership:{threeDistinctPaths:true,allParentsNonLink:true,registriesInitiallyAbsent:true},verification:{freshEnvironment:true,requiredToolsVerified:["git","go","node","npm","python"]}},
       "native-public-projection.json":{schemaVersion:1,kind:"tui20-native-public-result",sourceCommit:SOURCE.commit,binarySHA256:digest,result:"succeeded",actionsPassed:true,ownedRuntimeClosed:true}
     };
-    const files=Object.fromEntries(Object.entries(records).map(([name,value])=>[name,json(value)]));files[archiveName]=archive;
-    const wrapper={schema:"service-lasso.tui-native-candidate.v1",scope:SCOPE,source:SOURCE,run:RUN,platform,jobId:101+index,archive:{name:archiveName,sha256:hash(archive),size:archive.length},binary:{name:platform==="win32"?"service-lasso-tui.exe":"service-lasso-tui",sha256:digest,size:binary.length},receipts:PUBLIC_RECEIPTS.map(name=>({name,sha256:hash(files[name]),size:files[name].length})),outcome:"success"};files[`native-${platform}.json`]=json(wrapper);
+    let files=Object.fromEntries(Object.entries(records).map(([name,value])=>[name,json(value)]));
+    let wrapper;
+    if(nativeVersion===2){
+      // Synthetic framing exercises packaging/byte bindings only, never issuer,
+      // actual compiled entry/family, provider publication or native acceptance.
+      const payload=Buffer.from(binary);payload[payload.length-1]=42;
+      const members=nativeOwnerLayout(`${platform}-amd64`).map((item,index)=>({...item,bytes:index?payload:binary}));
+      const inventory=nativeOwnerMemberInventory(`${platform}-amd64`,members);
+      records['build-output.json']={schemaVersion:2,kind:'tui20-native-build-output',tuiCommit:SOURCE.commit,run:{...RUN},
+        nativeBinary:{sha256:digest,size:binary.length},members:inventory.map(member=>({role:member.role,sha256:member.sha256,size:member.size}))};
+      files['build-output.json']=json(records['build-output.json']);
+      ({files,wrapper}=packageNativeOwnerCandidate({source:SOURCE,run:RUN,version:VERSION,platform,jobId:101+index,members,receiptOriginals:files}));
+    }else{
+      files[archiveName]=archive;
+      wrapper={schema:"service-lasso.tui-native-candidate.v1",scope:SCOPE,source:SOURCE,run:RUN,platform,jobId:101+index,archive:{name:archiveName,sha256:hash(archive),size:archive.length},binary:{name:platform==="win32"?"service-lasso-tui.exe":"service-lasso-tui",sha256:digest,size:binary.length},receipts:PUBLIC_RECEIPTS.map(name=>({name,sha256:hash(files[name]),size:files[name].length})),outcome:"success"};
+    }
+    files[`native-${platform}.json`]=json(wrapper);
     const directory=path.join(native,platform);await mkdir(directory);for(const [name,bytes] of Object.entries(files))await writeFile(path.join(directory,name),bytes);
     const zip=artifactZIP(files),artifact={id:201+index,name:`scoped-native-${platform}-${RUN.id}-${RUN.attempt}`,digest:`sha256:${hash(zip)}`,expired:false,workflow_run:{id:RUN.id,head_sha:SOURCE.commit}};objects.push({platform,files,wrapper,zip,artifact,directory});jobs.push({id:wrapper.jobId,name:`native-candidate (${platform})`,run_id:RUN.id,run_attempt:RUN.attempt,head_sha:SOURCE.commit,status:"completed",conclusion:"success",labels:[platform==="win32"?"windows-latest":"ubuntu-latest"],runner_name:"fixture-native-host"});
   }
@@ -48,7 +66,7 @@ export async function fixture(){
     if(url.startsWith("https://productionresultssa1.blob.core.windows.net/")){if(options.headers?.Authorization)throw new Error("artifact credential forwarded");const id=Number(new URL(url).pathname.split("/").at(-1));return response(objects.find(item=>item.artifact.id===id).zip);}
     if(url.endsWith("/immutable-releases"))return response({enabled:true});
     if(url.endsWith("/environments/development-candidate"))return response({name:"development-candidate",protection_rules:[{type:"wait_timer",wait_timer:1}],deployment_branch_policy:{protected_branches:true,custom_branch_policies:false}});
-    if(url.endsWith("/branches/develop/protection"))return response({required_status_checks:{strict:true,contexts:["Linux test and build","Windows test and build","Scoped release asset cross-compilation"]},required_pull_request_reviews:{required_approving_review_count:0},allow_force_pushes:{enabled:false}});
+    if(url.endsWith("/branches/develop/protection"))return response({required_status_checks:{strict:true,contexts:["Linux test and build","Windows test and build","Windows owned GOROOT overlay tests","Scoped release asset cross-compilation"]},required_pull_request_reviews:{required_approving_review_count:0},allow_force_pushes:{enabled:false}});
     if(url.includes("/git/ref/tags/"))return tag?response({ref:`refs/tags/${IDENTITY.tag}`,object:{type:"commit",sha:tag}}):response({},404);
     if(url.endsWith("/git/refs")&&method==="POST"){mutations.push("tag");tag=JSON.parse(options.body).sha;return response({},201);}
     if(url.endsWith("/releases")&&method==="POST"){mutations.push("draft");release={id:299,tag_name:IDENTITY.tag,target_commitish:SOURCE.commit,draft:true,prerelease:true,immutable:false,assets:[]};return response(release,201);}

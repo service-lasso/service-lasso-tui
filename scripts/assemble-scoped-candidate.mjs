@@ -7,6 +7,7 @@ import { assertSourcePolicy } from "./scoped-policy.mjs";
 import { candidateIdentity, assertManifest, assertActualLocalAssets, readBoundedRegularLocalAsset } from "./verify-scoped-candidate-publication.mjs";
 import { SCOPE, NATIVE_PLATFORMS, PUBLIC_RECEIPTS, hash, assertAggregate, assertNativeWrapper } from "./scoped-native-contract.mjs";
 import { currentAttempt } from "./scoped-actions.mjs";
+import {NATIVE_OWNER_CORE_ARCHIVE_LIMIT} from './native-owner-package.mjs';
 export async function readNativeInputs(directory,{version,source,run,beforeNativeValidation}) {
   const entries=await readdir(directory);if(entries.length!==2||entries.some(name=>!NATIVE_PLATFORMS.includes(name)))throw new Error("aggregate directory denied");
   const wrappers=[],bodies=[];
@@ -14,7 +15,7 @@ export async function readNativeInputs(directory,{version,source,run,beforeNativ
     const root=path.join(directory,platform);const name=`native-${platform}.json`;const wrapper=await readBoundedRegularLocalAsset(root,name,1048576);const value=parseStrictJSON(wrapper);
     const archiveName=`service-lasso-tui-${version}-${platform}-amd64.${platform==="win32"?"zip":"tar.gz"}`;
     const expected=[name,archiveName,...PUBLIC_RECEIPTS].sort();const actual=(await readdir(root)).sort();if(actual.join("\0")!==expected.join("\0"))throw new Error("native input inventory denied");
-    const files={};for(const name of [archiveName,...PUBLIC_RECEIPTS])files[name]=await readBoundedRegularLocalAsset(root,name,name.endsWith(".json")?1048576:1024*1024*1024);
+    const files={};for(const name of [archiveName,...PUBLIC_RECEIPTS])files[name]=await readBoundedRegularLocalAsset(root,name,name.endsWith(".json")?1048576:value.schema==='service-lasso.tui-native-candidate.v2'?NATIVE_OWNER_CORE_ARCHIVE_LIMIT:1024*1024*1024);
     // Observe the acquisition boundary without granting access to held buffers or replacing validation.
     if(beforeNativeValidation)await beforeNativeValidation({root,platform});
     assertNativeWrapper(value,{source,run,version,platform,bodies:files});
@@ -23,10 +24,13 @@ export async function readNativeInputs(directory,{version,source,run,beforeNativ
 }
 export async function assembleScopedCandidate({nativeDirectory,assetDirectory,evidenceDirectory,identity,run,token,fetchImpl=fetch,beforeNativeValidation}) {
   await assertSourcePolicy();candidateIdentity(identity);const source={repository:"service-lasso/service-lasso-tui",commit:identity.sourceCommit,ref:identity.sourceRef};
-  const inputs=await readNativeInputs(nativeDirectory,{version:identity.version,source,run,beforeNativeValidation});const provider=await currentAttempt({run,source,token,fetchImpl});
-  const archiveAssets=inputs.wrappers.map(value=>({executable:value.binary.name,name:value.archive.name,platform:`${value.platform}-amd64`,sha256:value.archive.sha256})).sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0);
+  const inputs=await readNativeInputs(nativeDirectory,{version:identity.version,source,run,beforeNativeValidation});
+  const schemas=new Set(inputs.wrappers.map(value=>value.schema));if(schemas.size!==1)throw new Error('mixed native wrapper schemas denied');
+  const pair=inputs.wrappers[0].schema==='service-lasso.tui-native-candidate.v2';
+  const provider=await currentAttempt({run,source,token,fetchImpl});
+  const archiveAssets=inputs.wrappers.map(value=>({executable:value.binary.name,name:value.archive.name,platform:`${value.platform}-amd64`,sha256:value.archive.sha256,...(pair?{members:value.members}: {})})).sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0);
   const sums=Buffer.from(archiveAssets.map(asset=>`${asset.sha256}  ${asset.name}\n`).join(""));
-  const manifest=assertManifest({schemaVersion:3,kind:"develop-prerelease-candidate",version:identity.version,source,release:{tag:identity.tag,draft:false,prerelease:true,immutable:true},corePackagingIssue:"service-lasso/service-lasso#1461",assets:archiveAssets,checksumManifest:{name:"SHA256SUMS.txt",sha256:hash(sums)},scope:SCOPE},identity);
+  const manifest=assertManifest({schemaVersion:pair?4:3,kind:"develop-prerelease-candidate",version:identity.version,source,release:{tag:identity.tag,draft:false,prerelease:true,immutable:true},corePackagingIssue:"service-lasso/service-lasso#1461",assets:archiveAssets,checksumManifest:{name:"SHA256SUMS.txt",sha256:hash(sums)},scope:SCOPE},identity);
   const qualification={schema:"service-lasso.tui-candidate-qualification.v1",scope:SCOPE,source,run,platforms:NATIVE_PLATFORMS,receipts:inputs.wrappers.map((wrapper,index)=>({platform:wrapper.platform,jobId:wrapper.jobId,runId:run.id,runAttempt:run.attempt,workflowSha:run.workflowSha,name:`native-${wrapper.platform}.json`,sha256:hash(inputs.bodies[index].wrapper),size:inputs.bodies[index].wrapper.length})),outcome:"success"};
   assertAggregate(qualification,{source,run,manifest,...inputs,...provider});
   for (const [index,platform] of NATIVE_PLATFORMS.entries()) await verifyProviderArtifactBytes({artifact:provider.artifacts.find(item=>item.name===`scoped-native-${platform}-${run.id}-${run.attempt}`),expected:{...inputs.bodies[index].files,[`native-${platform}.json`]:inputs.bodies[index].wrapper},token,fetchImpl});

@@ -26,15 +26,16 @@ func TestFixedParentStoppedBeforeEntryHasNoNativeCall(t *testing.T){
  if receiver.ObserveNativeParent(parent)==nil||parent.Before.Entered||parent.Open.Entered||parent.Poll.Entered{t.Fatal("stopped parent observer entered native call")}
  receiver.Join()
 }
-// UNRUN actual constructor path: representable forged quantities cannot allocate
-// dependent rosters when the socket creator is this process rather than its parent.
+// UNRUN actual constructor path: a real self-created locator cannot supply the
+// missing source-owned candidate. Refuse before observing its native creator;
+// the independent fixed-observer test above still checks the real parent cut.
 func TestStartupSelfCreatedLocatorRejectsBeforeQuantityBacking(t *testing.T){
  pair,err:=syscall.Socketpair(syscall.AF_UNIX,syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC,0);if err!=nil{t.Fatal(err)}
  defer syscall.Close(pair[0]);defer syscall.Close(pair[1])
  receiver:=NewReceiver();startup:=&NativePayloadStartup{RawArguments:[]string{"public",NativeArgumentVersion,strconv.Itoa(pair[0]),"1","256","3","64","--"}}
- if receiver.PrepareNativePayloadStartup(startup)!=errNativeParentObservation{t.Fatal("self-created locator accepted")}
- if !startup.Creator.CredentialReturned||!startup.Parent.Before.Returned||startup.Parent.Open.Entered{t.Fatal("actual fixed preflight missing")}
+ if receiver.PrepareNativePayloadStartup(startup)!=errNativeReservation{t.Fatal("self-created locator supplied absent candidate backing")}
+ if startup.Creator.CredentialEntered||startup.Creator.CredentialReturned||startup.Parent.Before.Entered||startup.Parent.Open.Entered{t.Fatal("unbound candidate reached native observations")}
  if startup.Endpoint.Calls!=nil||startup.Observation.Security!=nil||startup.Transfer.Body!=nil||startup.Control.Calls!=nil{t.Fatal("unassociated locator allocated quantity backing")}
- if startup.Creator.Original.Value!=&startup.Creator||startup.Parent.Original.Value!=&startup.Parent{t.Fatal("fixed originals not enrolled")}
+ if startup.Original.Value!=startup||startup.Arguments.Original.Value!=&startup.Arguments||!startup.Returned{t.Fatal("actual constructor refusal roots lost")}
  receiver.Stop();receiver.Join()
 }

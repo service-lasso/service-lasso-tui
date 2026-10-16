@@ -34,7 +34,7 @@ func TestLegacySaveFirstPublicationAndLateTerminalReadback(t *testing.T) {
  store:=fileOperationStore{path:filepath.Join(t.TempDir(),"operation.json")}
  a:=persistedOperation{Version:2,OperationID:"operation-A",ConnectionName:"profile",Binding:selectedOperatorTestContext("a").LegacyDigest()}
  b:=a;b.OperationID="operation-B"
- if err:=store.Save(a);err!=nil{t.Fatal(err)}
+ if err:=store.Save(a);err!=nil{logRecordFailure(t,err);t.Fatal(err)}
  if err:=store.Clear(a);err!=nil{t.Fatal(err)}
  if err:=store.Save(b);err!=nil{t.Fatal(err)}
  original,err:=os.ReadFile(store.path);if err!=nil{t.Fatal(err)}

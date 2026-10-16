@@ -24,8 +24,8 @@ func TestInvalidURLPreservesOriginalPrivately(t *testing.T){
 
 func TestOperationDecoderRetainsTypedProgressAndOutcomeFailures(t *testing.T){
 	for _,raw:=range []string{
-		`{"operationId":"mcp-operation-exact","action":"service_start","status":"running","phase":"running","progress":"private-progress","outcome":null,"cancellationSupported":false,"ownership":"own","targetIds":["root"]}`,
-		`{"operationId":"mcp-operation-exact","action":"service_start","status":"running","phase":"running","progress":0,"outcome":7,"cancellationSupported":false,"ownership":"own","targetIds":["root"]}`,
+		`{"operationId":"mcp-operation-12345678-1234-1234-1234-123456789abc","action":"service_start","status":"running","phase":"running","progress":"private-progress","outcome":null,"cancellationSupported":false,"ownership":"own","targetIds":["root"]}`,
+		`{"operationId":"mcp-operation-12345678-1234-1234-1234-123456789abc","action":"service_start","status":"running","phase":"running","progress":0,"outcome":7,"cancellationSupported":false,"ownership":"own","targetIds":["root"]}`,
 	}{
 		value,failure:=parseOperation(json.RawMessage(raw))
 		var original *json.UnmarshalTypeError

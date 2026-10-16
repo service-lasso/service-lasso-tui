@@ -28,6 +28,7 @@ typedef struct fixture {
  union {max_align_t alignment;unsigned char bytes[256];} token,acl,attribute,endpoint_security,security[6],tokens[2];
  sl_win_module_query module_queries[2];
  sl_win_argument_send_turn turns[2];
+ sl_win_argument_sender_factory factory;
  sl_win_duplex_completion completions[3];sl_win_duplex_settlement settlements[3];sl_win_service_observation services[2];
 } fixture;
 int main(void){
@@ -45,16 +46,22 @@ int main(void){
   if(mode==6)o->arguments.output=f->name;
   if(mode==11)o->argument_sequence.stack_reservation=0;
   if(mode==14){
-   unsigned char before[sizeof(argument_sender_factory_original)];
+   unsigned char before[sizeof(f->factory)];
    memset(&o->argument_sequence,0,sizeof(o->argument_sequence));
-   memcpy(before,&argument_sender_factory_original,sizeof(before));
-   b->command_line=(WCHAR *)(void *)&argument_sender_factory_original;
-   assert(!sl_win_bind_argument_sender_factory(o));
-   assert(!memcmp(before,&argument_sender_factory_original,sizeof(before))&&!o->argument_sequence.turns);
+   memset(f->turns,0,sizeof(f->turns));
+   memcpy(before,&f->factory,sizeof(before));
+   b->command_line=(WCHAR *)(void *)&f->factory;
+   assert(!sl_win_bind_argument_sender_factory(&f->factory,o,f->turns,2,4096));
+   assert(!memcmp(before,&f->factory,sizeof(before))&&!o->argument_sequence.turns);
+   b->command_line=(WCHAR *)(void *)f->turns;
+   assert(!sl_win_bind_argument_sender_factory(&f->factory,o,f->turns,2,4096));
+   assert(!memcmp(before,&f->factory,sizeof(before))&&!o->argument_sequence.turns);
    b->command_line=f->mutable_command;
-   assert(sl_win_bind_argument_sender_factory(o));
-   assert(o->argument_sequence.turns==argument_sender_factory_original.turns&&o->argument_sequence.turn_capacity==2&&o->argument_sequence.stack_reservation==4096);
-   assert(!sl_win_bind_argument_sender_factory(o));
+   assert(!sl_win_bind_argument_sender_factory(&f->factory,o,f->turns,1,4096));
+   assert(!sl_win_bind_argument_sender_factory(&f->factory,o,f->turns,2,8192));
+   assert(sl_win_bind_argument_sender_factory(&f->factory,o,f->turns,2,4096));
+   assert(o->argument_sequence.turns==f->turns&&o->argument_sequence.turn_capacity==2&&o->argument_sequence.stack_reservation==4096);
+   assert(!sl_win_bind_argument_sender_factory(&f->factory,o,f->turns,2,4096));
   }
   step=completion_calls=0;int result=sl_win_construct_public_startup(o);
   assert(o->attempted&&o->returned);

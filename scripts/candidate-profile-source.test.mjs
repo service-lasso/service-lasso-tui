@@ -2,6 +2,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {decodeCandidateProfile,encodeCandidateProfileSections,emitCandidateProfileSources} from './candidate-profile-source.mjs';
+import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {spawnSync} from 'node:child_process';
+
+test('real file-input caller emits SAME paired sources and retains failed second-output prefix',async()=>{
+ for(const blocked of [false,true]){
+  const root=await mkdtemp(path.join(tmpdir(),'tui-paired-source-'));
+  try{
+   const profile=fixture(),abi={goIntBits:64,cSizeTBits:64},native=nativeFixture();
+   const inputs=['profile','abi','native'].map(name=>path.join(root,name)),outputs=['generated.go','generated.c'].map(name=>path.join(root,name));
+   await writeFile(inputs[0],profile);await writeFile(inputs[1],JSON.stringify(abi));await writeFile(inputs[2],JSON.stringify(native));
+   if(blocked)await writeFile(outputs[1],'PRIVATE-EXISTING-OUTPUT');
+   const child=spawnSync(process.execPath,[fileURLToPath(new URL('./emit-linux-candidate-profile.mjs',import.meta.url)),...inputs,...outputs],{encoding:'utf8'});
+   assert.equal(child.status,blocked?1:0);assert.equal(child.signal,null);
+   const expected=emitCandidateProfileSources(profile,abi,native);
+   assert.equal(await readFile(outputs[0],'utf8'),expected.goSource);
+   if(blocked){assert.equal(await readFile(outputs[1],'utf8'),'PRIVATE-EXISTING-OUTPUT');assert.equal(child.stdout,'');assert.doesNotMatch(child.stderr,/PRIVATE|EEXIST/u);assert.ok(!child.stderr.includes(root));}
+   else{assert.equal(await readFile(outputs[1],'utf8'),expected.cSource);const association=JSON.parse(child.stdout);assert.equal(association.kind,'linux-paired-source-association');assert.equal(association.nativeEntrySupplied,false);assert.equal(association.authenticatedIssuer,false);assert.equal(association.inputs[0].size,profile.length);}
+  }finally{await rm(root,{recursive:true});}
+ }
+});
 function nativeFixture(){
  const scalar='scheduler_interval_ns services outer_observations deadline_roots deadline_observations deadline_polls deadline_poll_fds creator_file_bytes creator_file_reads collector_joins requests prefix_attempts terminal_reply_attempts input_frames input_steps body_bytes scan_frames scan_bytes fd_views fd_actions membership_frames membership_bytes membership_path mountinfo_bytes mountinfo_attempts mountinfo_rows mount_location_bytes selinux_rows selinux_path policy_frames policy_frame_bytes policy_body parser_bytes parser_attempts diagnostics diagnostic_arguments diagnostic_bytes diagnostic_format self_context_bytes domain_types domain_steps access_visits access_helpers access_strings reach_visits reach_helpers reach_strings reach_steps children_frames children_bytes children_views executable_path directory_path image_frames image_bytes image_writes image_readbacks credential_status_bytes credential_status_attempts credential_group_capacity pidfd_info_bytes pidfd_info_attempts public_argument_count public_argument_bytes public_environment_count public_environment_bytes security_label_bytes terminal_calls maintenance_role_rows archive_path_bytes archive_declarations'.split(' ');
  const result=Object.fromEntries(scalar.map(key=>[key,'1']));result.requests='2';for(const key of ['raw_frames','public_writes','forward_waits','forward_iterations'])result[key]=['1','2','3'];result.custody_attempts=['1','2','3','4','5'];result.final_io_attempts=['1','2'];return result;

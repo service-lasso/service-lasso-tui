@@ -374,7 +374,7 @@ func(p *Program)consumeMessage(model Model,cmds chan Cmd,msg Msg)(Model,error,bo
 				// work.
 				if runtime.GOOS == "windows" && !p.mouseMode {
 					p.mouseMode = true
-					if err:=p.initCancelReader(true);err!=nil{return model,err}
+					if err:=p.initCancelReader(true);err!=nil{return finish(model,err,true)}
 				}
 
 			case disableMouseMsg:
@@ -385,7 +385,7 @@ func(p *Program)consumeMessage(model Model,cmds chan Cmd,msg Msg)(Model,error,bo
 				// mouse events.
 				if runtime.GOOS == "windows" && p.mouseMode {
 					p.mouseMode = false
-					if err:=p.initCancelReader(true);err!=nil{return model,err}
+					if err:=p.initCancelReader(true);err!=nil{return finish(model,err,true)}
 				}
 
 			case showCursorMsg:

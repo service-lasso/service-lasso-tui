@@ -178,3 +178,7 @@ Parent selected TUI-owned complete Windows layout/cost/source/operation/deadline
 
 ### Issue1 selected bounded Windows pure layout source
 After fresh DIFFERENT acf INTENT_GO, candidate_layout_windows.h/.c and candidate_prepare_windows.h/.c implement pure checked role/cost geometry, retained source/exclusion checks and non-dispatched native typed views; per-entry factory control/turns replace hidden static backing with exact21external/22startup/control-separate/turnsonce accounting. C refusal/prebinding fixtures are UNRUN and not automatically run by existing source CI. Complete actual CLI typed acquisition/operation/family/deadline/profile/helper binding remains missing, source-only no activation. Fresh ENTIRE review and complete actual-input admission remain required.
+
+
+### Issue1 finite borrowed-deadline source
+Parent-selected acf finite sequence intent now maps candidate_deadline_windows.h/.c: direct existing candidate-preparation coupling, real explicitly held CLI product-storage/source-deadline/arena/clock headers and predicates, SAME published caller/origin/expiry, separate control and fresh finite typed native-row clock storage, no clockread/renewal/dispatch/issuer. Native fixture requires actual genuine constructor inputs and is UNRUN. Exact source body/closure pins and remaining real-entry/family/MSVC-plan coupling are in TUI1-WINDOWS-CONSUMER-LAYOUT-PRECODE-20261016.md; no activation or execution admission.

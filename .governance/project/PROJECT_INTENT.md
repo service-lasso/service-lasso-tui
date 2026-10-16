@@ -1534,3 +1534,7 @@ Exact1f83 pair intent and exact5f0 receipt intent received independent INTENT_GO
 
 ### Selected bounded Windows quantitative source unit
 Independent acf Windows layout intent GO authorizes pure complete-role/cost geometry, exclusions, non-dispatched native typed-view preparation and per-entry factory/turn backing. Existing21 external + separate startupcontrol22 + separate factorycontrol/turnsonce remain exact. C source fixtures remain UNRUN; actual CLI operation/reservation/deadline/family/profile/helper binding and genuine activation remain unavailable. No Linux casts, new clock or schema3-as-complete-cost authority; fresh ENTIRE source review and actual-input admission remain separate.
+
+
+### Issue1 finite borrowed-deadline source
+Parent-selected acf finite sequence intent now maps candidate_deadline_windows.h/.c: direct existing candidate-preparation coupling, real explicitly held CLI product-storage/source-deadline/arena/clock headers and predicates, SAME published caller/origin/expiry, separate control and fresh finite typed native-row clock storage, no clockread/renewal/dispatch/issuer. Native fixture requires actual genuine constructor inputs and is UNRUN. Exact source body/closure pins and remaining real-entry/family/MSVC-plan coupling are in TUI1-WINDOWS-CONSUMER-LAYOUT-PRECODE-20261016.md; no activation or execution admission.

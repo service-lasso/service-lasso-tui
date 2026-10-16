@@ -210,3 +210,88 @@ not automatically execute these native C fixtures. Actual CLI header/operation/
 family binding and complete runtime/helper/kernel cost acquisition remain open;
 no native issuer/profile/root/family/entry activation is claimed. Full known
 source freezes for fresh ENTIRE review before new actual-input admission.
+
+
+## Next selected finite borrowed-deadline source unit (pre-code)
+
+Parent selects this narrow pure bind/revalidate part within acf finite sequence
+intent. Real source dependency is CLI351929972757733ca2cfda96d634759b3c767cb1
+native/initial-installer/product_storage_windows.h and its actual included
+source_deadline.h/arena/native_clock/memory types. No copied local declarations
+or lookalike opaque ownership descriptor are permitted. A selected explicit held
+header include operand is required; no ambient checkout/include/PATH fallback.
+
+Proposed candidate_deadline_windows.h/.c owns a finite sequence CONTROL outside
+its step payload. It borrows the actual typed
+slcli_product_windows_operation_caller, its SAME arena/memory/deadline original,
+and the deadline's SAME already-published origin pointer/tick/expiration. The
+actual slcli_source_deadline_original_matches predicate verifies live same-arena
+correspondence; it is not genuine issuer/family admission. CLI storage_constructed
+is not consumed as an authority boolean. No original is copied into a new
+operation/clock or sampled/reset/renewed here.
+
+Each preowned step stores one fixed source-selected actual sl_win_call native
+row association, its source occurrence and finite ordinal, SAME sequence/deadline/
+caller references, and fresh BEFORE/AFTER slcli_native_clock storage for the
+actual later native scheduler. The original source roster is fixed compiled
+consumer data with complete native-row lifetimes; it is never a callback, public
+registration list, arbitrary JSON row or a helper allowed to invoke the row.
+Binding checks finite exact capacity, overflow, uniqueness, typed alignment and
+all source/caller/deadline/origin/control/row exclusions before any write; recheck
+retains original pointers/scalars and rejects later source/backing substitutions.
+No native clock read or operation dispatch occurs in this unit.
+
+Known consumer coupling is candidate_prepare_windows: the existing retained
+SL_WIN_LAYOUT_DEADLINE_CUSTODY item supplies exact count/sizeof/alignment of
+these typed steps, exposed with other pure native views. Binding occurs AFTER
+fresh view preparation, before genuine CLI scheduling. Sequence control stays
+outside its payload. This does not enable startup or replace the stillmissing
+CLI product-entry/family/native-cut/header contract. Actual full source scheduler
+and entry remain owned coupled follow-on work, not supplied by pure binding.
+
+The existing CLI source_transition_begin is explicitly not reused: it allocates
+metadata attempts, samples a clock and traverses a hard1MiB metadata prior list;
+that is not the fixed TUI observation schedule. Only actual published source
+deadline representation/live-arena predicate is borrowed. Required new source
+cases cover copied or foreign caller/deadline/origin, equal-expiry neworigin,
+changed tick/expiry/source row, count exhaustion, output/source overlap, dirty
+clock cells, duplicate ordinal/native row and once-use/revalidation. All remain
+UNRUN source fixtures until complete actual tool/header/CRT and ROOT admission.
+
+
+### Finite borrowed-deadline bounded source body
+
+The selected source now implements candidate_deadline_windows.h/.c. Its exact
+real-header operand is SERVICE_LASSO_PRODUCT_STORAGE_HEADER, supplied only by an
+explicit held source-qualified include; without it compilation refuses. Reference
+CLI4aa1e9526759eec0e4d4354a58186f20ecd63e48 product_storage_windows.h blob
+9a59a40b4dc1b6d3a26e46be677de4f3516ccc45 includes real source_deadline.h
+(a6e5fe4a637c798d72dbceb36aed753bd0e1835e), arena.h
+(80bc0ff58286691e769897173bde676e3db4e19f) and native_clock.h
+(6aa8575d4c477262f6b4025ed717f8502a1f7665) through its actual nested closure.
+Those pins describe source bytes, never native issuer/header authority by hash.
+
+Binding directly consumes existing candidate preparation and its typed
+DEADLINE_CUSTODY payload item. It verifies the actual CLI live-arena/deadline/
+clock correspondence predicates, SAME caller/memory/arena/published origin/expiry,
+exact source-row type/owner/extent/ordinal links and separate live control. Every
+nested initial-source/actor/occurrence/control and step/native-owner write
+exclusion is retained. Raw origin comparison scalars retain history only; no
+second original clock or fresh clock sample is constructed. Revalidation is not
+validation of future clock cuts, native dispatch permission or family settlement.
+
+The source fixture has no standalone main or synthetic native constructor. An
+admitted future genuine harness must supply its actual paid prepared source,
+original clock/caller/arena and fresh control/scratch before cases can execute.
+It tests foreign/copy/equal-expiry/deadline/origin/control/source substitution,
+dirty UNOBSERVED clock output, duplicate row/ordinal/type, once-use and original
+revalidation without replacing native observations. This fixture is UNRUN.
+
+Current native compile plan does not yet wire the real CLI include/link closure
+or call this helper from a fabricated entry; that is precisely the next TUI
+MSVC-plan/generated-consumer plus CLI genuine-entry/family coupled unit. Linking
+requires actual source_deadline.c/arena.c/native_clock.c predicates and their
+complete qualified helper/import/source closure, not test stubs or default CRT.
+No target parser/import/compiler/build/test/native operation ran. Current source
+GO is historical for f12; this complete changed bundle requires fresh ENTIRE
+review and new actual-input admission before execution. Production stays refused.

@@ -295,3 +295,84 @@ complete qualified helper/import/source closure, not test stubs or default CRT.
 No target parser/import/compiler/build/test/native operation ran. Current source
 GO is historical for f12; this complete changed bundle requires fresh ENTIRE
 review and new actual-input admission before execution. Production stays refused.
+
+
+## Whole84 aggregate repair pre-code after fcc NO_GO
+
+Fresh DIFFERENT whole84 review found two P2 only; this entire repair is selected
+before body. First, aligned containment is insufficient native-row binding.
+ARGUMENT_ROOT has no sl_win_call and is removed from supported call kinds,
+without changing that original owner type. Each remaining source row gains a
+closed native-member selector plus array-slot index. A source-owned switch maps
+kind to exact retained candidate-layout role, native sizeof/_Alignof and owner
+occurrence; owner must equal that role's base+occurrence*sizeof(actual type).
+The selector resolves ONLY an actual declared sl_win_call member/embedded member
+or array element in that exact type, with exact finite slot bounds and zero
+slot on singular members. Native pointer must equal that exact resolved member.
+Ordinal equals finite source position. Duplicate resolved row/role/member/slot
+associations refuse; aligned arbitrary bytes, wrong member/type/owner/occurrence/
+slot and foreign arrays cannot pass. This remains correspondence, not authority.
+
+The complete mapping covers startup public-stream, birth security/token/creator/
+attribute calls, channel and duplex calls, private command/endpoint calls and
+embedded four writer/worker slots; separate debug-event/mapped-root/root-write/
+debug-release/reader-cancel/duplex-completion/settlement/module-query/service/
+send-turn calls map their actual role arrays. No generic offset/callback or
+lookalike native-call cell is accepted. Source role/member/slot catalogue and
+meaningful aligned-nonmember/wrongmember/foreignowner/slot tests are required.
+
+Second, the initial source declared graph did not intrinsically prove coverage
+of nested requirements_per_command, subjects/reader_role, provider principalSID,
+producer entry_symbol or effective/primary SID spans. CLI owns extracting the
+actual complete existing product_storage source_away walk unchanged into a real
+shared pure product_source_windows API, and its constructor consumes that SAME
+API. TUI will remove its partial duplicate and import the actual qualified
+header/API only after source exists. No forward factory, callback, assumption of
+graph completeness or new native authority is introduced. Exact CLI source/header
+pins follow actual extraction, not guessed declarations. Source fixtures must
+exercise every nested pointee alias for sequence CONTROL and STEP output spans,
+failed/overlap writes and untouched retained originals on refusal.
+
+Both known findings repair together before the next source freeze. Genuine
+entry/family/producer/native cuts and complete input ROOT remain absent; no local
+execution or positive activation is selected. The stable earlier capture-error
+signature remains two historical failed iterations; these are distinct reviewed
+source-contract findings, not a reset or third rediscovery of that signature.
+
+
+### Whole84 aggregate repair source and actual shared API pins
+
+Both findings are repaired together in the selected source. Native-row matching
+now derives the exact layout role, native type/alignment and owner occurrence,
+then resolves a closed actual declared member and bounded array slot. All eleven
+supported owner kinds have explicit native-member switches; ARGUMENT_ROOT is
+not a call kind and its original owner struct is unchanged. Singular members
+require slot0; duplicate resolved members/slots refuse. The aligned-containment
+shortcut and its invalid ARGUMENT_ROOT branch are removed.
+
+TUI's duplicated initial_away implementation is removed. Production exclusion
+calls the actual shared pure CLI function
+slcli_product_windows_initial_source_excludes_output. Exact dependency now is
+CLI2e9ffb465d918f32c70595f7a9417212be0b0d4f:
+product_source_windows.h blobcaad7861720dee3ffec157328bde8d89b353e145,
+product_source_windows.c blob00bc2d96e3d3a7246a5f20e12bdd735fc9bd81cb,
+product_storage_windows.h blob88bd6d4360883fee8f303d593a905e339014158a.
+These files are under native/initial-installer; storage includes the real shared
+header. The complete existing nested source walk is reused by both CLI storage
+and TUI, with no native imports or grant. Old4aa/3519 headers alone no longer
+satisfy this source/link contract; exact qualified nested source closure and new
+shared .c are required, never an invented declaration/stub or hash authority.
+
+The unexecuted genuine-input fixture now requires every supported owner kind
+and iterates aligned-nonmember, wrongmember, foreignowner, occurrence and slot
+adenials without mutating native owners or clocks. It tests actual ARGUMENT_ROOT
+bytes as an invalid call owner, full output-byte preservation for failed binds,
+and exact ordinal/once-use/source-history checks. Actual shared-API alias cases
+cover requirements/subjects/providerSID/entry_symbol/everyreader_role/both
+effective-primary SIDs and all declared source/actor/occurrence spans against
+BOTH sequence-control and step output ranges, plus existing source pointees as
+forbidden output spans. Only private metadata copies are varied; actual source
+originals stay retained. Scratch/snapshot ranges are separately preowned and
+excluded from the payload, control and input originals. No mocked constructor,
+new native sample, execution, admission or activation follows. Complete changed
+bundle freezes for a NEW DIFFERENT ENTIRE review.

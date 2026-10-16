@@ -182,3 +182,11 @@ After fresh DIFFERENT acf INTENT_GO, candidate_layout_windows.h/.c and candidate
 
 ### Issue1 finite borrowed-deadline source
 Parent-selected acf finite sequence intent now maps candidate_deadline_windows.h/.c: direct existing candidate-preparation coupling, real explicitly held CLI product-storage/source-deadline/arena/clock headers and predicates, SAME published caller/origin/expiry, separate control and fresh finite typed native-row clock storage, no clockread/renewal/dispatch/issuer. Native fixture requires actual genuine constructor inputs and is UNRUN. Exact source body/closure pins and remaining real-entry/family/MSVC-plan coupling are in TUI1-WINDOWS-CONSUMER-LAYOUT-PRECODE-20261016.md; no activation or execution admission.
+
+
+### Whole84 selected aggregate source repair
+Fresh fcc whole84 review NO_GO found exact native-call MEMBER/array-slot mapping (including invalid call-kind ARGUMENT_ROOT) and incomplete nestedinitialsource exclusions. Selected complete repair pre-code is in TUI1-WINDOWS-CONSUMER-LAYOUT-PRECODE-20261016.md: exact source role/owner occurrence/member/slot mapping across allsupportedkinds, real shared CLI complete pure exclusion API extracted unchanged, meaningful nestedalias/alignednonmember/wrongmember/foreignowner/slot denials. Both repair together before new ENTIRE review; genuineentry/family/admission and activation remain absent.
+
+
+### Whole84 aggregate source repair ready for review
+Both fcc findings now repair together: exact actual layout-role/owner-occurrence/native MEMBER/slot lookup across allsupported call kinds, invalid ARGUMENT_ROOT kind removed, and actual shared complete CLI2e9 product_source_windows pure exclusion API replacing partial duplication. Native fixture source covers allsupported kinds, nonmember/member/foreignowner/slot/ordinal/once-use, no-write denials and every nested pointee for control+step output spans. All UNRUN; source/header pins and remaining genuineentry/family/MSVC-helper coupling explicit in Windows consumer mapping. NEW DIFFERENT ENTIRE review and complete actual-input admission remain required, no activation.

@@ -512,3 +512,11 @@ After fresh DIFFERENT acf INTENT_GO, candidate_layout_windows.h/.c and candidate
 
 ### Selected next finite borrowed-deadline pure source
 After f12 ENTIRE81 SOURCE_GO, parent selected the acf-approved finite sequence storage/bind/revalidate part. Exact source pre-code is appended to TUI1-WINDOWS-CONSUMER-LAYOUT-PRECODE-20261016.md: real CLI3519 typed caller/deadline/arena headers and live-range predicate, SAME published origin/expiry, preowned actual-row before/after clock cells, candidate preparation item coupling, no clockread/renewal/dispatch or family authority. Full genuine CLI entry/family/native cuts remain missing; no target execution/admission.
+
+
+### Whole84 selected aggregate source repair
+Fresh fcc whole84 review NO_GO found exact native-call MEMBER/array-slot mapping (including invalid call-kind ARGUMENT_ROOT) and incomplete nestedinitialsource exclusions. Selected complete repair pre-code is in TUI1-WINDOWS-CONSUMER-LAYOUT-PRECODE-20261016.md: exact source role/owner occurrence/member/slot mapping across allsupportedkinds, real shared CLI complete pure exclusion API extracted unchanged, meaningful nestedalias/alignednonmember/wrongmember/foreignowner/slot denials. Both repair together before new ENTIRE review; genuineentry/family/admission and activation remain absent.
+
+
+### Whole84 aggregate source repair ready for review
+Both fcc findings now repair together: exact actual layout-role/owner-occurrence/native MEMBER/slot lookup across allsupported call kinds, invalid ARGUMENT_ROOT kind removed, and actual shared complete CLI2e9 product_source_windows pure exclusion API replacing partial duplication. Native fixture source covers allsupported kinds, nonmember/member/foreignowner/slot/ordinal/once-use, no-write denials and every nested pointee for control+step output spans. All UNRUN; source/header pins and remaining genuineentry/family/MSVC-helper coupling explicit in Windows consumer mapping. NEW DIFFERENT ENTIRE review and complete actual-input admission remain required, no activation.

@@ -110,20 +110,29 @@ type windowsSetInformationObservation struct{
  Cause error
  API string
  Status windows.IO_STATUS_BLOCK
+ PreparedOriginal *windowsPrepared
 }
 func(o *windowsSetInformationObservation)nativeCallOwner()recordNativeIdentity{return o.Owner}
 func(o *windowsSetInformationObservation)nativeCallFailure()error{return o.Cause}
-func(s *windowsOperationStore)rename(handle,parent windows.Handle,name string,replace bool)error{
- // Native FILE_INFORMATION_CLASS65 uses this exact relative RootDirectory
- // tuple directly. Keep the IO_STATUS_BLOCK separately from the returned NT
- // status; no Win32 path conversion or fallback may substitute another owner.
+func(s *windowsOperationStore)rename(prepared *windowsPrepared,parent windows.Handle,name string,replace bool)error{
+ // Native FILE_INFORMATION_CLASS65 uses a simple same-directory leaf after
+ // the actual prepared/parent rejoin. Keep IO_STATUS_BLOCK separately from the
+ // returned NT status; no path conversion/fallback substitutes another owner.
  const fileRenameInformationEx uint32=65
- observation:=&windowsSetInformationObservation{Kind:"rename",Handle:handle,Parent:parent,Name:name,Replace:replace,Class:fileRenameInformationEx,API:"NtSetInformationFile"}
- s.observed.NativeCalls=append(s.observed.NativeCalls,observation);observation.Owner=s.nativeOwner("rename",handle)
+ observation:=&windowsSetInformationObservation{Kind:"rename",Parent:parent,Name:name,Replace:replace,Class:fileRenameInformationEx,API:"NtSetInformationFile",PreparedOriginal:prepared}
+ s.observed.NativeCalls=append(s.observed.NativeCalls,observation)
+ if name==""||name=="."||name==".."||strings.ContainsAny(name,"\\/:\x00")||prepared==nil||prepared.file==nil||parent==0||parent!=s.exclusiveParent||prepared.parentOriginal!=parent||!winSame(prepared.parentIdentity,s.exclusiveParentIdentity){observation.Cause=storageError();return observation.Cause}
+ parentIdentity,parentErr:=s.info(parent)
+ if parentErr!=nil{observation.Cause=parentErr;return parentErr}
+ if !winSame(parentIdentity,prepared.parentIdentity)||!s.preparedMatches(prepared,prepared.name){observation.Cause=storageError();return observation.Cause}
+ handle:=windows.Handle(prepared.file.Fd());observation.Handle=handle;observation.Owner=s.nativeOwner("rename",handle)
  if !observation.Owner.IdentityKnown{observation.Cause=storageError();return observation.Cause}
  name16,err:=windows.UTF16FromString(name);observation.Name16=name16;if err!=nil{observation.Cause=err;return storageErrorCause(err)};units:=name16[:len(name16)-1]
  var header windowsRename;offset:=unsafe.Offsetof(header.FileName);observation.Buffer=make([]byte,int(unsafe.Sizeof(header))+len(units)*2)
- observation.Rename=(*windowsRename)(unsafe.Pointer(&observation.Buffer[0]));observation.Rename.RootDirectory=parent;observation.Rename.FileNameLength=uint32(len(units)*2)
+ // Microsoft simple-name semantics select the source file's SAME directory.
+ // The genuine prepared creation tuple/native named+held rejoin above binds
+ // it to this exclusive parent without a new directory open or weaker share.
+ observation.Rename=(*windowsRename)(unsafe.Pointer(&observation.Buffer[0]));observation.Rename.RootDirectory=0;observation.Rename.FileNameLength=uint32(len(units)*2)
  if replace{observation.Rename.Flags=windows.FILE_RENAME_REPLACE_IF_EXISTS|windows.FILE_RENAME_POSIX_SEMANTICS}
  copy(unsafe.Slice((*uint16)(unsafe.Pointer(&observation.Buffer[offset])),len(units)),units)
  observation.RequestedBytes=uint32(offset)+uint32(len(units)*2);observation.Attempted=true
@@ -135,15 +144,16 @@ func(s *windowsOperationStore)delete(handle windows.Handle)error{
  if !observation.Owner.IdentityKnown{observation.Cause=storageError();return observation.Cause}
  observation.Attempted=true;observation.Cause=windows.SetFileInformationByHandle(handle,observation.Class,(*byte)(unsafe.Pointer(&observation.Flags)),observation.RequestedBytes);observation.Completed=true;return observation.Cause
 }
-type windowsPrepared struct{file *os.File;name string;identity windows.ByHandleFileInformation;raw []byte;retained bool;discardAttempted,discardCompleted bool;discardResult error}
+type windowsPrepared struct{file *os.File;name string;identity windows.ByHandleFileInformation;raw []byte;parentOriginal windows.Handle;parentIdentity windows.ByHandleFileInformation;retained bool;discardAttempted,discardCompleted bool;discardResult error}
 func(s *windowsOperationStore)prepare(raw []byte)(*windowsPrepared,error){
 	if s.unresolved{return nil,&recordPublicationUnresolved{}}
+	parentIdentity,parentErr:=s.info(s.parent());if parentErr!=nil{return nil,parentErr};if s.parent()!=s.exclusiveParent||!winSame(parentIdentity,s.exclusiveParentIdentity){return nil,storageError()}
 	var nonce [16]byte;if _,err:=rand.Read(nonce[:]);err!=nil{return nil,storageErrorCause(err)}
 	name:=".operation-reconciliation-"+hex.EncodeToString(nonce[:]);handle,err:=s.child(s.parent(),name,false,true,windows.GENERIC_READ|windows.GENERIC_WRITE|windows.DELETE,windows.FILE_SHARE_READ|windows.FILE_SHARE_DELETE);if err!=nil{return nil,recordJoinedErrors(storageError(),err)}
 	writer:=os.NewFile(uintptr(handle),name);written,writeErr:=recordWriteFile(&s.observed,writer,s.nativeOwner("prepared-write",windows.Handle(writer.Fd())),raw,false,0);s.observeWrite("prepared-write",handle,len(raw),written);syncErr:=recordFileSync(&s.observed,writer,s.nativeOwner("prepared-sync",windows.Handle(writer.Fd())))
 	var duplicate windows.Handle;dupErr:=windows.DuplicateHandle(windows.CurrentProcess(),handle,windows.CurrentProcess(),&duplicate,0,false,windows.DUPLICATE_SAME_ACCESS)
-	if dupErr!=nil{prepared:=&windowsPrepared{file:writer,name:name,raw:append([]byte(nil),raw...)};prepared.identity,err=s.info(handle);return nil,recordJoinedErrors(storageError(),writeErr,syncErr,dupErr,err,s.discardPrepared(prepared))}
-	prepared:=&windowsPrepared{file:os.NewFile(uintptr(duplicate),name),name:name,raw:append([]byte(nil),raw...)};prepared.identity,err=s.info(duplicate);closeErr:=s.closeFile("prepared-writer",writer)
+	if dupErr!=nil{prepared:=&windowsPrepared{file:writer,name:name,raw:append([]byte(nil),raw...),parentOriginal:s.parent(),parentIdentity:parentIdentity};prepared.identity,err=s.info(handle);return nil,recordJoinedErrors(storageError(),writeErr,syncErr,dupErr,err,s.discardPrepared(prepared))}
+	prepared:=&windowsPrepared{file:os.NewFile(uintptr(duplicate),name),name:name,raw:append([]byte(nil),raw...),parentOriginal:s.parent(),parentIdentity:parentIdentity};prepared.identity,err=s.info(duplicate);closeErr:=s.closeFile("prepared-writer",writer)
 	if writeErr!=nil||written!=len(raw)||syncErr!=nil||err!=nil||closeErr!=nil||!s.preparedMatches(prepared,name)||s.unresolved{return nil,recordJoinedErrors(storageError(),writeErr,syncErr,err,closeErr,s.discardPrepared(prepared))};return prepared,nil
 }
 func(s *windowsOperationStore)preparedMatches(p *windowsPrepared,name string)(matches bool){
@@ -169,11 +179,11 @@ func(s *windowsOperationStore)publish(raw []byte)(failure error){
 	prepared,err:=s.prepare(raw);if err!=nil{return err};defer func(){failure=recordJoinedErrors(failure,s.discardPrepared(prepared))}()
 	backupName:="";if backup!=nil{backupName=backup.name};if err:=s.journal("replace",raw,backupName,prepared.name);err!=nil{return err}
 	if !s.currentTarget()||!s.preparedMatches(prepared,prepared.name)||s.unresolved{return storageError()}
-	if err:=s.rename(windows.Handle(prepared.file.Fd()),s.parent(),s.name,s.target!=nil);err!=nil{return recordJoinedErrors(storageError(),s.retainHelperFailure("publication-rename",windows.Handle(prepared.file.Fd()),err,false))}
+	if err:=s.rename(prepared,s.parent(),s.name,s.target!=nil);err!=nil{return recordJoinedErrors(storageError(),s.retainHelperFailure("publication-rename",windows.Handle(prepared.file.Fd()),err,false))}
 	s.observed.PublicationEffect=recordEffectUnresolved;s.observed.Replacement=append([]byte(nil),raw...)
 	prepared.retained=true
 	if !s.preparedMatches(prepared,s.name){
-		if backup!=nil{if !s.preparedMatches(backup,backup.name){backup.retained=true;return &recordPublicationUnresolved{}};if err:=s.rename(windows.Handle(backup.file.Fd()),s.parent(),s.name,true);err!=nil{backup.retained=true;return recordJoinedErrors(&recordPublicationUnresolved{},s.retainHelperFailure("rollback-rename",windows.Handle(backup.file.Fd()),err,true))};backup.retained=true}else if err:=s.delete(windows.Handle(prepared.file.Fd()));err!=nil{return recordJoinedErrors(&recordPublicationUnresolved{},s.retainHelperFailure("rollback-delete",windows.Handle(prepared.file.Fd()),err,true))}
+		if backup!=nil{if !s.preparedMatches(backup,backup.name){backup.retained=true;return &recordPublicationUnresolved{}};if err:=s.rename(backup,s.parent(),s.name,true);err!=nil{backup.retained=true;return recordJoinedErrors(&recordPublicationUnresolved{},s.retainHelperFailure("rollback-rename",windows.Handle(backup.file.Fd()),err,true))};backup.retained=true}else if err:=s.delete(windows.Handle(prepared.file.Fd()));err!=nil{return recordJoinedErrors(&recordPublicationUnresolved{},s.retainHelperFailure("rollback-delete",windows.Handle(prepared.file.Fd()),err,true))}
 		return storageError()
 	};s.observed.PublicationEffect=recordReplacementApplied;return nil
 }

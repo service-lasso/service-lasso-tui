@@ -1,5 +1,40 @@
 # Issue 1 development delivery continuation, 2026-10-16
 
+## Exact66c9b55 natural evidence
+
+Run38836091222 is terminal failed. Both source cross-compilation jobs pass only.
+Windows116765446671 still fails the same three public store cases; actual native
+rename status now3221225539 (STATUS_SHARING_VIOLATION), unchanged/released effect.
+This is new direct boundary evidence, not success or a waived exclusion guard.
+Microsoft's native rename contract identifies the target-directory internal
+write open; the current selected list-directory/share0 exclusion needs an
+explicit coherent architecture disposition before any sharing change.
+
+Overlay116765446463 emits only a closed failure and public summary. Actual
+artifact12019670914 was read: phase acquire-authentic-query-profile, incomplete,
+sourceCommit null and native acceptance false. It reached original input
+acquisition; no genuine profile/native execution is established. Only public
+summary was downloaded temporarily, and the owned ZIP/manifest/directory were
+removed after checked absolute/no-reparse cleanup. No private dump was read.
+
+Linux116765446697 passes prior27/19/3/11 source groups (platform skips retained),
+then the Windows orchestration fixture fails production image/parent admission:
+its mock returns a relative executable while its birth image is absolute.
+Correct the source fixture to supply the genuine constructor's absolute tuple;
+keep production guards and exact original finish-receipt/recovery assertions.
+Remaining subsequent source groups were not reached and are NOT_RUN.
+
+Parent then selected the documented smaller same-directory class65 operand
+refinement in TUI1-PAIRED-SOURCE-EMITTER-20261016.md. Actual prepared creation
+parent/identity plus current exclusive parent and fresh named/held/raw rejoin
+precede the native simple-leaf RootDirectory=NULL operation. Both share0 owners
+and all applied-effect/readback/release guards remain. Constructor-based source
+fixtures cover actual same-directory rename, escape leaves, different actual
+prepared parent and changed original parent carrier. They remain locally UNRUN.
+This does not fabricate a complete changed-native-file/retained-failure borrower
+fixture: that direct qualification remains pending with the full native owner.
+Current source needs a new different entire review before any local execution.
+
 ## 4b0d0d5 actual findings and next coherent source unit
 
 Exact4b natural run38835205422 completed failed. Scoped and historical source

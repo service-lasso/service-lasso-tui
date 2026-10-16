@@ -41,3 +41,16 @@ Complete namespace durability and all original native gates remain unqualified.
 Official source contracts:
 - https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information
 - https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/ne-wdm-_file_information_class
+
+After exact66c actual STATUS_SHARING_VIOLATION, parent selects the smaller
+documented same-directory native operand refinement. Keep original share0
+exclusion. NtSetInformationFile class65 uses RootDirectory=NULL only for a
+strictly simple destination leaf. The genuine prepared owner retains its actual
+creation parent/identity; that source tuple must match the SAME current exclusive
+parent and native named/held whole-byte prepared rejoin immediately before the
+native call. The native source handle then selects its original directory under
+Microsoft's documented simple-name semantics. No directory pathname reopen,
+sharing change, fallback or publication predicate change. Retain actual source
+and parent originals plus NULL native operand/status/IO_STATUS_BLOCK; only the
+next actual result can establish the mechanism outcome. Different source parent,
+changed original parent carrier and escape leaf cases refuse before rename.

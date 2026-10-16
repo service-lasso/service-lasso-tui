@@ -86,6 +86,53 @@ handoff. No genuine private installer ABI/header exists at this exact commit.
 TUI owns the real caller adapter retention and entry composition once supplied;
 no substitute ABI/body is selected. This trace is source evidence only.
 
+## TUI-owned Windows compile AND link replacement, pre-code only
+
+CLI7b1db8ad9cfc81f24523ad6adc3963d0bde6be0f proposed MSVC14.44.35207-family
+x64 C11 and SDK/UCRT10.0.26100.0 with explicit slcli_product_start_windows.
+Its first intent verdict was NO_GO on allocation representation: actual section
+transport must be an exact separate arena allocation with a separate disjoint
+caller; memory-owner/arena descriptors stay outside their own payload and the
+deadline origin stays live in the same arena. This does not approve an ABI or
+compiler/entry body. CLI corrected proposal4fc78537cb8edfebe7f0de1d337e5a3ff7bb9a05 retains separately allocated exact-live-block transport/caller and external descriptors; fresh intent and concrete header/constructor are pending.
+No exact MinGW compiler/CRT tuple was selected by historical TUI GNU argv.
+
+Once the real interface is selected, TUI changes nativeOwnerCompilePlan and
+windowsPayloadFirstBuildPlan together with the executor, not just the compiler
+pathname. Linux keeps its existing distinct source plan. Windows must have:
+
+- Separate held absolute cl.exe and link.exe plus the exact tool/runtime/SDK/
+  include/provider closure; no PATH/default tool or ambient CL/_CL_/LINK/LIB/
+  INCLUDE options. Original environment is retained and case-variant ambiguous
+  or extra option sources refuse, rather than silently choosing a fallback.
+- Existing closed Windows owner source roster plus the actual generated consumer
+  and CLI-selected entry/helper source objects. Compilation uses proposed /TC
+  /std:c11 /O2 /GS /guard:cf /Gy /Gw /Zl /W4 /WX and explicit held /I, /FI,
+  /Fo paths. Objects have .obj names, no GNU -include/-c/-o passed to cl.exe.
+- The independent link.exe argv contains every exact held object, explicit held
+  import/helper libraries, /NODEFAULTLIB, explicit /OUT and /ENTRY, and selected
+  NX/ASLR/CFG, machine/subsystem and stack geometry. No implicit mainCRTStartup,
+  library discovery, GNU -ladvapi32 or compiler-driver startup remains.
+- Exact entry symbol, calling convention, runtime/GS helper definitions, object
+  ordering and source-built helper closure come from the corrected CLI contract.
+  These are unresolved OPERANDS, not quantities guessed from flags. /GS alone
+  neither supplies cookie initialization nor finances earliest pre-CRT execution.
+  No arbitrary caller helper roster or function pointer mints entry permission.
+- Query-pair emission, private-payload completion and retained root-header order
+  remain; native compile/link consume SAME held originals. The executor adds
+  distinct linker/helper inputs and records exact command/environment/raw files
+  under the existing independent failure settlement pattern. Compiler descendants
+  and loaded providers remain with the real enclosing native owner, not Node
+  close or hash-based settlement. Every failed/uncertain input stays retained.
+
+Source cases must distinguish compile and link driver argv, exact entry/helper
+and import sources, unchanged Linux path, missing/wrong compiler or linker,
+ambient option injection, foreign/changed helper/profile/header, output alias,
+link-before-complete-input, partial compile/link outputs and original-first-error
+plus independent capture/revalidation. Native success remains unproved until
+actual matching source/tool/CRT inputs and complete new ROOT admission exist.
+No target parser/compiler/linker/test was executed to write this proposal.
+
 ## Proposed admission commands, NOT admission
 
 For exact reviewed2a04/tree9e83 source, the bounded Node argv proposal is:

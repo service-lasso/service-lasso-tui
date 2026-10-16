@@ -1,4 +1,5 @@
 import { verifyNativeArchive } from "./scoped-native-archive.mjs";
+import {assertNativeOwnerManifest,assertCoreNativeOwnerAsset,NATIVE_OWNER_CORE_ARCHIVE_LIMIT} from './native-owner-package.mjs';
 import { PublicationError, withPublicationCleanup } from "./publication-failure.mjs";
 import { parseStrictJSON } from "./scoped-json.mjs";
 import { assertScope, assertSourcePolicy } from "./scoped-policy.mjs";
@@ -57,6 +58,7 @@ export function assertPreflight({ immutableReleases, environment, branchProtecti
 }
 
 export function assertManifest(manifest, identity) {
+  if(manifest?.schemaVersion===4)return assertNativeOwnerManifest(manifest,identity);
   exactKeys(manifest, ["assets", "checksumManifest", "corePackagingIssue", "kind", "release", "schemaVersion", "source", "version", "scope"], "candidate manifest");
   if (manifest.schemaVersion !== 3 || manifest.kind !== "develop-prerelease-candidate" || manifest.version !== identity.version) fail("candidate manifest identity is invalid");
   exactKeys(manifest.source, ["commit", "ref", "repository"], "candidate manifest source");
@@ -77,11 +79,24 @@ export function assertManifest(manifest, identity) {
   return manifest;
 }
 
-function assertLocalAssets(localAssets, requiredNames) {
+// Actual archive bytes are interpreted at every local/upload/readback boundary;
+// manifest shape or a matching digest alone does not validate the pair.
+export function assertCandidateArchiveBytes(manifest,asset,bytes){
+  if(manifest.schemaVersion===4)return assertCoreNativeOwnerAsset(asset,bytes);
+  if(manifest.schemaVersion!==3)fail('unknown scoped archive schema');
+  return verifyNativeArchive(asset.platform,bytes);
+}
+
+function candidateAssetLimit(manifest,name){
+  if(name.endsWith('.json')||name==='SHA256SUMS.txt')return MAX_METADATA_BYTES;
+  return manifest.schemaVersion===4?NATIVE_OWNER_CORE_ARCHIVE_LIMIT:MAX_ASSET_BYTES;
+}
+function assertLocalAssets(localAssets, requiredNames,manifest) {
   exactKeys(localAssets, requiredNames, "local candidate asset inventory");
   for (const name of requiredNames) {
     const asset = localAssets[name]; exactKeys(asset, ["sha256", "size"], "local asset");
     if (!SHA256.test(asset?.sha256) || !positiveBoundedSize(asset?.size, `local ${name}`)) fail(`local candidate asset inventory is invalid for ${name}`);
+    if(manifest.schemaVersion===4&&asset.size>candidateAssetLimit(manifest,name))fail('schema4 asset exceeds existing receiving bound');
   }
   return localAssets;
 }
@@ -140,16 +155,16 @@ function assertChecksumManifestBytes(bytes, manifest) {
 
 export async function assertActualLocalAssets({ assetDirectory, manifest, localAssets }) {
   const requiredNames = fixedInventoryNames(manifest?.version);
-  assertLocalAssets(localAssets, requiredNames);
+  assertLocalAssets(localAssets, requiredNames,manifest);
   const actual = {};
   for (const name of requiredNames) {
-    const bytes = await readBoundedRegularLocalAsset(assetDirectory, name, (name.endsWith(".json") || name === "SHA256SUMS.txt") ? MAX_METADATA_BYTES : MAX_ASSET_BYTES);
+    const bytes = await readBoundedRegularLocalAsset(assetDirectory, name,candidateAssetLimit(manifest,name));
     actual[name] = { sha256: createHash("sha256").update(bytes).digest("hex"), size: bytes.length, bytes };
     if (actual[name].sha256 !== localAssets[name].sha256 || actual[name].size !== localAssets[name].size) fail(`actual local candidate asset does not match the inventory for ${name}`);
   }
   for (const [index, expected] of fixedArchiveAssets(manifest.version).entries()) {
     const asset = manifest.assets[index];
-    verifyNativeArchive(expected.platform, actual[expected.name].bytes);
+    assertCandidateArchiveBytes(manifest,asset,actual[expected.name].bytes);
     if (asset.sha256 !== actual[expected.name].sha256) fail(`actual local candidate asset does not match the manifest for ${expected.name}`);
   }
   if (manifest.checksumManifest.sha256 !== actual["SHA256SUMS.txt"].sha256) fail("actual local checksum manifest does not match the manifest");
@@ -168,10 +183,10 @@ export async function assertPublicationDirectory(assetDirectory, manifest) {
 // upload these held bytes, never paths that can be reopened after verification.
 export async function holdVerifiedLocalAssets({ assetDirectory, manifest, localAssets, beforeOpen }) {
   const requiredNames = fixedInventoryNames(manifest?.version);
-  assertLocalAssets(localAssets, requiredNames);
+  assertLocalAssets(localAssets, requiredNames,manifest);
   const held = {}; let totalBytes = 0;
   for (const name of requiredNames) {
-    const bytes = await readBoundedRegularLocalAsset(assetDirectory, name, (name.endsWith(".json") || name === "SHA256SUMS.txt") ? MAX_METADATA_BYTES : MAX_ASSET_BYTES, beforeOpen);
+    const bytes = await readBoundedRegularLocalAsset(assetDirectory, name,candidateAssetLimit(manifest,name),beforeOpen);
     totalBytes += bytes.length;
     if (totalBytes > MAX_TOTAL_BYTES) fail("candidate upload inventory exceeds held-byte bound");
     const sha256 = createHash("sha256").update(bytes).digest("hex");
@@ -181,14 +196,14 @@ export async function holdVerifiedLocalAssets({ assetDirectory, manifest, localA
   const heldInventory = Object.fromEntries(requiredNames.map(name => [name, { sha256: createHash("sha256").update(held[name]).digest("hex"), size: held[name].length, bytes: held[name] }]));
   const actual = await assertActualLocalAssets({ assetDirectory, manifest, localAssets: Object.fromEntries(requiredNames.map(name => [name, {sha256: heldInventory[name].sha256, size: heldInventory[name].size}])) });
   // Verify the manifest/checksum relation against the held immutable bytes too.
-  for (const asset of manifest.assets) verifyNativeArchive(asset.platform, held[asset.name]);
+  for (const asset of manifest.assets) assertCandidateArchiveBytes(manifest,asset,held[asset.name]);
   assertChecksumManifestBytes(held["SHA256SUMS.txt"], manifest);
   return { inventory: actual, bytes: held, totalBytes };
 }
 
 function assertReleaseAssetMetadata(release, manifest, localAssets, draft) {
   const requiredNames = fixedInventoryNames(manifest?.version);
-  assertLocalAssets(localAssets, requiredNames);
+  assertLocalAssets(localAssets, requiredNames,manifest);
   for (const expected of fixedArchiveAssets(manifest?.version)) {
     const asset = manifest?.assets?.find(candidate => candidate?.platform === expected.platform);
     if (!asset || asset.platform !== expected.platform || asset.name !== expected.name || asset.executable !== expected.executable || localAssets[expected.name].sha256 !== asset.sha256) fail(`local candidate asset inventory does not match the manifest for ${expected.name}`);
@@ -338,6 +353,9 @@ export async function verifyDraftAssetBytes({ release, manifest, localAssets, he
       if (total + remote.size > MAX_TOTAL_BYTES) fail("draft asset inventory exceeds temporary storage bound");
       const result = await fetchDraftAsset(remote, remote.size, `${downloadDir}/draft-asset-${index}`, token, fetchImpl);
       if (result.sha256 !== localAssets[name].sha256 || result.sha256 !== remote.digest.slice("sha256:".length) || result.size !== expected.length) fail(`draft asset byte receipt is invalid for ${name}`);
+      const actual=await readBoundedRegularLocalAsset(downloadDir,`draft-asset-${index}`,candidateAssetLimit(manifest,name));
+      if(!actual.equals(expected))fail('draft original bytes differ from held candidate');
+      const asset=manifest.assets.find(asset=>asset.name===name);if(asset)assertCandidateArchiveBytes(manifest,asset,actual);
       total += result.size; verified.push({ name, ...result });
     }
   },()=>rm(downloadDir, { recursive: true, force: true }),"candidate asset verification and cleanup denied");
@@ -353,6 +371,10 @@ export async function verifyPublicAssetBytes({ release, manifest, localAssets, a
       if (total + remote.size > MAX_TOTAL_BYTES) fail("public asset inventory exceeds temporary storage bound");
       const result = await fetchPublicAsset(assertInitialAssetURL(remote.browser_download_url, release, name), remote.size, `${downloadDir}/asset-${index}`, fetchImpl);
       if (result.sha256 !== local.sha256 || result.sha256 !== remote.digest.slice("sha256:".length) || result.size !== local.size || result.size !== remote.size) fail(`public asset byte receipt is invalid for ${name}`);
+      const actual=await readBoundedRegularLocalAsset(downloadDir,`asset-${index}`,candidateAssetLimit(manifest,name));
+      const expected=await readBoundedRegularLocalAsset(assetDirectory,name,candidateAssetLimit(manifest,name));
+      if(!actual.equals(expected))fail('public original bytes differ from actual candidate');
+      const asset=manifest.assets.find(asset=>asset.name===name);if(asset)assertCandidateArchiveBytes(manifest,asset,actual);
       total += result.size; verified.push({ name, ...result });
     }
   },()=>rm(downloadDir, { recursive: true, force: true }),"candidate asset verification and cleanup denied");

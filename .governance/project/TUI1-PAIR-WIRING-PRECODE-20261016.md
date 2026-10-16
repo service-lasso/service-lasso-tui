@@ -3,8 +3,9 @@
 Parent selected this concrete proposal for durable cross-repository intent
 review under SPEC004's existing scoped native-owner packaging B. Independent
 INTENT_GO at exact1f83 selected the archive/producer/assembler/verifier source
-unit; its body is currently uncommitted WIP. Committed product source remains at
-the independently reviewed d720250521b456c82d3923d4cf160beec3794845 baseline.
+unit; exact5f0 subsequently received independent receipt-delta INTENT_GO. The
+selected source body follows in this bundle. Earlier independently reviewed
+d720250521b456c82d3923d4cf160beec3794845 remains a historical baseline.
 Its ENTIRE60 SOURCE_GO and hosted source-test results qualify only those exact
 bytes and their bounded checks. The historical two failed capture iterations
 remain recorded; this proposal creates no new execution admission.
@@ -187,4 +188,49 @@ substitution, nativeBinary/first-member mismatch, aggregate/member limits,
 prior run/attempt/workflow/source, and coherent raw wrapper/provider/receipt
 rebinding that must still fail the actual member/source/run bridge. No huge
 allocation or fake native issuer test is selected. Receipt parser/writer body
-remains deferred until this exact delta's independent intent disposition.
+was deferred until this exact delta's independent intent disposition, now
+INTENT_GO. The implementation below still requires new ENTIRE review and exact
+actual-input execution admission; intent review is not source/native proof.
+
+## Implemented selected source bundle, UNRUN locally
+
+The current new-production produceNative entry explicitly refuses genuine
+native-owner acquisition before the historical Go-only pipeline. No option,
+boolean, generic callback, executor return or missing profile/entry/family can
+route a v2 request to v1. The private uninvoked legacy body remains separate.
+packageNativeOwnerCandidate operates on supplied pair/receipt original buffers,
+constructs the exact archive and v2 wrapper, and validates both bytes and the
+schema2 receipt bridge; it is not a genuine acquisition/qualification factory.
+
+native-pair-build-receipt implements the selected closed schema1/2 dispatch.
+Both scoped-native-public and the independent recursive public-receipt CLI use
+the same checker. createEnclosingPairBuildOutput reads the ACTUAL enclosing
+process's GITHUB_REPOSITORY/SHA/REF/RUN_ID/RUN_ATTEMPT originals, refuses missing
+or noncanonical IDs and mismatched expected source/run, and constructs the
+record from the SAME actual supplied pair buffers. It does not upgrade old
+receipts. A future genuine writer must hold those actual buffers and original
+run/environment, join actual currentAttempt/provider job observations, and
+retain them through last borrowers. This metadata constructor itself cannot
+prove native family, source issuer, entry, finance or provider ownership; no
+production caller is connected. The old Python child receives only SHA/ref and
+cannot emit schema2 through absent/default run values.
+
+Strict native wrapper/aggregate/assembler dispatch preserves v1/schema3 and
+requires homogeneous two-platform v2 for schema4. Actual archive/member bytes,
+both receipt members, source/run/job/attempt, public five records, qualification
+and provider ZIP originals are joined. Local/upload and actual persisted draft/
+public readbacks use the correct archive validator, compare complete bytes and
+apply the Core256MiB intersection before pair acquisition. Publisher authority,
+scope/source policy, old Core2633 pin, settings, exact public inventory and all
+legacy schema1/2/3 contracts are retained.
+
+New UNRUN source fixtures cover valid synthetic pair byte flow, meaningful
+member/path/order/substitution/receipt/raw-provider/source/run/cap/mixed-version
+denials, coherent outer hashes with wrong actual private member bytes at draft
+readback, both public validator surfaces, and actual enclosing environment
+acquisition in a real Node child. Synthetic images/receipts/provider/CI values
+are explicitly not native proof. Numeric cap frontiers use no huge allocation.
+Both matching source-test jobs include the new suites and existing package
+validator suite. No local parser/import/generator/build/test/native execution
+has occurred. Actual Core receiver and genuine constructor/entry/profile/family
+remain required before activation; no release is qualified by this source.

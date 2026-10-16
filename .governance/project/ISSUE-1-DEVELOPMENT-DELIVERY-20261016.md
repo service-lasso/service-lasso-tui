@@ -462,3 +462,31 @@ Only this receipt pre-code documentation is committed now. Existing approved
 archive/readback/producer/fixture code remains dirty WIP, not part of the
 documentation commit or an executed/qualified candidate. No schema2 receipt
 parser/writer body or local target execution is selected before disposition.
+
+### Selected complete pair/receipt source bundle awaiting entire review
+
+Independent receipt5f0 intent returned INTENT_GO. Selected source now implements
+strict v1/schema1 versus v2/schema2 native evidence, homogeneous v2/schema4
+assembly, exact pair-byte packaging and actual local/upload/draft/public archive
+interpretation/readbacks. Effective Core256MiB is checked before pair reads;
+all other fixed caps/names/public receipts/provider/source-policy bindings and
+historical formats remain. Both public receipt validator surfaces share the
+closed schema2 checker. The metadata writer reads all five actual enclosing
+GitHub source/run fields and joins expected originals, refusing missing run IDs
+or source/attempt differences instead of upgrading old SHA/ref-only Go output.
+
+Current new-production acquisition explicitly refuses before Go-only fallback.
+The operational byte packaging/metadata functions do not create genuine native
+issuer, entry, profile, family, finance or provider authority. A future genuine
+writer must retain SAME pair/run/source and actual provider observations through
+all borrowers; no such production constructor or accepted Core receiver exists
+here. Old Core2633 pin is unchanged. Parent coordinates the actual Core owner.
+
+New synthetic source suites cover legacy/mixed schemas, both validator surfaces,
+actual member-byte/path/order substitutions, receipts/source/run/attempt/role/
+size caps, coherent provider references and draft originals, and actual enclosing
+environment reads in a real child. No fake native proof or large allocation is
+used. All new source remains UNRUN locally. Source/diff hygiene precedes cohesive
+commit and immediate push, then fresh DIFFERENT ENTIRE review and NEW complete
+actual-input/exact-command admission before any local target execution. No
+publication/activation/qualification or provider settings change is claimed.

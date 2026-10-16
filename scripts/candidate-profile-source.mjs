@@ -290,7 +290,7 @@ export function emitCandidateProfileSources(original, buildGeometry, nativeGeome
     '}','#endif',''
   ].join('\n');
   const go=[
-    '//go:build linux','',
+    '//go:build linux && service_lasso_native_candidate','',
     '// Generated source representation and fixed backing; no authority grant.',
     'package lifetime','import "sync/atomic"',
     'var nativeCandidateProfileBytes=['+original.length+']byte{'+hex+'}',
@@ -308,14 +308,14 @@ export function emitCandidateProfileSources(original, buildGeometry, nativeGeome
     'type nativeCandidateConstruction struct{claimed atomic.Bool;profileOriginal []byte;reservation nativeStartupReservation;receiver Receiver;startup NativePayloadStartup;returned bool}',
     'var nativeCandidateOriginal nativeCandidateConstruction',
     '// Source ordinary startup calls this once; duplicate cannot reset originals.',
-    'func newNativeCandidateStartupRoot()(*NativePayloadStartup,error){',
+    'func newNativeCandidateStartupRoot(rawArguments []string)(*NativePayloadStartup,error){',
     ' o:=&nativeCandidateOriginal;if !o.claimed.CompareAndSwap(false,true){return nil,errOriginalEnrollment}',
     ' o.profileOriginal=nativeCandidateProfileBytes[:len(nativeCandidateProfileBytes):len(nativeCandidateProfileBytes)]',
     ' r:=&o.reservation;r.candidateQuantities=&nativeCandidateQuantities',
     ' r.sourceEndpointCalls=nativeCandidateEndpointCalls[:];r.sourceSecurity=nativeCandidateSecurity[:];r.sourceBody=nativeCandidateBody[:]',
     ' r.sourceTerminalCalls=nativeCandidateTerminalCalls[:];r.sourceHeaderAttempts=nativeCandidateHeaderAttempts[:];r.sourceBodyAttempts=nativeCandidateBodyAttempts[:];r.sourceReplyAttempts=nativeCandidateReplyAttempts[:]',
     ' r.sourceReadback=nativeCandidateReadback[:];r.sourceTerminalWriteAttempts=nativeCandidateTerminalWriteAttempts[:];r.sourceTerminalReadAttempts=nativeCandidateTerminalReadAttempts[:]',
-    ' o.startup.candidateOriginal=o;o.startup.candidateProfile=o.profileOriginal;o.startup.reservation=r;o.startup.receiverOriginal=&o.receiver;o.returned=true;return &o.startup,nil',
+    ' o.startup.candidateOriginal=o;o.startup.candidateProfile=o.profileOriginal;o.startup.reservation=r;o.startup.receiverOriginal=&o.receiver;o.startup.RawArguments=rawArguments;o.returned=true;return &o.startup,nil',
     '}',''
   ];
   return {original:parsed,cSource,goSource:go.join('\n'),geometryOriginal:buildGeometry,nativeGeometryOriginal:native.original,nativeGeometry:native};

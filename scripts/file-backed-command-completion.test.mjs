@@ -72,3 +72,82 @@ test('actual spawn error remains first through missing named output and changed-
   assert.equal(original.closeAttempted,undefined);
  });
 });
+
+function startActualWriter(row,destination){
+ row.child=spawn(process.execPath,['-e',
+  'process.stdin.resume();process.stdin.on("end",()=>{process.stdout.write("actual stdout");process.stderr.write("actual stderr");require("node:fs").writeFileSync(process.argv[1],"actual destination");});',destination],
+  {stdio:['pipe',row.stdout.handle.fd,row.stderr.handle.fd],windowsHide:true});
+}
+async function releaseActualWriter(row,pending,failures){
+ row.child.stdin.on('error',original=>failures.push(original));
+ try{row.child.stdin.end();}catch(original){failures.push(original);}
+ try{return await pending;}catch(original){return {rejectedOriginal:original};}
+}
+
+test('actual stream objects, full snapshots and named rows join through successful child closure',async()=>{
+ await fixture(async({root,row,attempt})=>{
+  const destination=path.join(root,'created-output'),failures=[];
+  startActualWriter(row,destination);
+  const pending=completeFileBackedCommand(row,attempt,[destination]);
+  const result=await releaseActualWriter(row,pending,failures);
+  if(failures.length)throw new AggregateError(failures,'actual stdin release failed');
+  assert.ok(Buffer.isBuffer(result));assert.equal(result.toString(),'actual stdout');
+  for(const channel of ['stdout','stderr']){
+   const stream=row[channel];
+   assert.equal(stream.retentionCompleted,true);assert.equal(stream.originalRevalidationCompleted,true);
+   assert.equal(stream.before.ino,stream.namedOriginal.before.ino);
+   assert.deepEqual(stream.bytes,stream.namedOriginal.bytes);assert.equal(stream.reads.length,2);
+  }
+  assert.equal(row.outputOriginals[0].completed,true);assert.equal(row.heldRevalidationCompleted,true);assert.equal(row.revalidationCompleted,true);
+ });
+});
+
+test('real same-byte pathname replacement cannot stand in for the child stdout object',async()=>{
+ await fixture(async({root,row,attempt})=>{
+  const destination=path.join(root,'created-output'),failures=[];
+  startActualWriter(row,destination);
+  const pending=completeFileBackedCommand(row,attempt,[destination]);
+  try{
+   // Move the actual held file away, then create a genuinely different object
+   // at its now-absent name. No overwrite-open semantics or simulated identity.
+   await rename(row.stdout.path,path.join(root,'parked-original-stdout'));
+   await writeFile(row.stdout.path,'actual stdout');
+  }catch(original){failures.push(original);}
+  const result=await releaseActualWriter(row,pending,failures);
+  if(failures.length)throw new AggregateError(failures,'actual replacement or stdin release failed');
+  assert.equal(result.rejectedOriginal,row.errors[0]);
+  assert.equal(row.failures.occurrences[0].phase,'stdout-retain');
+  assert.equal(row.stdout.readbackCompleted,true);assert.equal(row.stdout.retentionCompleted,false);
+  assert.deepEqual(row.stdout.bytes,row.stdout.namedOriginal.bytes);
+  assert.ok(row.stdout.before.dev!==row.stdout.namedOriginal.before.dev||row.stdout.before.ino!==row.stdout.namedOriginal.before.ino);
+  assert.equal(row.stdout.originalRevalidationCompleted,false);
+  assert.equal(row.stderr.retentionCompleted,true);assert.equal(row.stderr.originalRevalidationCompleted,true);
+  assert.equal(row.stderr.bytes.toString(),'actual stderr');assert.equal(row.outputOriginals[0].completed,true);
+  assert.equal(row.heldRevalidationCompleted,true);assert.equal(row.revalidationCompleted,false);
+ });
+});
+
+test('real same-object body mutation between original read and named capture is denied',async()=>{
+ await fixture(async({root,row,attempt})=>{
+  const destination=path.join(root,'created-output'),failures=[];
+  const acquire=attempt.held.acquire.bind(attempt.held);let changed=false;
+  // Schedule a real filesystem fault at the borrower cut. All read/open/stat
+  // results still come from the actual HeldOverlayInputs and native files;
+  // no fake child, stream, error, identity or production callback seam exists.
+  attempt.held.acquire=async file=>{
+   if(file===row.stdout.path&&!changed){changed=true;await writeFile(file,'changed stdout body');}
+   return acquire(file);
+  };
+  startActualWriter(row,destination);
+  const pending=completeFileBackedCommand(row,attempt,[destination]);
+  const result=await releaseActualWriter(row,pending,failures);
+  if(failures.length)throw new AggregateError(failures,'actual stdin release failed');
+  assert.equal(changed,true);assert.equal(result.rejectedOriginal,row.errors[0]);
+  assert.equal(row.failures.occurrences[0].phase,'stdout-retain');
+  assert.equal(row.stdout.before.dev,row.stdout.namedOriginal.before.dev);assert.equal(row.stdout.before.ino,row.stdout.namedOriginal.before.ino);
+  assert.equal(row.stdout.bytes.toString(),'actual stdout');assert.equal(row.stdout.namedOriginal.bytes.toString(),'changed stdout body');
+  assert.equal(row.stdout.retentionCompleted,false);assert.equal(row.stdout.originalRevalidationCompleted,false);
+  assert.equal(row.stderr.retentionCompleted,true);assert.equal(row.stderr.originalRevalidationCompleted,true);
+  assert.equal(row.outputOriginals[0].completed,true);assert.equal(row.heldRevalidationCompleted,true);assert.equal(row.revalidationCompleted,false);
+ });
+});

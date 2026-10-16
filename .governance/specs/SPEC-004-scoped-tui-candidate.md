@@ -170,3 +170,7 @@ Parent selected the additive build-output schema2 proposal in TUI1-PAIR-WIRING-P
 
 ### Issue1 complete selected pair source bundle awaiting review
 Exact1f83 pair intent and exact5f0 receipt intent received independent INTENT_GO. The selected v2/schema2/schema4 packaging, receipt joins, homogeneous assembly and actual archive readback body is now source-implemented with UNRUN meaningful synthetic legacy/mixed/member/path/order/source/run/receipt/byte/cap fixtures. Current new-production acquisition explicitly refuses genuine-constructor absence before Go-only fallback. Both receipt validator surfaces share strict schema1/2 validation; writer metadata reads all actual enclosing GitHub run originals. Core2633 pin and effective Core256MiB remain unchanged. Genuine native entry/profile/family/provider ownership and actual Core receiver remain unconnected; no activation, source/native qualification or local execution admission follows. Fresh DIFFERENT ENTIRE review is required.
+
+
+### Issue1 complete Windows consumer quantitative pre-code
+Parent selected TUI-owned complete Windows layout/cost/source/operation/deadline/family mapping in TUI1-WINDOWS-CONSUMER-LAYOUT-PRECODE-20261016.md for bounded intent review before body. It maps all21 existing startup backing regions, native/debug/query/helper/Go/OS/failure-overlap actors, pure checked geometry versus actual CLI child-local financing/binding and exact still-missing source operands. No Linux casts, schema3-as-whole-profile, new clock, fictional issuer, activation or local execution is selected.

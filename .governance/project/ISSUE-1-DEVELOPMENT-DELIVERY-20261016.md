@@ -500,3 +500,7 @@ native/publication qualification. The next TUI-owned caller adapter and actual
 entry integration, precise CLI genuine-original dependency, and UNADMITTED
 exact-command proposals are mapped in TUI1-POSITIVE-CALLER-PRECODE-20261016.md.
 No new ABI/body is selected until CLI supplies its actual constructor/bridge.
+
+
+### Issue1 complete Windows consumer quantitative pre-code
+Parent selected TUI-owned complete Windows layout/cost/source/operation/deadline/family mapping in TUI1-WINDOWS-CONSUMER-LAYOUT-PRECODE-20261016.md for bounded intent review before body. It maps all21 existing startup backing regions, native/debug/query/helper/Go/OS/failure-overlap actors, pure checked geometry versus actual CLI child-local financing/binding and exact still-missing source operands. No Linux casts, schema3-as-whole-profile, new clock, fictional issuer, activation or local execution is selected.

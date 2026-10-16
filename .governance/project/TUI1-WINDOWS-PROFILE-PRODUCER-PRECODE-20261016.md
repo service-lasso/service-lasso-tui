@@ -1,6 +1,8 @@
 # Windows source-envelope and native-case producer joint pre-code
 
-Status: proposed cross-repository representation, NOT selected implementation.
+Status: selected prospective cross-repository representation after fresh
+DIFFERENT7545 whole proposal INTENT_GO. Native acquisition/activation and
+execution remain unqualified.
 Parent selected preparation after aee ENTIRE84 SOURCE_GO. TUI owns the finite
 semantic derivation/checker, same-occurrence capture retention, schema3 encoder,
 held profile gate and compiled-pair integration. CLI owns genuine INITIAL source
@@ -352,11 +354,44 @@ schema3 closed-field/exact-byte gate; absent constructor refusal; strict v2
 schema2/schema4 ordered pair and legacy v1 validation unchanged. Synthetic
 source tests cannot establish native membership, finance, fit or qualification.
 
-This is a bounded joint intent proposal for independent review, not selected
-body. The named missing constructor, first-capture source bounds, actual native
+At7545 this was a bounded joint intent proposal for independent review, not
+selected body. The named missing constructor, first-capture source bounds, actual native
 source formulas/layout cases, private register bridge if needed and helper
 closure are explicit implementation obligations, not facts asserted complete.
 An intent verdict cannot qualify those missing inputs, authorize target
 execution or activate production. Any implementation requiring a different
 semantic arm/native ABI or narrowing the supported source cases must return to
 the concrete intent boundary before body.
+
+## Selected implementation and complete principal-case refinement
+
+Parent accepted fresh DIFFERENT review_tui34_joint7545_intent_oct16 whole362-line
+proposal plus four maps, actual CLIef6/49/TUI366/schema3/build/cost/native
+contracts: INTENT_GO exact7545e1b30abc410737d0e2565859eccd87703a07,
+treea75d9005ea91d27076e81c604380ecc1624f7df4,
+document blobb11d7d6bfabca89c098b8aeead130e35743326f3,
+SHA25636A7F392C1CED31A8F5F41EC7435CE658BB8F5A8EC70CC838D396AA38B28C38D.
+This selects the prospective implementation, not its missing constructors,
+physical qualification, native invocation, execution admission or release.
+
+The principal arm concretely retains finite typed source-case arrays: six
+process-security slots, two token slots and endpoint cases must have exact
+source-owned native occurrence membership. One shared schema capacity is MAX
+over every retained source case; complete retained/simultaneous/failure costs
+SUM across actual cases, with shared physical backing charged once only when
+its actual aliases and lifetime are explicitly represented. A single example
+never proves complete source cases. Parent selected this refinement inside the
+approved joint representation; no additional API/cap/issuer or token-domain
+exclusion is introduced.
+
+TUI source native/owner/query_profile_windows.h/.c now implements the concrete
+closed semantic row/input header, checked pure derivation and fixed schema3
+buffer encoder using the existing owned SHA256. The header includes only the
+actual source-qualified CLI product source declaration and real borrowed
+principal/held-file struct names; the implementation requires the exact real
+held-file header/closure. The CLI nativecase header consumes this semantic
+header via an explicit source-qualified include, with no fallback or include
+cycle. Source-case/native capture/designation/financial authority remain
+distinct; no pure result issues a nativecase or permits capture. Nativecase
+capture/file/heldgate/MSVC/entry/family integration remains connected work,
+not claimed complete by this initial source body. All new source is UNRUN.

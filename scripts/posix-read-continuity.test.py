@@ -318,7 +318,13 @@ class PosixReadContinuity(unittest.TestCase):
         for name in ("tui20-native-posix-five-action.py","tui28-native-linux-five-action.py"):
             for mode in ("useful","mutation_dual","terminal_dual","replacement_cleanup","file_dual"):
                 module=self.load(name); ActualTerminal=module.Terminal; observations=[]; events=[]; primary=ValueError("PRIVATE first"); secondary=OSError("PRIVATE second")
-                executable="/owned/candidate"; alias="/owned/.tui20-held-original"; replacement="/owned/.tui20-untrusted-replacement"; staged=replacement+".link"
+                # This is a virtual namespace on either host. The actual Linux
+                # control body uses os.path.join, so its fixture keys must use
+                # the same host algebra even when native operations are mocked.
+                executable=module.os.path.join("/owned","candidate")
+                directory=module.os.path.dirname(executable)
+                alias=module.os.path.join(directory,".tui20-held-original")
+                replacement=module.os.path.join(directory,".tui20-untrusted-replacement"); staged=replacement+".link"
                 regular=types.SimpleNamespace(st_mode=module.stat.S_IFREG,st_dev=1,st_ino=2)
                 foreign=types.SimpleNamespace(st_mode=module.stat.S_IFREG,st_dev=1,st_ino=3)
                 symlink=types.SimpleNamespace(st_mode=module.stat.S_IFLNK,st_dev=1,st_ino=4)

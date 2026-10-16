@@ -1,5 +1,29 @@
 # Issue 1 development delivery continuation, 2026-10-16
 
+## Exact606b478 whole review and natural source progress
+
+Different fresh `/root/review_tui34_entire606_oct16` returned bounded entire43
+SOURCE_GO/no P0-P3. Exact606 run38837835923 is terminal failed: Linux test/build
+116770828108 and both source cross-compilation jobs succeed. Windows116770828219
+passes command/API/app/lifetime Go packages (app1.379s), including the actual
+Save/Clear/retry/independent-original/onceclose source cases, and progresses
+through the real unavailable ConPTY probe. This is source/native-component
+evidence, not full default-v2/operator acceptance or whole Windows job success.
+
+Windows then fails a later Python source fixture with KeyError for the virtual
+replacement path: its fixed POSIX dictionary keys disagree with the actual
+Windows-host os.path.join used by the controlled Linux source body. The bounded
+repair derives all virtual keys with SAME host path algebra. Every original
+primary/secondary identity, independent cleanup, restoration and once-close
+assertion remains. No production behavior, skip, deadline or gate is changed.
+
+Overlay116770828207's public artifact12019613294 confirms incomplete phase
+acquire-authentic-query-profile, sourceCommit null, native acceptance false.
+Only that public summary was read; owned temporary ZIP/manifest/directory were
+removed immediately after checked cleanup. Genuine provider input remains absent.
+macOS failure remains N/A, never PASS; native PTY dependencies are skipped/NOT_RUN.
+New fixture source is locally UNRUN and requires a new entire exact-head review.
+
 ## d5 whole review and clear-lifetime successor
 
 Different fresh `/root/review_tui34_entire_d5e_oct16` reviewed exactd5/all41

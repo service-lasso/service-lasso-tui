@@ -192,6 +192,29 @@ inputs, preserving overlay tests and provenance. That boundary remains OPEN.
 
 ## Validation and custody
 
+Exact `8aae573fd00cae13564241bd54d75e9340203d0d` natural run38839222876
+again passed Linux and both cross-compiles, but Windows116775203417 failed the
+SAME EOF fixture with the same30s timeout. This is consecutive EOF failure2,
+not a new successful boundary. Pinned libuv `win/fs.c` then established the
+previously missed source constraint: closing descriptors0..2 is a successful
+no-op. The earlier end/close route was insufficient. No native handle census,
+callback trace or successful EOF is inferred from those source facts.
+
+Parent selected and reviewed the internal boundary before implementation in
+[TUI1-HANDOFF-PIPE-ORIGINAL-20261016.md](TUI1-HANDOFF-PIPE-ORIGINAL-20261016.md).
+The real ChildProcess observer now privately retains all original stdio pipes,
+deduplicates aliases and retains extra-pipe directions/EOF/finish/errors/close
+count. Optional handoff selection resolves only an actual readable original
+of that SAME already-observed child, excluding stdin. Foreign/absent/numeric/
+late-added streams cannot acquire listeners. The production call remains
+fixed to original stdout; its30s/quota/strict-parser/child listeners remain.
+Only Windows EOF source fixture uses real inherited pipe3 and realclose3;
+non-Windows retains original stdoutclose1. Real extra-pipe ready and local-
+destroy negatives cover actual ownership/terminal cuts. Actual EOF while
+child remains alive and successful full child/extra-pipe closure after stdin
+release are mandatory. Public projections are not original-binding authority.
+This unit is UNRUN locally; review/CI/native qualification remain separate.
+
 Exact `57e2379c30dc05e256cb560d309943aecba9eca3` natural run38838743804
 passed Linux, both cross-compiles, all Windows Go packages and the actual
 held-input replacement/mutation/failure case. Windows job116773667220 advanced

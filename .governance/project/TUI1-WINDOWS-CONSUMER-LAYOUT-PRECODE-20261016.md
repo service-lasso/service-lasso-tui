@@ -53,7 +53,10 @@ output writes, including failure rows. No partial binding enables startup.
 ## Complete known startup backing roster
 
 The canonical native source is public_startup_windows.c startup_backing: exactly
-20 backing regions plus the argument turns (21). Each becomes a distinct item;
+20 EXTERNAL backing regions plus the argument turns = 21 EXTERNAL regions.
+Startup control is a separately charged 22nd region, excluded by the original
+21-region checks. Both equalities are mandatory: external_count==21 and
+startup_storage_count==22. Each becomes a distinct item;
 no alias, reuse or double charge of embedded members is permitted.
 
 | Role | Existing actual field | Extent/alignment source |
@@ -77,10 +80,15 @@ no alias, reuse or double charge of embedded members is permitted.
 
 Embedded writes[4]/workers[4]/spans[4] are counted inside startup control, not
 another free allocation. Existing argument_sender_factory_windows.c currently
-owns static factory control + turns; selected implementation must expose their
-exact static extent/association OR bind source-owned per-entry turns, with one
-roster location and preserved factory/exclusion checks. It must not charge an
-arena turn array while silently consuming the old uncharged static array.
+owns static factory control plus embedded turns. Selected implementation splits
+its per-entry factory CONTROL (owner reference and attempted/returned cells)
+from the separate source-owned turns array. Factory control is separately
+charged, beyond the 22 startup storage regions; turns remain exactly ONE of the
+21 external regions, never charged again as embedded factory storage. Preserve
+all original factory freshness/exclusion and source association checks while
+binding the actual per-entry control/turns. The old uncharged static factory is
+not a positive fallback. Factory control is not silently included in the 22 count;
+the complete roster adds it and every other non-startup actor independently.
 
 All capacities above require actual source operands. Existing schema3 supplies
 only query capacities, moduleUnitsIncludingNUL and writer stack/turn capacity,
@@ -156,7 +164,9 @@ distinct references; event-owned handles are not double-closed.
 Pure layout cases: checked multiplication/padding/addition overflow, zero or
 non-power alignment, missing/duplicate/foreign role/source span, source mutation,
 complete disjoint descriptor/source/control exclusions, ABI type extent mismatch,
-21-region inventory equality, embedded-versus-separate array accounting, query/
+exact 21-external inventory equality plus separately charged startup control
+(22 startup storage regions), separately charged factory control and exactly-once
+turns, embedded-versus-separate array accounting, query/
 writer/image geometry and simultaneous failed-overlap costs.
 
 Binding/consumer cases: wrong entry/source/operation/family or principal, copied

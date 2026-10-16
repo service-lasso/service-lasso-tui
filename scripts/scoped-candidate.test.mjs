@@ -159,7 +159,7 @@ test("actual aggregate denies structurally valid TAR containing wrong ELF archit
 
 test("raw JSON denies malformed UTF-8 and BOM before boundary decoding",()=>{assert.throws(()=>parseStrictJSON(Buffer.from([0x7b,0x22,0x61,0x22,0x3a,0x22,0xff,0x22,0x7d])));assert.throws(()=>parseStrictJSON(Buffer.concat([Buffer.from([0xef,0xbb,0xbf]),Buffer.from("{}")])));});
 
-const scopedChecks=["Linux test and build","Windows test and build","Scoped release asset cross-compilation"];
+const scopedChecks=["Linux test and build","Windows test and build","Windows owned GOROOT overlay tests","Scoped release asset cross-compilation"];
 const protectedScopedPolicy=contexts=>({immutableReleases:{enabled:true},environment:{name:"development-candidate",protection_rules:[{type:"wait_timer",wait_timer:1}],deployment_branch_policy:{protected_branches:true,custom_branch_policies:false}},branchProtection:{required_status_checks:{strict:true,contexts},required_pull_request_reviews:{required_approving_review_count:0},allow_force_pushes:{enabled:false}}});
 test("TUI28-PUBLISH scoped policy binds actual two-target CI without a Darwin prerequisite",async()=>{
   const workflow=(await readFile(new URL("../.github/workflows/ci.yml",import.meta.url),"utf8")).replace(/\r\n/gu,"\n");
@@ -173,6 +173,8 @@ test("TUI28-PUBLISH scoped policy binds actual two-target CI without a Darwin pr
   assert.match(job,/go build -mod=readonly -buildvcs=true/u);
   assert.match(job,/vcs\.revision=\$source_commit/u);assert.match(job,/vcs\.modified=false/u);
   assert.deepEqual(assertPreflight(protectedScopedPolicy(scopedChecks)).requiredChecks,scopedChecks);
+  assert.match(workflow,/^    name: Windows owned GOROOT overlay tests$/mu);
+  assert.match(workflow,/node scripts\/test-windows-owned-overlay\.mjs \$go \(Get-Location\)\.Path \$profile \$attempt/u);
   // Legacy source policy is independently retained, rather than relabeled scoped.
   const legacy=await readFile(new URL("./verify-candidate-publication.mjs",import.meta.url),"utf8");assert.match(legacy,/"macOS test and build", "Release asset cross-compilation"/u);
 });

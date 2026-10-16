@@ -595,7 +595,7 @@ func TestTerminalClearErrorKeepsRecoveryAndExactPersistedRecord(t *testing.T) {
 func TestFileClearRequiresExactRetainedOwnership(t *testing.T) {
     store := fileOperationStore{path: filepath.Join(t.TempDir(), "operation.json")}
     original := persistedOperation{Version: 2, OperationID: "operation-A", ConnectionName: "profile-A", Binding: selectedOperatorTestContext("a").LegacyDigest()}
-    if err := store.Save(original); err != nil { t.Fatal(err) }
+    if err := store.Save(original); err != nil { logRecordFailure(t,err); t.Fatal(err) }
     before, err := os.ReadFile(store.path); if err != nil { t.Fatal(err) }
     for _, different := range []persistedOperation{
         {Version: 2, OperationID: "operation-B", ConnectionName: original.ConnectionName, Binding: original.Binding},

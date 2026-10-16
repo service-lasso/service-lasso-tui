@@ -1,5 +1,21 @@
 # Issue 1 development delivery continuation, 2026-10-16
 
+## Transferred successor overlay/harness unit
+
+The fresh successor owns this existing clean PR34 checkout from exact1a8fca3
+by parent transfer. Mapping and actual input boundary:
+`TUI1-OVERLAY-TEST-GATE-20261016.md`. The source unit adds the correct overlay
+module boundary together with a mandatory actual matching-host GOROOT executor
+and publisher requirements, never a silent test exclusion. Authentic schema3
+profile and private external custody remain unavailable; the gate fails closed.
+Actual Linux harness fixture repairs retain SAME primary/cause/secondary error
+identities and strengthen both real upload allowlists. Test-only Windows native
+boundary/code diagnostics preserve existing failed Save/Clear behavior pending
+actual cause evidence. All new source is UNRUN locally; no parser/compiler/test/
+generator/import/install/native execution and no source/native/full release GO.
+Original positive entry/source/provider/finance and all full delivery gates stay
+active. No disposable scratch/output was created by this source-only unit.
+
 Owner: fresh TUI delivery worker under parent `/root`; source branch
 `fix/1-development-release-oct16`, PR34 into `develop`, based on
 `f29a6143cc12980ef46f96c08b10b3c8c1010be4`. This continues the complete

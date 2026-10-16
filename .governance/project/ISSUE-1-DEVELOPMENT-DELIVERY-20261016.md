@@ -192,6 +192,38 @@ inputs, preserving overlay tests and provenance. That boundary remains OPEN.
 
 ## Validation and custody
 
+Exact `57e2379c30dc05e256cb560d309943aecba9eca3` natural run38838743804
+passed Linux, both cross-compiles, all Windows Go packages and the actual
+held-input replacement/mutation/failure case. Windows job116773667220 advanced
+to a different sole failure: the natural-EOF handoff fixture closed CRT fd1 but
+the parent received no pipe EOF, so the unchanged 30-second handoff budget
+expired. This is the first observed signature at that boundary, not a repeat
+of the earlier replacement EPERM. Required GOROOT remains closed on missing
+authentic profile; native PTY jobs are NOT_RUN.
+
+Only the Windows EOF fixture route changes: finish the actual `process.stdout`
+writable stream, then close the CRT fd1 in its successful callback while stdin
+keeps the child alive. End/close errors are not swallowed. The parent must see
+actual stdout EOF, no child exit/close, no ready record and removed readiness
+listener. After stdin release, the same original child must close successfully
+with complete actual pipe observations; a prior EOF cannot conceal a later
+callback failure. Other hosts retain the already-passing `closeSync(1)` route.
+Production deadlines and handoff behavior are unchanged. This source fixture
+is UNRUN locally and awaits exact-head natural CI.
+
+The exact Node v22.23.2 bundled libuv
+[`uv_pipe_open` and pipe shutdown](https://github.com/nodejs/node/blob/v22.23.2/deps/uv/src/win/pipe.c)
+duplicate Windows stdio handles0..2, derive actual access and close the
+non-readable pipe handle on successful shutdown before invoking its callback.
+The ordinary Windows stdout child pipe is writable only. Node's
+[`getStdout`](https://github.com/nodejs/node/blob/v22.23.2/lib/internal/bootstrap/switches/is_main_thread.js)
+overrides destroy so a destroy event alone does not close the underlying
+descriptor. These source facts explain the selected two-original close order;
+the live-alias explanation remains a source-backed hypothesis joined to the
+observed missing EOF, not an actual native handle census or proof of unique
+ownership. They do not certify the proposed native result, timeout behavior,
+or any native holder qualification.
+
 Exact `d2fdf30ae61a5d6c48c046089dd58a30af0de435` natural run38838272672
 passed Linux and both cross-compiles. Windows job116772181641 passed the
 previous Python host-path fixture and advanced to the held-input source fixture:

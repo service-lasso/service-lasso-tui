@@ -1524,3 +1524,6 @@ Issue1 Clear original lifetime pre-code mapping: .governance/project/TUI1-CLEAR-
 
 ### Issue1 selected pair-wiring pre-code intent review
 Parent selected TUI1-PAIR-WIRING-PRECODE-20261016.md for independent cross-repository intent review only. Existing SPEC004 packaging B maps the actual current Core consumer pins/files/blobs, strict v2 native wrapper to schema4 ordered owner/payload archive, preserved historical schema1/2/3, unchanged caps/public receipts/provider/source-policy bindings and actual last-borrower readiness. Producer/assembler/verifier implementation is not yet selected; genuine entry/profile/family and Core consumer remain unconnected, with no activation or Core2633 repin.
+
+### Issue1 pair receipt delta awaiting intent review
+Parent selected the additive build-output schema2 proposal in TUI1-PAIR-WIRING-PRECODE-20261016.md for separate bounded intent review before its body. Exact ordered native-owner/go-payload role+digest+size, nativeBinary equality, same candidate/source/run/provider-attempt originals, unchanged caps/five filenames/privacy and strict v2/schema2 versus legacy v1/schema1 dispatch remain required. Genuine writer observes SAME retained pair; shapes/hashes grant no acquisition. Approved archive body is dirty WIP; schema2 parser/writer and activation remain deferred until disposition.

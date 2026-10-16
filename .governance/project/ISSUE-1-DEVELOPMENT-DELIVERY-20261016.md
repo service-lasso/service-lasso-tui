@@ -443,3 +443,22 @@ verifier body or activation is selected. Genuine entry/profile/family ownership
 and actual Core consumer remain required before positive packaging/native
 claims. d720 ENTIRE60 SOURCE_GO and natural Windows/Linux fixture passes stay
 historical for their exact bytes; no local target execution admission follows.
+
+### Pair receipt delta pre-code review (archive body remains dirty WIP)
+
+Exact1f83 pair intent received independent INTENT_GO and parent selected the
+archive/contract/assembler/verifier source unit, currently uncommitted WIP.
+Current build-output schema1 lacks a private-payload binding. Parent therefore
+selected the additive schema2 receipt proposal in TUI1-PAIR-WIRING-PRECODE-
+20261016.md for separate bounded intent review before its body: exact ordered
+native-owner/go-payload role+digest+size refs, nativeBinary equals first member,
+same exact candidate/source/run/provider attempt, unchanged member/aggregate
+caps and five public filenames/privacy rules, v2 requires2 and legacy v1
+requires1 without fallback/mixing. Actual retained pair writer provenance is
+required; JSON shape/hash cannot establish native acquisition. Production stays
+refused without the real constructor/qualification and Core receiving source.
+
+Only this receipt pre-code documentation is committed now. Existing approved
+archive/readback/producer/fixture code remains dirty WIP, not part of the
+documentation commit or an executed/qualified candidate. No schema2 receipt
+parser/writer body or local target execution is selected before disposition.

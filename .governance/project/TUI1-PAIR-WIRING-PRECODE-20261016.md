@@ -1,9 +1,10 @@
 # Issue1 selected pair-wiring pre-code proposal
 
 Parent selected this concrete proposal for durable cross-repository intent
-review under SPEC004's existing scoped native-owner packaging B. This document
-does not select implementation or activation. Product source remains at the
-independently reviewed d720250521b456c82d3923d4cf160beec3794845 baseline.
+review under SPEC004's existing scoped native-owner packaging B. Independent
+INTENT_GO at exact1f83 selected the archive/producer/assembler/verifier source
+unit; its body is currently uncommitted WIP. Committed product source remains at
+the independently reviewed d720250521b456c82d3923d4cf160beec3794845 baseline.
 Its ENTIRE60 SOURCE_GO and hosted source-test results qualify only those exact
 bytes and their bounded checks. The historical two failed capture iterations
 remain recorded; this proposal creates no new execution admission.
@@ -127,3 +128,63 @@ selection; actual activation additionally requires the genuine entry/profile/
 family route, both-host native qualification and actual Core receiving source.
 No target parser/import/generator/compiler/build/test/native execution occurs
 as part of this documentation change. No disposable output was created.
+
+## Selected receipt delta awaiting separate intent review
+
+Actual schema1 build-output.json contains only tuiCommit and nativeBinary;
+it does not bind the go-payload bytes. A new wrapper inventory cannot turn
+those old originals into genuine pair evidence. Parent selected this necessary
+additive schema2 proposal for fresh bounded intent review BEFORE any schema2
+writer/parser body or activation.
+
+The same five filenames and privacy allowlist remain unchanged. The proposed
+schema2 build-output.json is closed to these fields:
+
+```
+{
+  schemaVersion: 2,
+  kind: "tui20-native-build-output",
+  tuiCommit: <full candidate source commit>,
+  run: {id: <positive safe integer>, attempt: <positive safe integer>,
+        workflowSha: <same full candidate source commit>},
+  nativeBinary: {sha256: <public owner digest>, size: <public owner byte size>},
+  members: [
+    {role: "native-owner", sha256: <public owner digest>, size: <public owner byte size>},
+    {role: "go-payload", sha256: <private payload digest>, size: <payload byte size>}
+  ]
+}
+```
+
+The explicit run tuple makes prior-attempt/cross-run substitution directly
+rejectable by v2 validation; it is public provider provenance, not process/native
+identity. No paths, process/birth identity, private actor/handle/source, host,
+credential or runtime authority field is added. Every digest is lowercase
+64hex, source/workflow commit40hex; size is a positive safe integer with each
+member and aggregate within existing256MiB. nativeBinary equals the first
+member's digest/size. Exactly two members in source-selected role order, no
+extra fields, alternate roles, omission, duplication or mixed versions.
+
+V2 wrapper MUST require this actual schema2 build original, join BOTH members
+to the actual pair archive bytes and ordered wrapper/manifest inventory, and
+require its tuiCommit/run to match the SAME candidate source, wrapper run,
+workflow source and actual provider job/run attempt. V1 MUST require schema1;
+schema1/2 receipts and v1/v2 wrappers cannot mix or downgrade. Legacy schema1
+receipts remain valid for their existing closed legacy paths only. The other
+four public records retain their existing exact schemas and cumulative joins.
+
+The actual writer must observe the SAME retained public-owner/private-payload
+originals under the same genuine enclosing operation/run and preserve them
+through all later borrowers. It cannot derive this record by upgrading old
+Go-only receipts, copying wrapper hashes or accepting declared JSON members.
+Schema2 shape/digests alone establish no genuine acquisition, issuer, family
+closure, finance, compiled entry or qualification. The new-production path
+stays explicitly refused without its real constructor and accepted Core
+receiver; no v1 fallback, public flag, boolean or callback opens it.
+
+Required delta negatives include old schema1 receipts under v2, schema2 under
+v1, missing/extra fields, reversed/duplicate/foreign roles, either member
+substitution, nativeBinary/first-member mismatch, aggregate/member limits,
+prior run/attempt/workflow/source, and coherent raw wrapper/provider/receipt
+rebinding that must still fail the actual member/source/run bridge. No huge
+allocation or fake native issuer test is selected. Receipt parser/writer body
+remains deferred until this exact delta's independent intent disposition.

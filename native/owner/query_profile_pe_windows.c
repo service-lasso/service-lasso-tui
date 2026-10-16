@@ -110,7 +110,7 @@ static int original(const sl_win_query_image_member *m,uint64_t rva,uint64_t byt
 }
 static int string(const sl_win_query_image_member *m,uint64_t rva,const unsigned char *p,size_t n){
  const unsigned char *out;uint64_t available;
- if(n<2||view(m,rva,1,&out,&available)!=1||out!=p||n>available||p[n-1])return 0;
+ if(!rva||n<2||view(m,rva,1,&out,&available)!=1||out!=p||n>available||p[n-1])return 0;
  for(size_t i=0;i+1<n;i++)if(!p[i])return 0;return 1;
 }
 static int directory(const sl_win_query_image_member *m,unsigned index,uint64_t *start,uint64_t *bytes){
@@ -275,6 +275,7 @@ int sl_win_query_pe_source_matches(const sl_win_query_semantic_row *r,const sl_w
   * the independent source-geometry vectors rather than the outer checker. */
  if(!m->file_bytes_original||!m->file_extent||!covered(r,m->file_bytes_original,m->file_extent)||
     m->file_extent<sizeof(IMAGE_DOS_HEADER)||u16(m->file_bytes_original)!=IMAGE_DOS_SIGNATURE||
+    m->headers_offset<sizeof(IMAGE_DOS_HEADER)||m->headers_offset>INT32_MAX||
     u32(m->file_bytes_original+offsetof(IMAGE_DOS_HEADER,e_lfanew))!=m->headers_offset||
     !m->headers_original||(uintptr_t)m->headers_original%_Alignof(IMAGE_NT_HEADERS64)||
     !within(m->headers_offset,sizeof(IMAGE_NT_HEADERS64),m->file_extent)||

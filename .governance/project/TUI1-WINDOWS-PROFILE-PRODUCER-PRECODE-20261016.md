@@ -443,3 +443,59 @@ repair freezes;608 is historical SOURCE_NO_GO and not a production dependency.
 Fresh DIFFERENT ENTIRE88 SOURCE_NO_GO identified two P2 geometry gaps; parent selected their aggregate repair under joint7545. Typed ACE rows now retain actual mask/SID, optional object GUIDs and callback/resource-attribute relative payload geometry. Header-only, wrong-offset, truncated/nested SID/claim and unknown source forms refuse without silently narrowing the protected public domain; unresolved source/native-policy cases remain obligations. New query_profile_pe_windows.h/.c retains typed SDK semantic projections of actual366 import/delay/TLS/export/forwarder/relocation rules, exact SAME member/file coordinates and ordered terminal coverage, with SECURITY file-offset bounds distinct from image RVA bounds. All typed nested data must be declared source-covered; outputs exclude complete body/actor/occurrence and source descriptors before writes, and accumulated costs commit only after complete success. Per-row simultaneous/failure costs sum, shared image geometry is explicitly SAME across image roles and charged once in IMAGE_MODULES; genuine initial pre-effect allocation/header/padding/native financing remains constructor-owned, never issued by this pure result. Pure SDK malformed/foreign/missing-terminal/alias/no-write regressions are source-added and UNRUN. No executable Go/C bridge, native issuer or production activation is added. Replacement immutable header/source pins require fresh ENTIRE review and NEW actual-input ROOT admission before target execution.
 
 The separate owned production ordering gap remains explicit: schema3 creatorImages describes the final public endpoint-server TUI creator, while current windowsPayloadFirstBuildPlan needs schema3 before Go payload/root generation and public native compilation. No future PE is substituted with a CLI/probe or claimed held. A bounded compile-order/source-envelope proposal is next, including actual compile-time root RVA/image-size dependencies and full retained/failed-stage finance; no alternative architecture is implemented by this repair.
+## Whole5105 systematic PE predicate parity repair before body
+
+Fresh DIFFERENT ENTIRE90 at5105/tree7227 completed SOURCE_NO_GO two P2,
+reportSHA256F6543FCD926D8733EA62236882F1F2577A5B9746DBE2C71081C53C7A91F15437.
+C string allowed RVA0 while366 name rejects it; helper/outer image omitted
+complete DOS e_lfanew64..INT32_MAX range. The actual h8/ImageBase0x800000000
+counterexample is retained. Parent selected coherent known-family repair.
+PE parity history has two failed iterations608→5105; next equivalent omission
+requires explicit GOV13 strategy reassessment. This is separate from the two
+historical first-cause/capture iterations. ACE geometry is preserved, not reset.
+
+The author reread complete actual366 servicelasso_creator_pe_windows_amd64.go
+and servicelasso_creator_delay_windows_amd64.go, then checked EVERY predicate
+against actual C below before implementing the selected repair. C fixed SDK
+PE64 view additionally requires AMD64/exact240 optional header and aligned exact
+SDK/member coordinates; these source-case constraints remain explicit, not a
+claim of general executable-PE admission. Native owner/capture grant is separate.
+
+| Actual366 predicate family | Exact C counterpart to verify | Source fixture coverage/obligation |
+| --- | --- | --- |
+| Interpret same completed held file/read/metadata, prewrite exclusions | outer image actual held-file matches/body/extent; pe helper covered/output_away; whole source exclusions/snapshots | genuine external-input full derivation; changed source/output alias/no-write |
+| DOS64/MZ, h64..INT32_MAX, NT signature and complete headers | outer image DOS range BEFORE SDK header; helper byte DOS/range BEFORE SDK view | h8 overlap,63,64 boundary, upper high-bit/range, valid0x80; unchanged costs/output |
+| PE32+ optional extent/directory count, image/header/entry and overflow | main image fixed AMD64/240 SDK source case; directories checked size/count/imageBase+image/entry | directory beyondimage, count17, imageBase overflow, entry==image |
+| Power/alignment/subpage rules, rounded header and section table | directories power/round_up/within exact section table | wrong power/alignment, subpage valid/invalid, table/header crossing |
+| Each section max(raw,virtual), rounded image/header bounds, raw file alignment | directories section loop | raw crossing, virtual beyondimage, header overlap |
+| Pairwise mapped/raw section nonoverlap | directories nested prior section loop | explicit mapped/raw overlap genuine source vectors |
+| Every directory, SECURITY file domain vs ordinary image RVA | directories all declared directory entries | certificate beyondimage withinfile valid; same importRVA invalid |
+| RVA positive size/image span; exact header/raw or virtualzero, gap/crossing denial | view/original/source_va | TLS/reloc raw vs zero and crossing cases; raw pointer correspondence |
+| name requires nonzero RVA, nonempty NUL within same raw/header interval | string shared ALL users | import moduleRVA0 and export nameRVA0, bounded terminator/foreign pointer |
+| Import descriptor/thunk ordered terminals, OFT fallback, valid IAT, ordinal/hint/name | imports complete row loop | source descriptor terminal/missing/foreign/zero-name, IAT mismatch, ordinal/hint closure |
+| Delay32/attributes0or1/VA conversion/module cell/INT/IAT/bound/unload; legacy nested name denial | delays/delay_address/source_va complete loop | delay terminator/missing/module locator/invalid attributes; legacy-name source denial |
+| TLS40, ordered template VA/raw, index raw-or-zero, callback VA/raw and terminal | tls/source_va/view | no callbacks, nonzero callback+terminal, missing terminal/index mismatch/reversed template |
+| Export40 full table extents, every function/name/ordinal, null holes, target/forwarder bounded | exports/export_row/string | forwarder valid/foreign/bounds; zero name/ordinal mismatch/table image boundary |
+| Reloc full ordered blocks+entries, page4096/size/even/exact span; ABS or AMD64 DIR64 raw/zero | relocations/view | ABS/DIR64/unsupported type, wrong target/missing terminal/block range |
+| All projected rows/source/member/array extents and pure/failure costs | row/array plus outer IMAGE_MODULES once-charge and SAME shared image roster | foreign interpretation, member, cost overflow; failed output unchanged |
+
+Native initial allocation/header/padding/source exclusion and actual source/case
+qualification remain genuine constructor obligations. Pure source checker is not
+an issuer. All fixture bodies remain UNRUN; helpers and full derivation must be
+covered under actual genuine-input harness/ROOT before execution claims. No
+future-creator architecture body is part of this PE repair.
+Whole5105 selected repair source now enforces nameRVA nonzero in the shared
+string helper and e_lfanew64..INT32_MAX in BOTH outer image and independent
+helper before SDK views. No ACE/cost/alias/snapshot/native predicate is removed.
+Source SDK vectors now include the exact aligned h8/ImageBase0x800000000 overlap,
+valid minimum h64 and existing h128, lower63/high-bit range refusal, import and
+export nameRVA0 with MZ-as-string backing, optional directory/image/alignment
+bounds, independent raw/mapped section overlap, valid subpage alignment, TLS
+raw template/zero-fill index and relocation zero-fill, null export holes and
+unchanged cost outputs. A separate genuine-input harness entry demands actual
+retained malformed held-file/source originals for both helper and FULL derivation
+refusals and compares every control/row/snapshot/output backing byte on failure;
+it fabricates no native grant or issuer. Valid INT32_MAX header placement would
+need a genuinely financed/held sufficiently large input; no fake extent or huge
+OOM stunt substitutes for that boundary. These C fixtures remain UNRUN.
+The matrix above records source comparison, not executed native evidence.

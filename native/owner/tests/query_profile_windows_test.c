@@ -12,6 +12,10 @@ static int equal_bytes(const void *a,const void *b,size_t n){const unsigned char
 static void put16(unsigned char *p,uint16_t n){p[0]=(unsigned char)n;p[1]=(unsigned char)(n>>8);}
 static void put32(unsigned char *p,uint32_t n){for(unsigned i=0;i<4;i++)p[i]=(unsigned char)(n>>(8*i));}
 static uint32_t get32(const unsigned char *p){return p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24;}
+static int separate(const void *a,size_t an,const void *b,size_t bn){
+ uintptr_t x=(uintptr_t)a,y=(uintptr_t)b;
+ return a&&b&&an&&bn&&an<=UINTPTR_MAX-x&&bn<=UINTPTR_MAX-y&&!(x<y+bn&&y<x+an);
+}
 static void source_span(struct slcli_product_initial_windows_source_span *s,const void *p,size_t n,const void *actor,const void *occurrence,size_t on){
  s->original=p;s->bytes=n;s->actor_original=actor;s->actor_bytes=1;s->occurrence_original=occurrence;s->occurrence_bytes=on;
 }
@@ -98,6 +102,25 @@ void sl_win_query_pe_geometry_vectors(void){
  source_span(&spans[4],&imports[1],sizeof(imports[1]),&actor,&row,sizeof(row));source_span(&spans[5],&actor,1,&actor,&row,sizeof(row));
  source_span(&spans[6],imports,sizeof(imports),&actor,&row,sizeof(row));row.inputs_original=spans;row.input_count=7;
  assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ h->OptionalHeader.NumberOfRvaAndSizes=17;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));h->OptionalHeader.NumberOfRvaAndSizes=16;
+ h->OptionalHeader.ImageBase=UINT64_MAX;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));h->OptionalHeader.ImageBase=UINT64_C(0x140000000);
+ h->OptionalHeader.AddressOfEntryPoint=0x2000;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));h->OptionalHeader.AddressOfEntryPoint=0;
+ h->OptionalHeader.SectionAlignment=3;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));h->OptionalHeader.SectionAlignment=0x1000;
+ section->PointerToRawData=0x2600;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));section->PointerToRawData=0x200;
+ section->VirtualAddress=0;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));section->VirtualAddress=0x1000;
+ /* Separate mapped-interval and raw-file overlap cases. The second row is
+  * an actual SDK source view within the retained file header span. */
+ IMAGE_SECTION_HEADER *second=section+1;clone_bytes(second,section,sizeof(*second));
+ h->FileHeader.NumberOfSections=2;member.section_count=2;second->PointerToRawData=0x400;
+ assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ second->VirtualAddress=0x2000;second->PointerToRawData=0x200;h->OptionalHeader.SizeOfImage=0x3000;
+ assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ h->FileHeader.NumberOfSections=1;member.section_count=1;h->OptionalHeader.SizeOfImage=0x2000;
+ for(size_t i=0;i<sizeof(*second);i++)((unsigned char *)second)[i]=0;
+ h->OptionalHeader.SectionAlignment=0x200;section->VirtualAddress=0x200;
+ assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ h->OptionalHeader.FileAlignment=0x400;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ h->OptionalHeader.FileAlignment=0x200;h->OptionalHeader.SectionAlignment=0x1000;section->VirtualAddress=0x1000;
  /* SECURITY is a file offset: a valid table beyond SizeOfImage is not an RVA. */
  h->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_SECURITY]=(IMAGE_DATA_DIRECTORY){0x2400,8};
  assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
@@ -121,6 +144,9 @@ void sl_win_query_pe_geometry_vectors(void){
  before=cost;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));assert(equal_bytes(&cost,&before,sizeof(cost)));
  closure.import_count=2;imports[1].descriptor_index=1;imports[1].descriptor_original=(const IMAGE_IMPORT_DESCRIPTOR *)(file+0x214);
  assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ put32(file+0x20c,0);imports[0].module_original=file;imports[0].module_bytes=3;before=cost;
+ assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));assert(equal_bytes(&cost,&before,sizeof(cost)));
+ put32(file+0x20c,0x1060);imports[0].module_original=file+0x260;imports[0].module_bytes=2;
  imports[0].iat_rva=0x1058;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));imports[0].iat_rva=0x1050;
  imports[1].descriptor_index=2;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));imports[1].descriptor_index=1;
  /* Failure/cost outputs cannot alias retained input bytes; refusal writes none. */
@@ -164,6 +190,14 @@ void sl_win_query_pe_geometry_vectors(void){
  assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
  closure.tls_count=2;tls_rows[1].directory_original=td;tls_rows[1].callback_index=1;tls_rows[1].callback_original=(const ULONGLONG *)(file+0x288);
  assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ td->AddressOfIndex=h->OptionalHeader.ImageBase+0x1200;
+ for(size_t i=0;i<2;i++){tls_rows[i].index_rva=0x1200;tls_rows[i].index_kind=2;}
+ assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ td->AddressOfIndex=h->OptionalHeader.ImageBase+0x1ffe;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ td->AddressOfIndex=0;for(size_t i=0;i<2;i++){tls_rows[i].index_rva=0;tls_rows[i].index_kind=0;}
+ td->StartAddressOfRawData=h->OptionalHeader.ImageBase+0x1100;td->EndAddressOfRawData=td->StartAddressOfRawData+4;
+ for(size_t i=0;i<2;i++){tls_rows[i].template_original=file+0x300;tls_rows[i].template_bytes=4;}
+ assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
  tls_rows[1].callback_index=0;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));tls_rows[1].callback_index=1;
  td->EndAddressOfRawData=h->OptionalHeader.ImageBase;td->StartAddressOfRawData=td->EndAddressOfRawData+1;
  assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
@@ -180,7 +214,13 @@ void sl_win_query_pe_geometry_vectors(void){
  names[0].name_rva_original=(const DWORD *)(file+0x284);names[0].ordinal_original=(const WORD *)(file+0x288);
  names[0].name_original=file+0x290;names[0].name_bytes=2;names[0].forwarder_original=file+0x260;names[0].forwarder_bytes=2;
  assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ put32(file+0x280,0);functions[0].forwarder_original=NULL;functions[0].forwarder_bytes=0;names[0].forwarder_original=NULL;names[0].forwarder_bytes=0;
+ assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ put32(file+0x280,0x1060);functions[0].forwarder_original=file+0x260;functions[0].forwarder_bytes=2;names[0].forwarder_original=file+0x260;names[0].forwarder_bytes=2;
  put16(file+0x288,1);assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));put16(file+0x288,0);
+ put32(file+0x284,0);names[0].name_original=file;names[0].name_bytes=3;before=cost;
+ assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));assert(equal_bytes(&cost,&before,sizeof(cost)));
+ put32(file+0x284,0x1090);names[0].name_original=file+0x290;names[0].name_bytes=2;
  functions[0].forwarder_original=file+0x261;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));functions[0].forwarder_original=file+0x260;
  ed->AddressOfFunctions=0x2000;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));ed->AddressOfFunctions=0x1080;
  closure.functions_original=NULL;closure.function_count=0;closure.names_original=NULL;closure.name_count=0;
@@ -192,6 +232,9 @@ void sl_win_query_pe_geometry_vectors(void){
  for(size_t i=0;i<2;i++){relocations[i].block_original=(const IMAGE_BASE_RELOCATION *)(file+0x200);relocations[i].entry_index=i;relocations[i].entry_original=(const WORD *)(file+0x208+i*2);}
  relocations[0].target_original=file+0x280;relocations[0].target_kind=1;
  assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ put16(file+0x208,(WORD)(IMAGE_REL_BASED_DIR64<<12|0x200));relocations[0].target_original=NULL;relocations[0].target_kind=2;
+ assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ put16(file+0x208,(WORD)(IMAGE_REL_BASED_DIR64<<12|0x80));relocations[0].target_original=file+0x280;relocations[0].target_kind=1;
  closure.relocation_count=1;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));closure.relocation_count=2;
  relocations[0].target_original=file+0x288;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));relocations[0].target_original=file+0x280;
  put16(file+0x208,(WORD)(IMAGE_REL_BASED_HIGHLOW<<12|0x80));assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
@@ -212,6 +255,29 @@ void sl_win_query_pe_geometry_vectors(void){
  /* Aligned foreign SDK views are not accepted by matching their scalars. */
  member.headers_original=(const IMAGE_NT_HEADERS64 *)(file+0x88);assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));member.headers_original=h;
  member.sections_offset+=sizeof(IMAGE_SECTION_HEADER);assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ /* Independent lower-header counterexample: h8 and ImageBase0x800000000
+  * overlap DOS e_lfanew with the high image-base DWORD, retaining value8.
+  * All SDK views are aligned and contained; range denial is indispensable. */
+ _Alignas(8) unsigned char early[0x400]={0};IMAGE_NT_HEADERS64 selected=*h;
+ for(size_t i=0;i<IMAGE_NUMBEROF_DIRECTORY_ENTRIES;i++)selected.OptionalHeader.DataDirectory[i]=(IMAGE_DATA_DIRECTORY){0,0};
+ selected.OptionalHeader.ImageBase=UINT64_C(0x800000000);
+ clone_bytes(early+8,&selected,sizeof(selected));clone_bytes(early+8+sizeof(selected),section,sizeof(*section));put16(early,IMAGE_DOS_SIGNATURE);
+ member.file_bytes_original=early;member.file_extent=sizeof(early);member.headers_original=(const IMAGE_NT_HEADERS64 *)(early+8);member.headers_offset=8;
+ member.sections_original=(const IMAGE_SECTION_HEADER *)(early+8+sizeof(selected));member.sections_offset=8+sizeof(selected);
+ source_span(&spans[0],early,sizeof(early),&actor,&row,sizeof(row));closure.relocations_original=NULL;closure.relocation_count=0;
+ before=cost;failed_before=failure;assert(get32(early+0x3c)==8);
+ assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ assert(equal_bytes(&cost,&before,sizeof(cost))&&equal_bytes(&failure,&failed_before,sizeof(failure)));
+ /* Minimum nonoverlapping DOS boundary64 is valid, not a blanket denial
+  * of low NT-header offsets. A high-bit signed offset is always invalid. */
+ selected.OptionalHeader.ImageBase=UINT64_C(0x140000000);clone_bytes(early+64,&selected,sizeof(selected));
+ clone_bytes(early+64+sizeof(selected),section,sizeof(*section));put32(early+0x3c,64);
+ member.headers_original=(const IMAGE_NT_HEADERS64 *)(early+64);member.headers_offset=64;
+ member.sections_original=(const IMAGE_SECTION_HEADER *)(early+64+sizeof(selected));member.sections_offset=64+sizeof(selected);
+ assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ put32(early+0x3c,63);member.headers_offset=63;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ put32(early+0x3c,UINT32_C(0x80000000));member.headers_offset=UINT32_C(0x80000000);
+ before=cost;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));assert(equal_bytes(&cost,&before,sizeof(cost)));
 #undef PE_ROW
 }
 
@@ -257,6 +323,60 @@ void sl_win_query_profile_source_refusal_vectors(
   assert(!sl_win_query_source_excludes_output(genuine,s->occurrence_original,s->occurrence_bytes));
  }
  fresh->source_original=original_source;
+}
+
+/* Genuine held malformed SDK files must be supplied by the future admitted
+ * acquisition harness. This constructs no held-file/principal/CLI source grant.
+ * Each malformed case reaches BOTH the independent geometry helper and the
+ * full source derivation with its actual retained source/output allocations. */
+enum {SL_TEST_PE_IMPORT_ZERO_NAME,SL_TEST_PE_EXPORT_ZERO_NAME,SL_TEST_PE_HEADER8,
+ SL_TEST_PE_HEADER_HIGH,SL_TEST_PE_RAW_OVERLAP,SL_TEST_PE_MAPPED_OVERLAP,SL_TEST_PE_CASES};
+void sl_win_query_profile_genuine_pe_refusals(
+ sl_win_query_derivation *const cases[SL_TEST_PE_CASES],const size_t members[SL_TEST_PE_CASES],
+ unsigned char *const before[SL_TEST_PE_CASES],const size_t capacities[SL_TEST_PE_CASES]){
+ for(size_t i=0;i<SL_TEST_PE_CASES;i++){
+  sl_win_query_derivation *d=cases[i];assert(d&&d->source_original&&before[i]);
+  const sl_win_query_semantic_row *r=&d->source_original->rows_original[SL_WIN_QUERY_IMAGE_MODULES];
+  assert(members[i]<r->source.image.member_count);
+  const sl_win_query_image_member *m=&r->source.image.members_original[members[i]];
+  const sl_win_query_pe_closure *c=m->closure_original;assert(m->file_original&&c);
+  assert(m->file_extent>=sizeof(IMAGE_DOS_HEADER)&&get32(m->file_bytes_original+offsetof(IMAGE_DOS_HEADER,e_lfanew))==m->headers_offset);
+  switch(i){
+  case SL_TEST_PE_IMPORT_ZERO_NAME:assert(c->import_count&&c->imports_original[0].descriptor_original->Name==0&&c->imports_original[0].descriptor_original->FirstThunk);break;
+  case SL_TEST_PE_EXPORT_ZERO_NAME:assert(c->name_count&&get32((const unsigned char *)c->names_original[0].name_rva_original)==0);break;
+  case SL_TEST_PE_HEADER8:assert(m->headers_offset==8&&m->headers_original->OptionalHeader.ImageBase==UINT64_C(0x800000000));break;
+  case SL_TEST_PE_HEADER_HIGH:assert(m->headers_offset>=UINT32_C(0x80000000));break;
+  case SL_TEST_PE_RAW_OVERLAP:
+   assert(m->section_count>=2&&m->sections_original[0].SizeOfRawData&&m->sections_original[1].SizeOfRawData&&
+    m->sections_original[0].PointerToRawData==m->sections_original[1].PointerToRawData);break;
+  case SL_TEST_PE_MAPPED_OVERLAP:
+   assert(m->section_count>=2&&m->sections_original[0].Misc.VirtualSize&&m->sections_original[1].Misc.VirtualSize&&
+    m->sections_original[0].VirtualAddress==m->sections_original[1].VirtualAddress);break;
+  }
+  struct slcli_bq_resource_cost cost={0},failure={0},unchanged={0};
+  assert(!sl_win_query_pe_source_matches(r,m,&cost,&failure));
+  assert(equal_bytes(&cost,&unchanged,sizeof(cost))&&equal_bytes(&failure,&unchanged,sizeof(failure)));
+  assert(d->row_capacity<=SIZE_MAX/sizeof(*d->row_copies_original)&&d->snapshot_capacity<=SIZE_MAX/sizeof(*d->snapshots_original));
+  size_t row_bytes=d->row_capacity*sizeof(*d->row_copies_original),snapshot_bytes=d->snapshot_capacity*sizeof(*d->snapshots_original);
+  assert(row_bytes<=SIZE_MAX-sizeof(*d)&&snapshot_bytes<=SIZE_MAX-sizeof(*d)-row_bytes);
+  size_t total=sizeof(*d)+row_bytes+snapshot_bytes;
+  for(size_t j=0;j<d->snapshot_capacity;j++){assert(d->snapshots_original[j].capacity<=SIZE_MAX-total);total+=d->snapshots_original[j].capacity;}
+  assert(capacities[i]>=total&&sl_win_query_source_excludes_output(d->source_original,before[i],total));
+  assert(separate(before[i],total,d,sizeof(*d))&&separate(before[i],total,d->row_copies_original,row_bytes)&&
+   separate(before[i],total,d->snapshots_original,snapshot_bytes));
+  for(size_t j=0;j<d->snapshot_capacity;j++)assert(separate(before[i],total,d->snapshots_original[j].bytes_original,d->snapshots_original[j].capacity));
+  size_t at=0;clone_bytes(before[i]+at,d,sizeof(*d));at+=sizeof(*d);
+  clone_bytes(before[i]+at,d->row_copies_original,row_bytes);at+=row_bytes;
+  clone_bytes(before[i]+at,d->snapshots_original,snapshot_bytes);at+=snapshot_bytes;
+  for(size_t j=0;j<d->snapshot_capacity;j++){clone_bytes(before[i]+at,d->snapshots_original[j].bytes_original,d->snapshots_original[j].capacity);at+=d->snapshots_original[j].capacity;}
+  assert(!sl_win_derive_query_profile(d));at=0;
+  assert(equal_bytes(before[i]+at,d,sizeof(*d)));at+=sizeof(*d);
+  assert(equal_bytes(before[i]+at,d->row_copies_original,row_bytes));at+=row_bytes;
+  assert(equal_bytes(before[i]+at,d->snapshots_original,snapshot_bytes));at+=snapshot_bytes;
+  for(size_t j=0;j<d->snapshot_capacity;j++){assert(equal_bytes(before[i]+at,d->snapshots_original[j].bytes_original,d->snapshots_original[j].capacity));at+=d->snapshots_original[j].capacity;}
+  /* Actual input custody and all malformed original bytes remain with the
+   * genuine acquisition caller; a refusal here retires no borrower. */
+ }
 }
 
 void sl_win_query_profile_genuine_source_vectors(

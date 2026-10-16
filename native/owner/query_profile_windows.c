@@ -266,7 +266,8 @@ static int image(const sl_win_query_semantic_row *r,uint64_t *dimension){
      !slcli_build_held_file_windows_matches_original(m->file_original)||
      m->file_original->body_original!=m->file_bytes_original||m->file_original->used_bytes!=m->file_extent||
      !covered(r,m->file_bytes_original,m->file_extent)||!aligned(dos,_Alignof(IMAGE_DOS_HEADER))||!contains(m->file_bytes_original,m->file_extent,dos,sizeof(*dos))||
-     dos->e_magic!=IMAGE_DOS_SIGNATURE||dos->e_lfanew<0||(size_t)dos->e_lfanew!=m->headers_offset||
+     dos->e_magic!=IMAGE_DOS_SIGNATURE||dos->e_lfanew<(LONG)sizeof(IMAGE_DOS_HEADER)||
+     m->headers_offset>INT32_MAX||(size_t)dos->e_lfanew!=m->headers_offset||
      !aligned(h,_Alignof(IMAGE_NT_HEADERS64))||!contains(m->file_bytes_original,m->file_extent,h,sizeof(*h))||
      (uintptr_t)h-(uintptr_t)m->file_bytes_original!=m->headers_offset||h->Signature!=IMAGE_NT_SIGNATURE||
      h->FileHeader.Machine!=IMAGE_FILE_MACHINE_AMD64||h->OptionalHeader.Magic!=IMAGE_NT_OPTIONAL_HDR64_MAGIC||

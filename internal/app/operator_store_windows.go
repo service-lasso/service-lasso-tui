@@ -108,11 +108,17 @@ type windowsSetInformationObservation struct{
  Flags,Class,RequestedBytes uint32
  Attempted,Completed bool
  Cause error
+ API string
+ Status windows.IO_STATUS_BLOCK
 }
 func(o *windowsSetInformationObservation)nativeCallOwner()recordNativeIdentity{return o.Owner}
 func(o *windowsSetInformationObservation)nativeCallFailure()error{return o.Cause}
 func(s *windowsOperationStore)rename(handle,parent windows.Handle,name string,replace bool)error{
- observation:=&windowsSetInformationObservation{Kind:"rename",Handle:handle,Parent:parent,Name:name,Replace:replace,Class:windows.FileRenameInfoEx}
+ // Native FILE_INFORMATION_CLASS65 uses this exact relative RootDirectory
+ // tuple directly. Keep the IO_STATUS_BLOCK separately from the returned NT
+ // status; no Win32 path conversion or fallback may substitute another owner.
+ const fileRenameInformationEx uint32=65
+ observation:=&windowsSetInformationObservation{Kind:"rename",Handle:handle,Parent:parent,Name:name,Replace:replace,Class:fileRenameInformationEx,API:"NtSetInformationFile"}
  s.observed.NativeCalls=append(s.observed.NativeCalls,observation);observation.Owner=s.nativeOwner("rename",handle)
  if !observation.Owner.IdentityKnown{observation.Cause=storageError();return observation.Cause}
  name16,err:=windows.UTF16FromString(name);observation.Name16=name16;if err!=nil{observation.Cause=err;return storageErrorCause(err)};units:=name16[:len(name16)-1]
@@ -120,8 +126,8 @@ func(s *windowsOperationStore)rename(handle,parent windows.Handle,name string,re
  observation.Rename=(*windowsRename)(unsafe.Pointer(&observation.Buffer[0]));observation.Rename.RootDirectory=parent;observation.Rename.FileNameLength=uint32(len(units)*2)
  if replace{observation.Rename.Flags=windows.FILE_RENAME_REPLACE_IF_EXISTS|windows.FILE_RENAME_POSIX_SEMANTICS}
  copy(unsafe.Slice((*uint16)(unsafe.Pointer(&observation.Buffer[offset])),len(units)),units)
- observation.RequestedBytes=uint32(len(observation.Buffer));observation.Attempted=true
- observation.Cause=windows.SetFileInformationByHandle(handle,observation.Class,&observation.Buffer[0],observation.RequestedBytes);observation.Completed=true;return observation.Cause
+ observation.RequestedBytes=uint32(offset)+uint32(len(units)*2);observation.Attempted=true
+ observation.Cause=windows.NtSetInformationFile(handle,&observation.Status,&observation.Buffer[0],observation.RequestedBytes,observation.Class);observation.Completed=true;return observation.Cause
 }
 func(s *windowsOperationStore)delete(handle windows.Handle)error{
  observation:=&windowsSetInformationObservation{Kind:"delete",Handle:handle,Class:windows.FileDispositionInfoEx,Flags:windows.FILE_DISPOSITION_DELETE|windows.FILE_DISPOSITION_POSIX_SEMANTICS,RequestedBytes:4}

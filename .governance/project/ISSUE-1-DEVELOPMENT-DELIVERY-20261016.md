@@ -1,5 +1,33 @@
 # Issue 1 development delivery continuation, 2026-10-16
 
+## 4b0d0d5 actual findings and next coherent source unit
+
+Exact4b natural run38835205422 completed failed. Scoped and historical source
+cross-compilation passed; neither is native acceptance. Windows product module
+traversal no longer enters toolchain-overlay, but the same three legacy/store
+cases fail. Retained native diagnostics establish publication-rename Errno87,
+unchanged/released effect, rather than a sharing-cause inference. Linux's prior
+27 harness tests pass with one platform skip; a later observer fixture fails
+because its global text open mock intercepts argparse/gettext binary reads.
+The overlay job fails its combined entry guard before genuine input acquisition;
+it does not yet prove the missing-profile failure gate was reached.
+
+DIFFERENT ENTIRE4b review is SOURCE_NO_GO: opaque profile/native exceptions can
+leak through an uncaught CI error, and hashed originals were closed before the
+later pathname borrowers without full revalidation/generated-digest joins.
+The next source unit retains actual handles and complete distinct read originals
+through subprocess borrowers, compares held/native pathname identity and exact
+bytes before/after, joins emitted Go/header digests, and keeps opaque failures
+private behind a closed summary. Actual replacement/mutation and malformed/
+opaque child negatives are source-authored, locally UNRUN.
+
+`TUI1-PAIRED-SOURCE-EMITTER-20261016.md` maps the real held-file Go/C producer
+and plan caller, same-root direct NT rename causal route and exact source docs.
+The producer has no genuine issuer/provider/finance or native C entry authority.
+The Windows mechanism is not qualified until actual direct observations pass;
+sharing, identity, namespace/effect/release guards remain required. All future
+source changes need a fresh different entire cumulative review and new ROOT.
+
 ## Transferred successor overlay/harness unit
 
 The fresh successor owns this existing clean PR34 checkout from exact1a8fca3

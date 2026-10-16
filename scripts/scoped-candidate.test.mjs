@@ -174,7 +174,7 @@ test("TUI28-PUBLISH scoped policy binds actual two-target CI without a Darwin pr
   assert.match(job,/vcs\.revision=\$source_commit/u);assert.match(job,/vcs\.modified=false/u);
   assert.deepEqual(assertPreflight(protectedScopedPolicy(scopedChecks)).requiredChecks,scopedChecks);
   assert.match(workflow,/^    name: Windows owned GOROOT overlay tests$/mu);
-  assert.match(workflow,/node scripts\/test-windows-owned-overlay\.mjs \$go \(Get-Location\)\.Path \$profile \$attempt/u);
+  assert.match(workflow,/node scripts\/test-windows-owned-overlay\.mjs "\$goExecutablePath" "\$overlaySourcePath" "\$queryProfilePath" "\$overlayAttemptPath"/u);
   // Legacy source policy is independently retained, rather than relabeled scoped.
   const legacy=await readFile(new URL("./verify-candidate-publication.mjs",import.meta.url),"utf8");assert.match(legacy,/"macOS test and build", "Release asset cross-compilation"/u);
 });

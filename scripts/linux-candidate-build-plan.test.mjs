@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import {linuxCandidateBuildPlan} from './native-owner-build-plan.mjs';
 
-function fixture(){return Object.fromEntries(['go','compiler','sourceRoot','generatedGo','generatedEntry','overlay','payload','objectDirectory','ownerOutput'].map(key=>[key,path.resolve('.tmp/fixture',key)]));}
+function fixture(){return Object.fromEntries(['go','node','compiler','sourceRoot','profileOriginal','abiGeometryOriginal','nativeGeometryOriginal','generatedGo','generatedEntry','overlay','payload','objectDirectory','ownerOutput'].map(key=>[key,path.resolve('.tmp/fixture',key)]));}
 test('candidate source test and payload select the same held genuine-source lane',()=>{
  const input=fixture(),plan=linuxCandidateBuildPlan(input);
  for(const command of [plan.test,plan.payload]){
@@ -14,6 +14,9 @@ test('candidate source test and payload select the same held genuine-source lane
  }
  assert.equal(plan.overlayMappings[0].backing,input.generatedGo);
  assert.equal(plan.owner.generatedEntry,input.generatedEntry);
+ assert.equal(plan.emit.command,input.node);
+ assert.deepEqual(plan.emit.argv,[path.join(input.sourceRoot,'scripts/emit-linux-candidate-profile.mjs'),input.profileOriginal,input.abiGeometryOriginal,input.nativeGeometryOriginal,input.generatedGo,input.generatedEntry]);
+ assert.ok(plan.order.indexOf('emit-paired-candidate-source')<plan.order.indexOf('test-candidate-source'));
  assert.equal(plan.environment.GOWORK,'off');
  assert.equal(plan.sourceInputs.generatedGo,input.generatedGo);
  assert.equal(plan.link.output,input.ownerOutput);
@@ -22,5 +25,5 @@ test('candidate source test and payload select the same held genuine-source lane
 test('missing and aliased held originals refuse before a plan is produced',()=>{
  const input=fixture();
  for(const key of Object.keys(input))assert.throws(()=>linuxCandidateBuildPlan({...input,[key]:''}));
- for(const key of ['generatedGo','generatedEntry','overlay','payload','objectDirectory'])assert.throws(()=>linuxCandidateBuildPlan({...input,[key]:input.ownerOutput}));
+ for(const key of ['profileOriginal','abiGeometryOriginal','nativeGeometryOriginal','generatedGo','generatedEntry','overlay','payload','objectDirectory'])assert.throws(()=>linuxCandidateBuildPlan({...input,[key]:input.ownerOutput}));
 });

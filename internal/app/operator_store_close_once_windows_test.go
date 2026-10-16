@@ -41,7 +41,8 @@ func TestWindowsRenameRetainsOriginalBufferAndHeaderAlias(t *testing.T){
  cause:=owner.rename(windows.Handle(file.Fd()),windows.Handle(parent.Fd()),"renamed-source",false)
  var original *windowsSetInformationObservation
  for _,call:=range owner.observed.NativeCalls{if observation,ok:=call.(*windowsSetInformationObservation);ok{original=observation;break}}
- if original==nil||!original.Attempted||!original.Completed||original.Cause!=cause||original.Rename==nil||len(original.Buffer)==0||original.RequestedBytes!=uint32(len(original.Buffer))||len(original.Name16)==0{t.Fatal("actual native rename buffer/result not retained")}
+ if original==nil||!original.Attempted||!original.Completed||original.Cause!=cause||original.Rename==nil||len(original.Buffer)==0||len(original.Name16)==0{t.Fatal("actual native rename buffer/result not retained")}
+ if original.API!="NtSetInformationFile"||original.Class!=65||original.RequestedBytes!=uint32(unsafe.Offsetof(windowsRename{}.FileName))+uint32((len(original.Name16)-1)*2)||original.Rename.RootDirectory!=windows.Handle(parent.Fd()){t.Fatal("native relative rename lost exact API/class/parent/extent")}
  if original.Rename!=(*windowsRename)(unsafe.Pointer(&original.Buffer[0])){t.Fatal("native rename header no longer aliases original backing")}
  if owner.nativeCleanupOutcome().NativeCalls[0]!=original{t.Fatal("rename observation identity replaced")}
  // Whether the native platform permits this isolated rename is observed here;

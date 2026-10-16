@@ -286,25 +286,27 @@ export function nativeOwnerCompilePlan(platform, compiler, generatedEntry, outpu
 // SAME emitted profile supplies both translations. The generated Go source is
 // a held overlay input, never written into or mistaken for the reviewed tree.
 // This plan neither emits inputs nor establishes their issuer/qualification.
-export function linuxCandidateBuildPlan({go,compiler,sourceRoot,generatedGo,generatedEntry,overlay,payload,objectDirectory,ownerOutput}) {
-  const inputs={go,compiler,sourceRoot,generatedGo,generatedEntry,overlay,payload,objectDirectory,ownerOutput};
+export function linuxCandidateBuildPlan({go,node,compiler,sourceRoot,profileOriginal,abiGeometryOriginal,nativeGeometryOriginal,generatedGo,generatedEntry,overlay,payload,objectDirectory,ownerOutput}) {
+  const inputs={go,node,compiler,sourceRoot,profileOriginal,abiGeometryOriginal,nativeGeometryOriginal,generatedGo,generatedEntry,overlay,payload,objectDirectory,ownerOutput};
   for(const value of Object.values(inputs)) {
     if(typeof value!=='string'||!path.isAbsolute(value)||value.includes('\0'))throw new Error('missing held absolute Linux candidate input');
   }
   const outputs=[overlay,payload,objectDirectory,ownerOutput].map(value=>path.resolve(value));
-  const sources=[generatedGo,generatedEntry].map(value=>path.resolve(value));
+  const sources=[profileOriginal,abiGeometryOriginal,nativeGeometryOriginal,generatedGo,generatedEntry].map(value=>path.resolve(value));
   if(new Set([...outputs,...sources]).size!==outputs.length+sources.length)throw new Error('Linux candidate source/output paths alias');
+  if([...outputs,...sources.slice(3)].some(value=>[go,node,compiler,sourceRoot].map(item=>path.resolve(item)).includes(value)))throw new Error('Linux candidate output aliases build input');
   const owner=nativeOwnerCompilePlan('linux-x64',compiler,generatedEntry,objectDirectory);
   const options=['-mod=readonly','-tags=service_lasso_native_candidate','-overlay='+overlay];
   return Object.freeze({
     environment:Object.freeze({GOOS:'linux',GOARCH:'amd64',GOAMD64:'v1',CGO_ENABLED:'0',GOENV:'off',GOTOOLCHAIN:'local',GOWORK:'off',GOFLAGS:'',GOEXPERIMENT:'',GOFIPS140:'off',GOCACHEPROG:''}),
+    emit:Object.freeze({command:node,argv:Object.freeze([path.join(sourceRoot,'scripts/emit-linux-candidate-profile.mjs'),profileOriginal,abiGeometryOriginal,nativeGeometryOriginal,generatedGo,generatedEntry])}),
     overlayMappings:Object.freeze([Object.freeze({target:path.join(sourceRoot,'internal/lifetime/zz_native_candidate_generated_linux.go'),backing:generatedGo})]),
-    sourceInputs:Object.freeze({generatedGo,generatedEntry,relation:'same-complete-original-profile-and-source-geometry'}),
+    sourceInputs:Object.freeze({profileOriginal,abiGeometryOriginal,nativeGeometryOriginal,generatedGo,generatedEntry,relation:'same-complete-original-profile-and-source-geometry'}),
     test:Object.freeze({command:go,argv:Object.freeze(['test',...options,'./...'])}),
     payload:Object.freeze({command:go,argv:Object.freeze(['build',...options,'-buildvcs=true','-trimpath','-o',payload,'./cmd/service-lasso-tui'])}),
     owner,
     link:Object.freeze({command:compiler,argv:Object.freeze([...owner.objects,...owner.linkLibraries,'-o',ownerOutput]),output:ownerOutput}),
-    order:Object.freeze(['held-authentic-paired-source-inputs','write-reviewed-overlay','test-candidate-source','complete-held-payload','compile-existing-native-owner','link-existing-native-owner']),
+    order:Object.freeze(['held-authentic-original-inputs','emit-paired-candidate-source','write-reviewed-overlay','test-candidate-source','complete-held-payload','compile-existing-native-owner','link-existing-native-owner']),
     prerequisites:Object.freeze(['entire-source-go','new-complete-input-root','exact-command-admission','genuine-containing-reservation','qualified-native-provider-and-policy']),
   });
 }

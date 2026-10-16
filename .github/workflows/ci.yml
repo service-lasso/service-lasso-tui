@@ -32,12 +32,13 @@ jobs:
           foreach ($drive in @('C', (Get-Location).Drive.Name) | Select-Object -Unique) {
             if ((Get-PSDrive -Name $drive).Free -lt 20GB) { throw 'less than 20 GiB free for owned toolchain tests' }
           }
-          $go = (Get-Command go -CommandType Application).Source
+          $goExecutablePath = (Get-Command go.exe -CommandType Application | Select-Object -First 1).Source
           # External admitted source producer must supply this held genuine input.
           # No fixture/default/environment assertion can create its authority.
-          $profile = Join-Path $env:RUNNER_TEMP 'tui-authentic-query-profile.json'
-          $attempt = Join-Path $env:RUNNER_TEMP 'tui-owned-overlay-test-attempt'
-          node scripts/test-windows-owned-overlay.mjs $go (Get-Location).Path $profile $attempt
+          $queryProfilePath = Join-Path $env:RUNNER_TEMP 'tui-authentic-query-profile.json'
+          $overlayAttemptPath = Join-Path $env:RUNNER_TEMP 'tui-owned-overlay-test-attempt'
+          $overlaySourcePath = (Get-Location).Path
+          node scripts/test-windows-owned-overlay.mjs "$goExecutablePath" "$overlaySourcePath" "$queryProfilePath" "$overlayAttemptPath"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Retain closed public overlay test summary
         if: always()
@@ -146,6 +147,7 @@ jobs:
           python scripts/producer-child-continuity.test.py
           python scripts/posix-read-continuity.test.py
           node --test scripts/release-probe-finalization.test.mjs
+          node --test scripts/held-overlay-inputs.test.mjs scripts/linux-candidate-build-plan.test.mjs scripts/candidate-profile-source.test.mjs
           node --test scripts/scoped-candidate.test.mjs scripts/native-producer-child.test.mjs scripts/native-producer-handoff.test.mjs scripts/required-native-dependency.test.mjs
           node --test scripts/tui20-native-core.recovery.test.mjs scripts/verify-tui20-native-public-receipt.test.mjs scripts/verify-real-core-conpty.test.mjs scripts/verify-release-asset-conpty.test.mjs scripts/verify-candidate-publication.test.mjs scripts/verify-candidate-publication-fresh-job.test.mjs
       - name: Test actual native custody producer and receipt consumer

@@ -4,7 +4,7 @@ Prospective source-only intent; no architecture body, ROOT, target execution, is
 activation or qualification. Sole TUI owner /root/tui1_positive_delivery_successor_oct16.
 Tracked source frozen ata6fae8b9f9721d92c623177961b73c155461c56c,
 tree242834d89f1834c8a6b53b25c2beba2b3fc0e6f5 received fresh DIFFERENT ENTIRE90 SOURCE_GO.
-ReportSHA256A3B8EB475EFADEE4A96580AEAF276ACEE2BB664AECF1F0904EB34162BD2ADA56B;
+ReportSHA2563B8EB475EFADEE4A96580AEAF276ACEE2BB664AECF1F0904EB34162BD2ADA56B;
 coverageledgerSHA25608E50080972342A1726562674015D9D858FE9B250D42B59E7D090770D4F6597F.
 This source verdict qualifies only a6 actual bytes, not this changed intent commit,
 new native coupling, execution, authentic profile, publication or runtime.

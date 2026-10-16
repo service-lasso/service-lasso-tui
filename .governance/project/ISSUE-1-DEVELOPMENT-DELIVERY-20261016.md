@@ -31,6 +31,17 @@ The retained PR33 checkout and its inherited alternate index are read only.
   remain unchanged. Constructor regression now requires stronger missing-source
   refusal before native queries. Its independent real socket/parent observer
   test remains unchanged.
+- Storage amendment R36/M07/C03/D03: Windows replacement now settles only after
+  the existing actual rename plus independent named/held identity/size/exact
+  byte readback succeeds. Clear retains the original target after disposition
+  and performs a distinct native relative open under the SAME held parent;
+  only positively observed exact namespace absence settles clear_applied.
+  Unexpected presence/errors remain unresolved with native outputs retained.
+  Cleanup release remains an independent outcome. Existing actual filesystem
+  Save/Clear/recovery tests remain unchanged and qualification is still pending.
+- The vertical-cursor fixture now uses the specified four-cell literal ESC
+  rendering `\x1b` plus the wide glyph's two cells. Existing up/down and original
+  byte preservation checks remain; rendering/cursor production code is unchanged.
 
 ## Current authentic inputs and remaining connected work
 

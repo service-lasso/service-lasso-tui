@@ -171,7 +171,29 @@ func(s *windowsOperationStore)publish(raw []byte)(failure error){
 		return storageError()
 	};s.observed.PublicationEffect=recordReplacementApplied;return nil
 }
-func(s *windowsOperationStore)remove()error{if s.unresolved||!s.currentTarget(){return storageError()};if s.target==nil{return nil};if err:=s.prepareArbiter(nil);err!=nil{return err};if err:=s.journal("clear",nil,"","");err!=nil{return err};if s.unresolved||!s.currentTarget(){return storageError()};if err:=s.delete(windows.Handle(s.target.Fd()));err!=nil{return recordJoinedErrors(storageError(),s.retainHelperFailure("clear-delete",windows.Handle(s.target.Fd()),err,false))};s.observed.PublicationEffect=recordEffectUnresolved;return nil}
+func(s *windowsOperationStore)remove()error{
+ if s.unresolved||!s.currentTarget(){return storageError()};if s.target==nil{return nil}
+ if err:=s.prepareArbiter(nil);err!=nil{return err};if err:=s.journal("clear",nil,"","");err!=nil{return err}
+ if s.unresolved||!s.currentTarget(){return storageError()}
+ if err:=s.delete(windows.Handle(s.target.Fd()));err!=nil{return recordJoinedErrors(storageError(),s.retainHelperFailure("clear-delete",windows.Handle(s.target.Fd()),err,false))}
+ s.observed.PublicationEffect=recordEffectUnresolved
+ // A successful disposition request does not prove namespace removal. Retain
+ // the original target while a distinct native relative open observes absence
+ // under the SAME held exclusive parent; no pathname-based replacement owner.
+ handle,err:=s.child(s.parent(),s.name,false,false,windows.FILE_READ_ATTRIBUTES,windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE)
+ owner:=s.nativeOwner("clear-absence-parent",s.parent())
+ if err==windows.ERROR_FILE_NOT_FOUND||err==windows.STATUS_OBJECT_NAME_NOT_FOUND{
+  if s.unresolved||!owner.IdentityKnown{return &recordPublicationUnresolved{}}
+  s.observed.Presence=append(s.observed.Presence,recordNativePresenceObservation{Owner:owner,ExpectedPresent:false,ObservedPresent:false})
+  s.observed.PublicationEffect=recordClearApplied
+  return nil
+ }
+ if err!=nil{return recordJoinedErrors(&recordPublicationUnresolved{},s.retainHelperFailure("clear-absence",s.parent(),err,true))}
+ observed:=s.nativeOwner("clear-unexpected-target",handle)
+ s.observed.Presence=append(s.observed.Presence,recordNativePresenceObservation{Owner:owner,Observed:observed,ExpectedPresent:false,ObservedPresent:true})
+ s.unresolved=true
+ return recordJoinedErrors(&recordPublicationUnresolved{},s.closeHandle("clear-comparison",handle))
+}
 func(s *windowsOperationStore)retainOwnership(){s.unresolved=true}
 func(s *windowsOperationStore)close()error{
  if s.closeAttempted{if s.closeCompleted{return s.closeResult};return &recordPublicationUnresolved{}};s.closeAttempted=true

@@ -169,7 +169,7 @@ func(s *windowsOperationStore)publish(raw []byte)(failure error){
 	if !s.preparedMatches(prepared,s.name){
 		if backup!=nil{if !s.preparedMatches(backup,backup.name){backup.retained=true;return &recordPublicationUnresolved{}};if err:=s.rename(windows.Handle(backup.file.Fd()),s.parent(),s.name,true);err!=nil{backup.retained=true;return recordJoinedErrors(&recordPublicationUnresolved{},s.retainHelperFailure("rollback-rename",windows.Handle(backup.file.Fd()),err,true))};backup.retained=true}else if err:=s.delete(windows.Handle(prepared.file.Fd()));err!=nil{return recordJoinedErrors(&recordPublicationUnresolved{},s.retainHelperFailure("rollback-delete",windows.Handle(prepared.file.Fd()),err,true))}
 		return storageError()
-	};return nil
+	};s.observed.PublicationEffect=recordReplacementApplied;return nil
 }
 func(s *windowsOperationStore)remove()error{if s.unresolved||!s.currentTarget(){return storageError()};if s.target==nil{return nil};if err:=s.prepareArbiter(nil);err!=nil{return err};if err:=s.journal("clear",nil,"","");err!=nil{return err};if s.unresolved||!s.currentTarget(){return storageError()};if err:=s.delete(windows.Handle(s.target.Fd()));err!=nil{return recordJoinedErrors(storageError(),s.retainHelperFailure("clear-delete",windows.Handle(s.target.Fd()),err,false))};s.observed.PublicationEffect=recordEffectUnresolved;return nil}
 func(s *windowsOperationStore)retainOwnership(){s.unresolved=true}

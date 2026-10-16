@@ -3,6 +3,7 @@
 package app
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 
@@ -14,7 +15,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-type windowsOperationStore struct { parents []windows.Handle; name string; lock windows.Handle; target *os.File; identity windows.ByHandleFileInformation; original []byte;unresolved bool;journalObject *windowsPrepared;observed recordStorageOutcome;nativeOwners map[windows.Handle]recordNativeIdentity;arbiter *recordArbiter;arbiterFile *os.File;arbiterExclusive bool;exclusiveParent windows.Handle;exclusiveParentIdentity windows.ByHandleFileInformation;closeAttempted,closeCompleted bool;closeResult error }
+type windowsOperationStore struct { parents []windows.Handle; name string; lock windows.Handle; target *os.File; clearOriginal *windowsClearOriginal; identity windows.ByHandleFileInformation; original []byte;unresolved bool;journalObject *windowsPrepared;observed recordStorageOutcome;nativeOwners map[windows.Handle]recordNativeIdentity;arbiter *recordArbiter;arbiterFile *os.File;arbiterExclusive bool;exclusiveParent windows.Handle;exclusiveParentIdentity windows.ByHandleFileInformation;closeAttempted,closeCompleted bool;closeResult error }
 func winInfo(handle windows.Handle)(windows.ByHandleFileInformation,error){var info windows.ByHandleFileInformation;err:=windows.GetFileInformationByHandle(handle,&info);if err!=nil{return info,recordJoinedErrors(storageError(),err)};if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT!=0{return info,storageError()};return info,nil}
 func winSame(a,b windows.ByHandleFileInformation)bool{return a.VolumeSerialNumber==b.VolumeSerialNumber&&a.FileIndexHigh==b.FileIndexHigh&&a.FileIndexLow==b.FileIndexLow&&a.FileAttributes==b.FileAttributes}
 // Actual NT call arguments/results stay private with the original local owner.
@@ -139,10 +140,13 @@ func(s *windowsOperationStore)rename(prepared *windowsPrepared,parent windows.Ha
  observation.Cause=windows.NtSetInformationFile(handle,&observation.Status,&observation.Buffer[0],observation.RequestedBytes,observation.Class);observation.Completed=true;return observation.Cause
 }
 func(s *windowsOperationStore)delete(handle windows.Handle)error{
+ _,cause:=s.deleteOriginal(handle);return cause
+}
+func(s *windowsOperationStore)deleteOriginal(handle windows.Handle)(*windowsSetInformationObservation,error){
  observation:=&windowsSetInformationObservation{Kind:"delete",Handle:handle,Class:windows.FileDispositionInfoEx,Flags:windows.FILE_DISPOSITION_DELETE|windows.FILE_DISPOSITION_POSIX_SEMANTICS,RequestedBytes:4}
  s.observed.NativeCalls=append(s.observed.NativeCalls,observation);observation.Owner=s.nativeOwner("delete",handle)
- if !observation.Owner.IdentityKnown{observation.Cause=storageError();return observation.Cause}
- observation.Attempted=true;observation.Cause=windows.SetFileInformationByHandle(handle,observation.Class,(*byte)(unsafe.Pointer(&observation.Flags)),observation.RequestedBytes);observation.Completed=true;return observation.Cause
+ if !observation.Owner.IdentityKnown{observation.Cause=storageError();return observation,observation.Cause}
+ observation.Attempted=true;observation.Cause=windows.SetFileInformationByHandle(handle,observation.Class,(*byte)(unsafe.Pointer(&observation.Flags)),observation.RequestedBytes);observation.Completed=true;return observation,observation.Cause
 }
 type windowsPrepared struct{file *os.File;name string;identity windows.ByHandleFileInformation;raw []byte;parentOriginal windows.Handle;parentIdentity windows.ByHandleFileInformation;retained bool;discardAttempted,discardCompleted bool;discardResult error}
 func(s *windowsOperationStore)prepare(raw []byte)(*windowsPrepared,error){
@@ -187,20 +191,67 @@ func(s *windowsOperationStore)publish(raw []byte)(failure error){
 		return storageError()
 	};s.observed.PublicationEffect=recordReplacementApplied;return nil
 }
+type windowsClearReadOriginal struct{File *os.File;Before,After windows.ByHandleFileInformation;Raw []byte;Cause error}
+type windowsClearOriginal struct{
+ DeleteOwner,Reader *os.File
+ Parent windows.Handle
+ Acquire,Absence *windowsChildObservation
+ Before,After *windowsClearReadOriginal
+ Delete *windowsSetInformationObservation
+ DeleteClose *recordFileClose
+ Cause error
+}
+func winSameRead(a,b windows.ByHandleFileInformation)bool{return winSame(a,b)&&a.FileSizeHigh==b.FileSizeHigh&&a.FileSizeLow==b.FileSizeLow&&a.LastWriteTime==b.LastWriteTime}
+func(s *windowsOperationStore)readClearOriginal()(*windowsClearReadOriginal,error){
+ o:=&windowsClearReadOriginal{File:s.clearOriginal.Reader};handle:=windows.Handle(o.File.Fd())
+ var err error;o.Before,err=s.info(handle);if err!=nil{o.Cause=err;return o,err}
+ if !winSameRead(s.identity,o.Before){s.retainIdentityMismatch("clear-original-before",handle,s.identity,o.Before);o.Cause=&recordPublicationUnresolved{};return o,o.Cause}
+ if _,err=recordFileSeek(&s.observed,o.File,s.nativeOwner("clear-original-seek",handle),0,0);err!=nil{o.Cause=s.retainHelperFailure("clear-original-seek",handle,err,true);return o,o.Cause}
+ o.Raw,err=recordReadFile(&s.observed,o.File,s.nativeOwner("clear-original-read",handle),int64(len(s.original)+1))
+ if err!=nil{o.Cause=s.retainHelperFailure("clear-original-read",handle,err,true);return o,o.Cause}
+ o.After,err=s.info(handle);if err!=nil{o.Cause=err;return o,err}
+ if !winSameRead(o.Before,o.After){s.retainIdentityMismatch("clear-original-after",handle,o.Before,o.After);o.Cause=&recordPublicationUnresolved{};return o,o.Cause}
+ if !bytes.Equal(s.original,o.Raw){s.unresolved=true;s.observed.CleanupRelease=recordReleaseUnresolved;s.observed.BodyMismatches=append(s.observed.BodyMismatches,recordNativeBodyMismatch{Owner:s.nativeOwner("clear-original-read",handle),Expected:append([]byte(nil),s.original...),Observed:append([]byte(nil),o.Raw...)});o.Cause=&recordPublicationUnresolved{};return o,o.Cause}
+ if s.unresolved||s.observed.CleanupRelease==recordReleaseUnresolved{o.Cause=&recordPublicationUnresolved{};return o,o.Cause}
+ return o,nil
+}
+func(s *windowsOperationStore)acquireClearOriginal()error{
+ if s.clearOriginal!=nil{return storageError()}
+ o:=&windowsClearOriginal{DeleteOwner:s.target,Parent:s.parent()};s.clearOriginal=o
+ first:=len(s.observed.NativeCalls)
+ handle,err:=s.child(o.Parent,s.name,false,false,windows.GENERIC_READ,windows.FILE_SHARE_READ|windows.FILE_SHARE_DELETE)
+ o.Acquire=s.observed.NativeCalls[first].(*windowsChildObservation)
+ if err!=nil{o.Cause=s.retainHelperFailure("clear-original-acquire",o.Parent,err,true);return o.Cause}
+ o.Reader=os.NewFile(uintptr(handle),s.name) // own before any later failure
+ o.Before,err=s.readClearOriginal();o.Cause=err;return err
+}
 func(s *windowsOperationStore)remove()error{
+ if s.clearOriginal!=nil{return storageError()}
  if s.unresolved||!s.currentTarget(){return storageError()};if s.target==nil{return nil}
  if err:=s.prepareArbiter(nil);err!=nil{return err};if err:=s.journal("clear",nil,"","");err!=nil{return err}
  if s.unresolved||!s.currentTarget(){return storageError()}
- if err:=s.delete(windows.Handle(s.target.Fd()));err!=nil{return recordJoinedErrors(storageError(),s.retainHelperFailure("clear-delete",windows.Handle(s.target.Fd()),err,false))}
+ if err:=s.acquireClearOriginal();err!=nil{return recordJoinedErrors(&recordPublicationUnresolved{},err)}
+ if s.unresolved||!s.currentTarget(){return &recordPublicationUnresolved{}}
+ original:=s.clearOriginal;var deleteErr error
+ original.Delete,deleteErr=s.deleteOriginal(windows.Handle(original.DeleteOwner.Fd()))
+ if deleteErr!=nil{original.Cause=deleteErr;return recordJoinedErrors(storageError(),s.retainHelperFailure("clear-delete",windows.Handle(original.DeleteOwner.Fd()),deleteErr,false))}
  s.observed.PublicationEffect=recordEffectUnresolved
- // A successful disposition request does not prove namespace removal. Retain
- // the original target while a distinct native relative open observes absence
- // under the SAME held exclusive parent; no pathname-based replacement owner.
+ // POSIX unlink occurs on delete-owner close, while the independently opened
+ // read-only original retains its stream. A duplicate of the delete file object
+ // would not establish that separate lifetime. Close this exact owner once.
+ closeErr:=s.closeFile("clear-delete-owner",original.DeleteOwner)
+ for _,prior:=range s.observed.FileCloses{if prior.File==original.DeleteOwner{original.DeleteClose=prior;break}}
+ if closeErr!=nil{original.Cause=closeErr;return recordJoinedErrors(&recordPublicationUnresolved{},closeErr)}
+ if s.unresolved||original.DeleteClose==nil||!original.DeleteClose.Attempted||!original.DeleteClose.Completed||!original.DeleteClose.Owner.IdentityKnown{original.Cause=&recordPublicationUnresolved{};return original.Cause}
+ // Neither the request nor close alone proves absence or retained bytes.
+ first:=len(s.observed.NativeCalls)
  handle,err:=s.child(s.parent(),s.name,false,false,windows.FILE_READ_ATTRIBUTES,windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE)
+ original.Absence=s.observed.NativeCalls[first].(*windowsChildObservation)
  owner:=s.nativeOwner("clear-absence-parent",s.parent())
  if err==windows.ERROR_FILE_NOT_FOUND||err==windows.STATUS_OBJECT_NAME_NOT_FOUND{
   if s.unresolved||!owner.IdentityKnown{return &recordPublicationUnresolved{}}
   s.observed.Presence=append(s.observed.Presence,recordNativePresenceObservation{Owner:owner,ExpectedPresent:false,ObservedPresent:false})
+  original.After,err=s.readClearOriginal();if err!=nil{original.Cause=err;return recordJoinedErrors(&recordPublicationUnresolved{},err)}
   s.observed.PublicationEffect=recordClearApplied
   return nil
  }
@@ -215,6 +266,7 @@ func(s *windowsOperationStore)close()error{
  if s.closeAttempted{if s.closeCompleted{return s.closeResult};return &recordPublicationUnresolved{}};s.closeAttempted=true
 	var failure error;recordFailure:=func(err error){if err!=nil{failure=recordJoinedErrors(failure,err,&recordPublicationUnresolved{});s.unresolved=true;s.observed.CleanupRelease=recordReleaseUnresolved;s.observed.HelperFailures=append(s.observed.HelperFailures,recordNativeHelperFailure{Owner:recordNativeIdentity{Platform:"windows",Kind:"store-finalizer"},Cause:err})}}
 	if s.target!=nil{recordFailure(s.closeFile("record",s.target));s.target=nil}
+	if s.clearOriginal!=nil&&s.clearOriginal.Reader!=nil{recordFailure(s.closeFile("clear-independent-original",s.clearOriginal.Reader))}
 	if s.lock!=0{
 		if !s.unresolved{
 			if s.journalObject!=nil&&!s.preparedMatches(s.journalObject,s.journalObject.name){recordFailure(storageError())

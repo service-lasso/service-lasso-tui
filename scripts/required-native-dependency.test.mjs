@@ -3,16 +3,25 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const workflow = await readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
-function job(id) {
+function job(id,source=workflow) {
+  const normalized=source.replace(/\r\n/gu,"\n");
   const marker = `  ${id}:\n`;
-  const start = workflow.indexOf(marker);
+  const start = normalized.indexOf(marker);
   assert.notEqual(start, -1, `missing ${id}`);
-  const rest = workflow.slice(start + marker.length);
+  const rest = normalized.slice(start + marker.length);
   const next = rest.search(/^  [a-z][a-z0-9-]*:\s*$/mu);
   return next === -1 ? rest : rest.slice(0, next);
 }
 function steps(body) { return body.slice(body.indexOf("    steps:\n")).trimEnd(); }
 function platforms(body) { return [...body.matchAll(/^          - name: (.+)$/gmu)].map(match => match[1]); }
+
+test("actual workflow guards preserve identical semantics for LF CRLF and mixed source",()=>{
+ const lf=workflow.replace(/\r\n/gu,"\n"),crlf=lf.replace(/\n/gu,"\r\n"),mixed=lf.split("\n").map((line,index)=>line+(index%2?"\r":"")).join("\n");
+ for(const id of ['test','owned-windows-toolchain','deferred-macos-test','native-posix-lifecycle','deferred-macos-native-posix-lifecycle']){
+  assert.equal(job(id,crlf),job(id,lf));assert.equal(job(id,mixed),job(id,lf));
+ }
+ assert.match(job('owned-windows-toolchain'),/^    name: Windows owned GOROOT overlay tests$/mu);
+});
 
 test("required native dependency excludes deferred macOS without masking required failures", () => {
   const requiredTest = job("test");

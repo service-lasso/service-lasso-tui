@@ -159,3 +159,5 @@ Concrete trigger: the current configuration admission presents the fixed diagnos
 Issue1 overlay module/test gate pre-code mapping: .governance/project/TUI1-OVERLAY-TEST-GATE-20261016.md. Mandatory real matching-host GOROOT execution with held genuine query source; absent input fails closed. No execution or native acceptance claimed.
 
 Issue1 paired source emitter pre-code mapping: .governance/project/TUI1-PAIRED-SOURCE-EMITTER-20261016.md. Actual held-file caller only; genuine issuer/provider/ROOT/finance/Centry and whole qualification remain required. UNRUN.
+
+Issue1 Clear original lifetime pre-code mapping: .governance/project/TUI1-CLEAR-ORIGINAL-LIFETIME-20261016.md. Independent native read-only owner before delete; once-close delete owner before absence/readback, unchanged exclusion and separate release outcomes. UNRUN.

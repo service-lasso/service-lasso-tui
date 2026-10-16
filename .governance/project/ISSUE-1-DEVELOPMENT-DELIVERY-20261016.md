@@ -1,5 +1,26 @@
 # Issue 1 development delivery continuation, 2026-10-16
 
+## d5 whole review and clear-lifetime successor
+
+Different fresh `/root/review_tui34_entire_d5e_oct16` reviewed exactd5/all41
+and returned bounded SOURCE_GO with no P0-P3 findings. This is neither complete
+native product source GO nor execution admission. Exactd5 natural run38836913419
+fails: both cross-compilation jobs pass; Windows source116767982942 confirms
+first Save now reaches subsequent Clear/retry failures. Linux116767982619 passes
+the actual paired/held-input10 source cases and prior source groups, then fails
+only one of88 later cases because the guard's LF marker misses a CRLF job key.
+Unreached later commands/native jobs are NOT_RUN, never inferred successful.
+
+Parent read and selected `TUI1-CLEAR-ORIGINAL-LIFETIME-20261016.md` before
+implementation. The new source unit preserves independent read-only native
+originals through delete-owner once-close, actual absence and complete raw
+readback; final cleanup retains separate original outcomes. It also repairs the
+line-ending interpretation with LF/CRLF/mixed real-workflow cases and mirrors the
+source-only diagnostic command without altering macOS N/A or required gates.
+All new source cases remain locally UNRUN; static diff hygiene only. The new
+head requires fresh different entire review and new authentic ROOT/exact-command
+admission. No protected publication, same-byte Core or native operator proof.
+
 ## Exact66c9b55 natural evidence
 
 Run38836091222 is terminal failed. Both source cross-compilation jobs pass only.

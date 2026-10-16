@@ -192,6 +192,34 @@ inputs, preserving overlay tests and provenance. That boundary remains OPEN.
 
 ## Validation and custody
 
+Exact `d2fdf30ae61a5d6c48c046089dd58a30af0de435` natural run38838272672
+passed Linux and both cross-compiles. Windows job116772181641 passed the
+previous Python host-path fixture and advanced to the held-input source fixture:
+`rename(replacement,input)` failed with EPERM while the original input remained
+open. This is one observed destination-overwrite failure, not repeated proof
+that a rename to an unused name fails. The owned GOROOT gate remains incomplete
+without an authentic query profile; native PTY jobs were skipped, not passed.
+
+The fixture now moves the original name to a separate unused leaf while keeping
+the SAME original handle live, then moves the replacement into the absent name.
+Successful substitution is mandatory: actual named identity must differ and
+complete bytes must match, while the held original retains its actual identity
+and full bytes. A failed second rename case retains and reads the parked
+original, confirms the original pathname is absent, and still requires refusal.
+Mutation and revalidation assertions remain required. Cleanup attempts both
+held close and removal and retains every primary/cleanup failure. Production
+sharing and ownership guards are unchanged. This route remains UNRUN until
+natural CI observes it; EPERM is never accepted as successful substitution.
+
+Primary semantic binding: Node v22.23.2's actual bundled libuv
+[`fs__open` and `fs__rename`](https://github.com/nodejs/node/blob/v22.23.2/deps/uv/src/win/fs.c)
+use read/write/delete sharing for ordinary opens and
+`MoveFileExW(...,MOVEFILE_REPLACE_EXISTING)` for rename. Microsoft's
+[`MoveFileExW` contract](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw)
+distinguishes an existing destination replacement from a destination absent at
+the operation. These source facts motivate the causal fixture change; they do
+not establish its actual native result.
+
 No local target formatter/parser/import/generator/compiler/build/test/native or
 product crypto command has run. New regressions are UNRUN. Natural exact-head
 CI is separate; no rerun, cancellation or weakened gate is authorised here.

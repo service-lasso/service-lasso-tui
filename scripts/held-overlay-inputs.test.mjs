@@ -1,7 +1,7 @@
 // Controlled actual file/child failures; no profile/native authority supplied.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,writeFile,rename,rm,readFile} from 'node:fs/promises';
+import {mkdtemp,writeFile,rename,rm,readFile,stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -9,17 +9,44 @@ import {spawnSync} from 'node:child_process';
 import {HeldOverlayInputs,requireEmittedQueryPair} from './held-overlay-inputs.mjs';
 
 test('real held borrower rejects substituted pathname and changed original bytes',async()=>{
- for(const mode of ['replace','mutate']){
+ for(const mode of ['replace','replace-failed','mutate']){
   const root=await mkdtemp(path.join(tmpdir(),'tui-held-input-')),held=new HeldOverlayInputs();
+  const failures=[];
   try{
-   const file=path.join(root,'input'),replacement=path.join(root,'replacement');
+   const file=path.join(root,'input'),replacement=path.join(root,'replacement'),parked=path.join(root,'parked-original');
    await writeFile(file,'original-source');const row=await held.acquire(file);
    await held.revalidate();
-   if(mode==='replace'){await writeFile(replacement,'original-source');await rename(replacement,file);}
+   if(mode!=='mutate'){
+    // Keep the SAME original handle live. Move its name to an unused leaf;
+    // then publish a distinct file at the now-absent name. Windows overwrite
+    // of an occupied destination is a different native operation.
+    if(mode==='replace')await writeFile(replacement,'original-source');
+    await rename(file,parked);
+    if(mode==='replace'){
+     await rename(replacement,file);
+     const named=await stat(file,{bigint:true});
+     assert.ok(named.dev!==row.before.dev||named.ino!==row.before.ino);
+     assert.equal(await readFile(file,'utf8'),'original-source');
+    }else{
+     await assert.rejects(rename(replacement,file),{code:'ENOENT'});
+     await assert.rejects(stat(file),{code:'ENOENT'});
+    }
+    const original=await held.read(row.handle,row);
+    assert.equal(original.after.dev,row.before.dev);assert.equal(original.after.ino,row.before.ino);
+    assert.equal(original.bytes.toString(),'original-source');
+    assert.equal(await readFile(parked,'utf8'),'original-source');
+   }
    else await writeFile(file,'changed-source!');
    await assert.rejects(held.revalidate());
    assert.equal(row.bytes.toString(),'original-source');
-  }finally{await held.close();await rm(root,{recursive:true});}
+  }catch(original){failures.push(original);}
+  finally{
+   // Closing failure must not suppress cleanup, or replace a primary failure.
+   // All three leaves stay inside this test's exclusive disposable directory.
+   try{await held.close();}catch(original){failures.push(original);}
+   try{await rm(root,{recursive:true});}catch(original){failures.push(original);}
+  }
+  if(failures.length)throw new AggregateError(failures,'held input fixture failed');
  }
 });
 test('actual consumed generated Go/header hashes both rejoin emitter result',()=>{

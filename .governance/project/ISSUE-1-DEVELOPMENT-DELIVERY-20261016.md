@@ -490,3 +490,13 @@ used. All new source remains UNRUN locally. Source/diff hygiene precedes cohesiv
 commit and immediate push, then fresh DIFFERENT ENTIRE review and NEW complete
 actual-input/exact-command admission before any local target execution. No
 publication/activation/qualification or provider settings change is claimed.
+
+### Next owned caller/entry pre-code boundary
+
+Exact2a04/tree9e83 received DIFFERENT ENTIRE70 SOURCE_GO. Hosted Windows/Linux
+source tests and both crosscompiles passed; owned GOROOT remains failed and
+required Linux native combined-step result remains pending. Source is not
+native/publication qualification. The next TUI-owned caller adapter and actual
+entry integration, precise CLI genuine-original dependency, and UNADMITTED
+exact-command proposals are mapped in TUI1-POSITIVE-CALLER-PRECODE-20261016.md.
+No new ABI/body is selected until CLI supplies its actual constructor/bridge.

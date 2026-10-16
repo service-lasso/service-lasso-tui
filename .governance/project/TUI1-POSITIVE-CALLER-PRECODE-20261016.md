@@ -58,6 +58,34 @@ The schema3 JSON emitter/profile hash and schema2 receipt writer cannot produce
 these genuine originals. produceNative stays explicitly refused until connected
 real acquisition and qualification; historical v1 is never a missing-v2 fallback.
 
+## Confirmed CLI constructor trace, exact source only
+
+CLI owner confirmed and TUI read immutable CLI commit
+e7b7d708ac0674c2849e3aece990825421b3908a. In
+native/build-owner/bootstrap_windows.h,
+slcli_build_initial_windows_source carries original origin/prior clocks,
+expires/limits/arena, actual region roster, distinct effective/primary
+principals, compiler and profile originals.
+slcli_build_bootstrap_windows_acquire_compiler_original retains the bootstrap
+and actual compiler acquisition correspondence; the header explicitly excludes
+whole source/loaded admission, compiler birth, numerical fit and qualification.
+
+native/build-owner/seed_compile_windows.h declares
+slcli_build_seed_compile_windows_source and slcli_build_seed_compile_windows;
+slcli_build_seed_compile_windows_birth_original retains actual command, child
+principal, image, mapping and stream observations as a stopped prefix. Its
+stopped_prefix_captured does not continue the image, settle compilation, or
+supply the missing complete event/source/stream owner. These BUILD-plane types
+must not be promoted into the installer-family capability required above.
+
+native/node-owner/entry_windows.c observes receiver/prefix/loader originals but
+ends with return1: whole module/TLS/source-original promotion is absent, and it
+cannot invoke original CRT startup or install an acquired process root. CLI
+owns implementing the actual installer constructor/bridge and child-local
+handoff. No genuine private installer ABI/header exists at this exact commit.
+TUI owns the real caller adapter retention and entry composition once supplied;
+no substitute ABI/body is selected. This trace is source evidence only.
+
 ## Proposed admission commands, NOT admission
 
 For exact reviewed2a04/tree9e83 source, the bounded Node argv proposal is:

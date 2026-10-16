@@ -395,3 +395,51 @@ cycle. Source-case/native capture/designation/financial authority remain
 distinct; no pure result issues a nativecase or permits capture. Nativecase
 capture/file/heldgate/MSVC/entry/family integration remains connected work,
 not claimed complete by this initial source body. All new source is UNRUN.
+
+## Whole608 aggregate repair pre-code
+
+Fresh DIFFERENT ENTIRE88 completed all paths/hunks/surroundings at608da5;
+reportSHA256CE9D3015728A38A38C114B37F4C90A9FE5AB7F94C0DBE138E0CE5A5F0EB8CD95.
+Final SOURCE_NO_GO has two P2 findings: an ACCESS_ALLOWED_ACE with only its4-byte
+header passed without mask/SID/type-specific geometry; PE header/section checks
+omitted complete directory and typed loader-row closure, accepting an import
+RVA beyond SizeOfImage which existing366 rejects. No native grant is inferred
+from these findings. Parent selected one coherent complete repair before new
+whole review; no partial one-finding freeze or target execution.
+
+ACE representation will retain actual mask, nested SID(s), object flags/GUIDs
+where applicable and callback/application payload source spans, with native
+type-specific offsets/minimum size/alignment and full source coverage before
+writes. The source retains all raw header/flags/payload bytes. Callback payload
+geometry is not conditional-ACE/claim access validation. Known SDK source cases
+must not be conflated, and unknown forms remain explicit affected-case refusal
+under selected365's exact supported protected ACL/native policy-check rule,
+not silent narrowing of public token/ACL inputs or a guessed header-only form.
+
+PE representation will retain complete typed semantic source rosters for the
+existing366 import, delay-import, TLS, export/forwarder and relocation row rules,
+each with SAME held file/member identity, exact descriptor/thunk/block/function/
+name/callback coordinates and source/actor/occurrence associations. Check full
+ordered terminal coverage and every pointer/offset/count/source extent, plus
+deep nested input/output exclusions, snapshots and simultaneous/failure costs.
+Directory4 SECURITY uses a file-offset domain; other nonempty directories use
+image RVA bounds. Existing366's header/section/alignment/overlap/virtualzero and
+directory source cases remain operative, including terminal IAT locators,
+delay attributes/legacy-VA restrictions, null export holes and bounded forwarder
+strings, complete TLS callback terminator and relocation ABS/DIR64 rules.
+
+These are readonly SDK/source views and exact semantic row correspondences,
+not a C declaration pretending to be a Go slice/pointer/native owner. Reuse the
+actual366 rule/typed interpretation roster without invoking its private Go
+assembler ABI or replacing it with a blanket new native capture/decoder graph.
+Actual constructor provenance of those source rows remains separately owed.
+No new C/assembly bridge is selected; any required bridge returns to intent.
+Both findings' malformed/foreign/missing/terminal/payload/certificate-vs-RVA
+adversaries and original/no-write preservation must be covered coherently.
+CLI must consume replacement immutable header pins only after the whole known
+repair freezes;608 is historical SOURCE_NO_GO and not a production dependency.
+
+### Whole608 ACE and PE semantic-source repair
+Fresh DIFFERENT ENTIRE88 SOURCE_NO_GO identified two P2 geometry gaps; parent selected their aggregate repair under joint7545. Typed ACE rows now retain actual mask/SID, optional object GUIDs and callback/resource-attribute relative payload geometry. Header-only, wrong-offset, truncated/nested SID/claim and unknown source forms refuse without silently narrowing the protected public domain; unresolved source/native-policy cases remain obligations. New query_profile_pe_windows.h/.c retains typed SDK semantic projections of actual366 import/delay/TLS/export/forwarder/relocation rules, exact SAME member/file coordinates and ordered terminal coverage, with SECURITY file-offset bounds distinct from image RVA bounds. All typed nested data must be declared source-covered; outputs exclude complete body/actor/occurrence and source descriptors before writes, and accumulated costs commit only after complete success. Per-row simultaneous/failure costs sum, shared image geometry is explicitly SAME across image roles and charged once in IMAGE_MODULES; genuine initial pre-effect allocation/header/padding/native financing remains constructor-owned, never issued by this pure result. Pure SDK malformed/foreign/missing-terminal/alias/no-write regressions are source-added and UNRUN. No executable Go/C bridge, native issuer or production activation is added. Replacement immutable header/source pins require fresh ENTIRE review and NEW actual-input ROOT admission before target execution.
+
+The separate owned production ordering gap remains explicit: schema3 creatorImages describes the final public endpoint-server TUI creator, while current windowsPayloadFirstBuildPlan needs schema3 before Go payload/root generation and public native compilation. No future PE is substituted with a CLI/probe or claimed held. A bounded compile-order/source-envelope proposal is next, including actual compile-time root RVA/image-size dependencies and full retained/failed-stage finance; no alternative architecture is implemented by this repair.

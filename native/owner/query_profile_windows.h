@@ -14,6 +14,7 @@
 #include "owner_windows.h"
 struct slcli_build_principal_windows;
 struct slcli_build_held_file_windows;
+struct sl_win_query_pe_closure;
 
 enum sl_win_query_role {
  SL_WIN_QUERY_ENDPOINT_SECURITY,SL_WIN_QUERY_PROCESS_SECURITY,
@@ -38,9 +39,25 @@ typedef struct sl_win_query_hash_source {
  const SID_AND_ATTRIBUTES *attributes_original;size_t count;
  const sl_win_query_sid_source *sids_original;
 } sl_win_query_hash_source;
+typedef struct sl_win_query_claim_value_source {
+ const unsigned char *original;size_t bytes;
+ const struct slcli_product_initial_windows_source_span *source_original;
+} sl_win_query_claim_value_source;
+typedef struct sl_win_query_claim_source {
+ const CLAIM_SECURITY_ATTRIBUTE_RELATIVE_V1 *original;
+ const WCHAR *name_original;size_t name_units;
+ const sl_win_query_claim_value_source *values_original;size_t value_count;
+} sl_win_query_claim_source;
 typedef struct sl_win_query_ace_source {
  const ACE_HEADER *original;size_t bytes;
  const struct slcli_product_initial_windows_source_span *source_original;
+ const ACCESS_MASK *mask_original;
+ const DWORD *object_flags_original;
+ const GUID *object_type_original,*inherited_object_type_original;
+ sl_win_query_sid_source sid;
+ const unsigned char *payload_original;size_t payload_extent;
+ const struct slcli_product_initial_windows_source_span *payload_source;
+ sl_win_query_claim_source resource_attribute;
 } sl_win_query_ace_source;
 typedef struct sl_win_query_principal_case {
  const struct slcli_product_initial_windows_source_span *source_original;
@@ -71,6 +88,7 @@ typedef struct sl_win_query_image_member {
  const WCHAR *module_name_original,*mapped_name_original;
  size_t module_name_units,mapped_name_units;
  const struct slcli_product_initial_windows_source_span *source_original;
+ const struct sl_win_query_pe_closure *closure_original;
 } sl_win_query_image_member;
 typedef struct sl_win_query_mapping_source {
  const sl_win_query_image_member *member_original;
@@ -151,6 +169,8 @@ typedef struct sl_win_query_derivation {
 int sl_win_derive_query_profile(sl_win_query_derivation *);
 int sl_win_query_derivation_matches_original(const sl_win_query_derivation *);
 int sl_win_query_source_excludes_output(const sl_win_query_profile_source *,const void *,size_t);
+/* Structural ACE source geometry only, never native policy/access admission. */
+int sl_win_query_ace_source_matches(const sl_win_query_semantic_row *,const sl_win_query_ace_source *);
 
 typedef struct sl_win_query_profile_encoding {
  const sl_win_query_derivation *derivation_original;

@@ -1,5 +1,6 @@
 #ifdef _WIN32
 #include "../query_profile_windows.h"
+#include "../query_profile_pe_windows.h"
 #include <assert.h>
 
 /* Called only by a future admitted genuine-input harness. This file creates
@@ -8,6 +9,211 @@
  * These vectors have NOT been compiled or executed by the author. */
 static void clone_bytes(void *out,const void *in,size_t n){unsigned char *a=out;const unsigned char *b=in;for(size_t i=0;i<n;i++)a[i]=b[i];}
 static int equal_bytes(const void *a,const void *b,size_t n){const unsigned char *x=a,*y=b;for(size_t i=0;i<n;i++)if(x[i]!=y[i])return 0;return 1;}
+static void put16(unsigned char *p,uint16_t n){p[0]=(unsigned char)n;p[1]=(unsigned char)(n>>8);}
+static void put32(unsigned char *p,uint32_t n){for(unsigned i=0;i<4;i++)p[i]=(unsigned char)(n>>(8*i));}
+static uint32_t get32(const unsigned char *p){return p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24;}
+static void source_span(struct slcli_product_initial_windows_source_span *s,const void *p,size_t n,const void *actor,const void *occurrence,size_t on){
+ s->original=p;s->bytes=n;s->actor_original=actor;s->actor_bytes=1;s->occurrence_original=occurrence;s->occurrence_bytes=on;
+}
+
+/* Pure SDK/source-byte adversaries, NOT genuine source/native provenance.
+ * No CLI principal/file/caller is fabricated and no native API is invoked. */
+void sl_win_query_ace_geometry_vectors(void){
+ _Alignas(8) unsigned char body[128]={0};unsigned char actor=1;
+ struct slcli_product_initial_windows_source_span spans[3];sl_win_query_semantic_row row={0};
+ sl_win_query_ace_source ace={0};sl_win_query_claim_value_source value={0};
+ source_span(&spans[0],body,sizeof(body),&actor,&row,sizeof(row));
+ source_span(&spans[1],&ace,sizeof(ace),&actor,&row,sizeof(row));
+ source_span(&spans[2],&value,sizeof(value),&actor,&row,sizeof(row));
+ row.inputs_original=spans;row.input_count=3;
+ body[0]=ACCESS_ALLOWED_ACE_TYPE;put16(body+2,20);body[8]=SID_REVISION;body[9]=1;body[15]=1;
+ ace.original=(const ACE_HEADER *)body;ace.bytes=20;ace.source_original=&spans[1];ace.mask_original=(const ACCESS_MASK *)(body+4);
+ ace.sid.original=(const SID *)(body+8);ace.sid.bytes=12;ace.sid.source_original=&spans[0];
+ assert(sl_win_query_ace_source_matches(&row,&ace));
+ const BYTE basic_types[]={ACCESS_ALLOWED_ACE_TYPE,ACCESS_DENIED_ACE_TYPE,SYSTEM_AUDIT_ACE_TYPE,SYSTEM_ALARM_ACE_TYPE,
+  SYSTEM_MANDATORY_LABEL_ACE_TYPE,SYSTEM_SCOPED_POLICY_ID_ACE_TYPE,SYSTEM_PROCESS_TRUST_LABEL_ACE_TYPE};
+ for(size_t i=0;i<sizeof(basic_types);i++){body[0]=basic_types[i];assert(sl_win_query_ace_source_matches(&row,&ace));}
+ body[0]=ACCESS_ALLOWED_ACE_TYPE;
+ put16(body+2,4);ace.bytes=4;assert(!sl_win_query_ace_source_matches(&row,&ace)); /* Reviewed4B header-only counterexample. */
+ put16(body+2,20);ace.bytes=20;
+ ace.mask_original=(const ACCESS_MASK *)(body+8);assert(!sl_win_query_ace_source_matches(&row,&ace));ace.mask_original=(const ACCESS_MASK *)(body+4);
+ body[9]=SID_MAX_SUB_AUTHORITIES+1;assert(!sl_win_query_ace_source_matches(&row,&ace));body[9]=1;
+ /* Optional object GUID flags move the native SID locator; scalar equality
+  * or an arbitrary aligned SID elsewhere in backing cannot replace it. */
+ for(size_t i=12;i;i--)body[12+i-1]=body[8+i-1];
+ put32(body+8,0);body[0]=ACCESS_ALLOWED_OBJECT_ACE_TYPE;put16(body+2,24);ace.bytes=24;
+ ace.object_flags_original=(const DWORD *)(body+8);ace.sid.original=(const SID *)(body+12);
+ assert(sl_win_query_ace_source_matches(&row,&ace));
+ put32(body+8,ACE_OBJECT_TYPE_PRESENT);assert(!sl_win_query_ace_source_matches(&row,&ace));put32(body+8,0);
+ ace.sid.original=(const SID *)(body+16);assert(!sl_win_query_ace_source_matches(&row,&ace));ace.sid.original=(const SID *)(body+12);
+ /* Callback payload is retained exact source bytes, not evaluated access. */
+ body[0]=ACCESS_ALLOWED_CALLBACK_OBJECT_ACE_TYPE;put16(body+2,28);ace.bytes=28;
+ ace.payload_original=body+24;ace.payload_extent=4;ace.payload_source=&spans[0];
+ assert(sl_win_query_ace_source_matches(&row,&ace));
+ ace.payload_original=body+20;assert(!sl_win_query_ace_source_matches(&row,&ace));ace.payload_original=body+24;
+ /* Resource-attribute relative values require complete typed payload extents. */
+ body[0]=SYSTEM_RESOURCE_ATTRIBUTE_ACE_TYPE;put16(body+2,52);ace.bytes=52;
+ for(size_t i=0;i<12;i++)body[8+i]=body[12+i];
+ ace.object_flags_original=NULL;ace.sid.original=(const SID *)(body+8);
+ ace.payload_original=body+20;ace.payload_extent=32;put32(body+20,20);put16(body+24,CLAIM_SECURITY_ATTRIBUTE_TYPE_UINT64);
+ put16(body+26,0);put32(body+28,0);put32(body+32,1);put32(body+36,24);put16(body+40,'x');put16(body+42,0);
+ ace.resource_attribute.original=(const CLAIM_SECURITY_ATTRIBUTE_RELATIVE_V1 *)(body+20);
+ ace.resource_attribute.name_original=(const WCHAR *)(body+40);ace.resource_attribute.name_units=2;
+ ace.resource_attribute.values_original=&value;ace.resource_attribute.value_count=1;
+ value.original=body+44;value.bytes=8;value.source_original=&spans[0];
+ assert(sl_win_query_ace_source_matches(&row,&ace));
+ put32(body+36,31);assert(!sl_win_query_ace_source_matches(&row,&ace));put32(body+36,24);
+ put32(body+32,2);assert(!sl_win_query_ace_source_matches(&row,&ace));put32(body+32,1);
+ put16(body+24,CLAIM_SECURITY_ATTRIBUTE_TYPE_BOOLEAN);put32(body+44,1);put32(body+48,0);
+ assert(sl_win_query_ace_source_matches(&row,&ace));put32(body+44,2);assert(!sl_win_query_ace_source_matches(&row,&ace));
+ put16(body+24,CLAIM_SECURITY_ATTRIBUTE_TYPE_STRING);value.bytes=4;put16(body+44,'v');put16(body+46,0);
+ assert(sl_win_query_ace_source_matches(&row,&ace));put16(body+46,'z');assert(!sl_win_query_ace_source_matches(&row,&ace));
+ put16(body+24,CLAIM_SECURITY_ATTRIBUTE_TYPE_SID);put16(body+2,60);ace.bytes=60;ace.payload_extent=40;value.bytes=16;
+ put32(body+44,12);body[48]=SID_REVISION;body[49]=1;
+ assert(sl_win_query_ace_source_matches(&row,&ace));body[49]=2;assert(!sl_win_query_ace_source_matches(&row,&ace));body[49]=1;
+ put16(body+24,CLAIM_SECURITY_ATTRIBUTE_TYPE_OCTET_STRING);put32(body+44,12);
+ assert(sl_win_query_ace_source_matches(&row,&ace));put32(body+44,13);assert(!sl_win_query_ace_source_matches(&row,&ace));
+ body[0]=0xff;assert(!sl_win_query_ace_source_matches(&row,&ace)); /* Explicit unknown source case, never header-only acceptance. */
+}
+
+void sl_win_query_pe_geometry_vectors(void){
+ _Alignas(8) unsigned char file[0x2600]={0};unsigned char actor=1;
+ sl_win_query_semantic_row row={0};sl_win_query_image_member member={0};sl_win_query_pe_closure closure={0};
+ sl_win_query_pe_import imports[2]={0};sl_win_query_pe_delay delays[2]={0};sl_win_query_pe_tls tls_rows[2]={0};
+ sl_win_query_pe_export functions[1]={0},names[1]={0};sl_win_query_pe_relocation relocations[2]={0};
+ struct slcli_product_initial_windows_source_span spans[20];
+ struct slcli_bq_resource_cost cost={0},failure={0},before;
+ IMAGE_NT_HEADERS64 *h=(IMAGE_NT_HEADERS64 *)(file+0x80);IMAGE_SECTION_HEADER *section=(IMAGE_SECTION_HEADER *)(file+0x188);
+ put16(file,IMAGE_DOS_SIGNATURE);put32(file+0x3c,0x80);
+ h->Signature=IMAGE_NT_SIGNATURE;h->FileHeader.Machine=IMAGE_FILE_MACHINE_AMD64;h->FileHeader.NumberOfSections=1;
+ h->FileHeader.SizeOfOptionalHeader=(WORD)sizeof(h->OptionalHeader);h->OptionalHeader.Magic=IMAGE_NT_OPTIONAL_HDR64_MAGIC;
+ h->OptionalHeader.ImageBase=UINT64_C(0x140000000);h->OptionalHeader.SectionAlignment=0x1000;h->OptionalHeader.FileAlignment=0x200;
+ h->OptionalHeader.SizeOfImage=0x2000;h->OptionalHeader.SizeOfHeaders=0x200;h->OptionalHeader.NumberOfRvaAndSizes=16;
+ section->VirtualAddress=0x1000;section->Misc.VirtualSize=0x1000;section->PointerToRawData=0x200;section->SizeOfRawData=0x200;
+ member.file_bytes_original=file;member.file_extent=sizeof(file);member.headers_original=h;member.headers_offset=0x80;
+ member.sections_original=section;member.section_count=1;member.sections_offset=0x188;member.closure_original=&closure;
+ closure.member_original=&member;closure.source_original=&spans[2];
+ source_span(&spans[0],file,sizeof(file),&actor,&row,sizeof(row));source_span(&spans[1],&member,sizeof(member),&actor,&row,sizeof(row));
+ source_span(&spans[2],&closure,sizeof(closure),&actor,&row,sizeof(row));source_span(&spans[3],&imports[0],sizeof(imports[0]),&actor,&row,sizeof(row));
+ source_span(&spans[4],&imports[1],sizeof(imports[1]),&actor,&row,sizeof(row));source_span(&spans[5],&actor,1,&actor,&row,sizeof(row));
+ source_span(&spans[6],imports,sizeof(imports),&actor,&row,sizeof(row));row.inputs_original=spans;row.input_count=7;
+ assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ /* SECURITY is a file offset: a valid table beyond SizeOfImage is not an RVA. */
+ h->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_SECURITY]=(IMAGE_DATA_DIRECTORY){0x2400,8};
+ assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ h->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT]=(IMAGE_DATA_DIRECTORY){0x2400,20};before=cost;
+ assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));assert(equal_bytes(&cost,&before,sizeof(cost)));
+ h->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT]=(IMAGE_DATA_DIRECTORY){0x1000,40};
+ /* Nonempty table cannot omit its genuine source descriptor terminator. */
+ assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ closure.imports_original=imports;closure.import_count=1;
+ for(size_t i=0;i<2;i++){
+  imports[i].source.source_original=&spans[3+i];imports[i].source.interpretation_original=&spans[5];
+  imports[i].source.cost.user_ram_bytes=sizeof(imports[i]);imports[i].source.cost.user_virtual_bytes=sizeof(imports[i]);
+  imports[i].source.cost.pure_attempts=1;imports[i].source.cost.cpu_nanoseconds=1;
+ }
+ imports[0].descriptor_original=(const IMAGE_IMPORT_DESCRIPTOR *)(file+0x200);
+ assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ /* A real source descriptor with a zero thunk still needs its terminal IAT
+  * locator and subsequent descriptor terminal; a guessed row is insufficient. */
+ put32(file+0x200,0x1040);put32(file+0x20c,0x1060);put32(file+0x210,0x1050);file[0x260]='x';
+ imports[0].lookup_original=(const ULONGLONG *)(file+0x240);imports[0].module_original=file+0x260;imports[0].module_bytes=2;imports[0].iat_rva=0x1050;
+ before=cost;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));assert(equal_bytes(&cost,&before,sizeof(cost)));
+ closure.import_count=2;imports[1].descriptor_index=1;imports[1].descriptor_original=(const IMAGE_IMPORT_DESCRIPTOR *)(file+0x214);
+ assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ imports[0].iat_rva=0x1058;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));imports[0].iat_rva=0x1050;
+ imports[1].descriptor_index=2;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));imports[1].descriptor_index=1;
+ /* Failure/cost outputs cannot alias retained input bytes; refusal writes none. */
+ uint32_t original=get32(file);assert(!sl_win_query_pe_source_matches(&row,&member,(struct slcli_bq_resource_cost *)file,&failure));assert(get32(file)==original);
+ /* Each additional typed projection has its own source row and explicit
+  * array extent. These are pure SDK geometry vectors, not native originals. */
+#define PE_ROW(value,slot) do { \
+ source_span(&spans[slot],&(value),sizeof(value),&actor,&row,sizeof(row)); \
+ (value).source.source_original=&spans[slot];(value).source.interpretation_original=&spans[5]; \
+ (value).source.cost.user_ram_bytes=sizeof(value);(value).source.cost.user_virtual_bytes=sizeof(value); \
+ (value).source.cost.pure_attempts=1;(value).source.cost.cpu_nanoseconds=1; \
+ } while(0)
+ PE_ROW(delays[0],7);PE_ROW(delays[1],8);PE_ROW(tls_rows[0],9);PE_ROW(tls_rows[1],10);
+ PE_ROW(functions[0],11);PE_ROW(names[0],12);PE_ROW(relocations[0],13);PE_ROW(relocations[1],14);
+ source_span(&spans[15],delays,sizeof(delays),&actor,&row,sizeof(row));
+ source_span(&spans[16],tls_rows,sizeof(tls_rows),&actor,&row,sizeof(row));
+ source_span(&spans[17],relocations,sizeof(relocations),&actor,&row,sizeof(row));row.input_count=18;
+ closure.imports_original=NULL;closure.import_count=0;
+ h->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT]=(IMAGE_DATA_DIRECTORY){0,0};
+ for(size_t i=0x200;i<0x400;i++)file[i]=0;
+ h->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT]=(IMAGE_DATA_DIRECTORY){0x1000,64};
+ closure.delays_original=delays;closure.delay_count=1;delays[0].descriptor_original=(const IMAGE_DELAYLOAD_DESCRIPTOR *)(file+0x200);
+ assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ put32(file+0x200,1);put32(file+0x204,0x1080);put32(file+0x208,0x1090);put32(file+0x20c,0x10a0);put32(file+0x210,0x10b0);file[0x280]='d';
+ delays[0].lookup_original=(const ULONGLONG *)(file+0x2b0);delays[0].module_rva=0x1090;delays[0].iat_rva=0x10a0;
+ delays[0].module_original=file+0x280;delays[0].module_bytes=2;before=cost;
+ assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));assert(equal_bytes(&cost,&before,sizeof(cost)));
+ closure.delay_count=2;delays[1].descriptor_index=1;delays[1].descriptor_original=(const IMAGE_DELAYLOAD_DESCRIPTOR *)(file+0x220);
+ assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ delays[0].module_rva++;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));delays[0].module_rva--;
+ put32(file+0x200,2);assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));put32(file+0x200,1);
+ closure.delays_original=NULL;closure.delay_count=0;h->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT]=(IMAGE_DATA_DIRECTORY){0,0};
+ for(size_t i=0x200;i<0x400;i++)file[i]=0;
+ h->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS]=(IMAGE_DATA_DIRECTORY){0x1000,40};
+ closure.tls_original=tls_rows;closure.tls_count=1;tls_rows[0].directory_original=(const IMAGE_TLS_DIRECTORY64 *)(file+0x200);
+ assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ IMAGE_TLS_DIRECTORY64 *td=(IMAGE_TLS_DIRECTORY64 *)(file+0x200);td->AddressOfCallBacks=h->OptionalHeader.ImageBase+0x1080;
+ tls_rows[0].callback_original=(const ULONGLONG *)(file+0x280);
+ assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ *(ULONGLONG *)(file+0x280)=h->OptionalHeader.ImageBase+0x1100;
+ assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ closure.tls_count=2;tls_rows[1].directory_original=td;tls_rows[1].callback_index=1;tls_rows[1].callback_original=(const ULONGLONG *)(file+0x288);
+ assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ tls_rows[1].callback_index=0;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));tls_rows[1].callback_index=1;
+ td->EndAddressOfRawData=h->OptionalHeader.ImageBase;td->StartAddressOfRawData=td->EndAddressOfRawData+1;
+ assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ closure.tls_original=NULL;closure.tls_count=0;h->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS]=(IMAGE_DATA_DIRECTORY){0,0};
+ for(size_t i=0x200;i<0x400;i++)file[i]=0;
+ h->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT]=(IMAGE_DATA_DIRECTORY){0x1000,128};
+ IMAGE_EXPORT_DIRECTORY *ed=(IMAGE_EXPORT_DIRECTORY *)(file+0x200);ed->NumberOfFunctions=1;ed->NumberOfNames=1;
+ ed->AddressOfFunctions=0x1080;ed->AddressOfNames=0x1084;ed->AddressOfNameOrdinals=0x1088;
+ put32(file+0x280,0x1060);put32(file+0x284,0x1090);file[0x260]='f';file[0x290]='n';
+ closure.functions_original=functions;closure.function_count=1;closure.names_original=names;closure.name_count=1;
+ functions[0].directory_original=ed;functions[0].function_original=(const DWORD *)(file+0x280);
+ functions[0].forwarder_original=file+0x260;functions[0].forwarder_bytes=2;
+ names[0].directory_original=ed;names[0].function_original=functions[0].function_original;names[0].named=1;
+ names[0].name_rva_original=(const DWORD *)(file+0x284);names[0].ordinal_original=(const WORD *)(file+0x288);
+ names[0].name_original=file+0x290;names[0].name_bytes=2;names[0].forwarder_original=file+0x260;names[0].forwarder_bytes=2;
+ assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ put16(file+0x288,1);assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));put16(file+0x288,0);
+ functions[0].forwarder_original=file+0x261;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));functions[0].forwarder_original=file+0x260;
+ ed->AddressOfFunctions=0x2000;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));ed->AddressOfFunctions=0x1080;
+ closure.functions_original=NULL;closure.function_count=0;closure.names_original=NULL;closure.name_count=0;
+ h->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT]=(IMAGE_DATA_DIRECTORY){0,0};
+ for(size_t i=0x200;i<0x400;i++)file[i]=0;
+ h->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC]=(IMAGE_DATA_DIRECTORY){0x1000,12};
+ put32(file+0x200,0x1000);put32(file+0x204,12);put16(file+0x208,(WORD)(IMAGE_REL_BASED_DIR64<<12|0x80));
+ closure.relocations_original=relocations;closure.relocation_count=2;
+ for(size_t i=0;i<2;i++){relocations[i].block_original=(const IMAGE_BASE_RELOCATION *)(file+0x200);relocations[i].entry_index=i;relocations[i].entry_original=(const WORD *)(file+0x208+i*2);}
+ relocations[0].target_original=file+0x280;relocations[0].target_kind=1;
+ assert(sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ closure.relocation_count=1;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));closure.relocation_count=2;
+ relocations[0].target_original=file+0x288;assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));relocations[0].target_original=file+0x280;
+ put16(file+0x208,(WORD)(IMAGE_REL_BASED_HIGHLOW<<12|0x80));assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ put16(file+0x208,(WORD)(IMAGE_REL_BASED_DIR64<<12|0x80));
+ before=cost;struct slcli_bq_resource_cost failed_before=failure;
+ const struct slcli_product_initial_windows_source_span *interpretation=relocations[0].source.interpretation_original;
+ relocations[0].source.interpretation_original=&spans[18];
+ assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ assert(equal_bytes(&cost,&before,sizeof(cost))&&equal_bytes(&failure,&failed_before,sizeof(failure)));
+ relocations[0].source.interpretation_original=interpretation;
+ uint64_t ram=relocations[0].source.cost.user_ram_bytes,virtual_bytes=relocations[0].source.cost.user_virtual_bytes;
+ relocations[0].source.cost.user_ram_bytes=UINT64_MAX;relocations[0].source.cost.user_virtual_bytes=UINT64_MAX;
+ assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+ assert(equal_bytes(&cost,&before,sizeof(cost))&&equal_bytes(&failure,&failed_before,sizeof(failure)));
+ relocations[0].source.cost.user_ram_bytes=ram;relocations[0].source.cost.user_virtual_bytes=virtual_bytes;
+ assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&cost));
+ assert(equal_bytes(&cost,&before,sizeof(cost)));
+ /* Aligned foreign SDK views are not accepted by matching their scalars. */
+ member.headers_original=(const IMAGE_NT_HEADERS64 *)(file+0x88);assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));member.headers_original=h;
+ member.sections_offset+=sizeof(IMAGE_SECTION_HEADER);assert(!sl_win_query_pe_source_matches(&row,&member,&cost,&failure));
+#undef PE_ROW
+}
 
 void sl_win_query_profile_source_refusal_vectors(
  const sl_win_query_profile_source *genuine,

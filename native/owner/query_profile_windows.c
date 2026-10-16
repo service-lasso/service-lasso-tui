@@ -1,5 +1,6 @@
 #ifdef _WIN32
 #include "query_profile_windows.h"
+#include "query_profile_pe_windows.h"
 #ifndef SERVICE_LASSO_PRODUCT_HELD_FILE_HEADER
 #error exact source-qualified CLI held-file header required
 #endif
@@ -83,6 +84,92 @@ static int hash_inside(const void *body,size_t n,const sl_win_query_hash_source 
  for(size_t i=0;i<h->count;i++)if(!contains(body,n,h->sids_original[i].original,h->sids_original[i].bytes))return 0;
  return 1;
 }
+static int name(const sl_win_query_semantic_row *,const WCHAR *,size_t);
+static uint32_t read32(const unsigned char *p){return (uint32_t)p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24;}
+static uint64_t read64(const unsigned char *p){return read32(p)|(uint64_t)read32(p+4)<<32;}
+static int claim(const sl_win_query_semantic_row *r,const sl_win_query_ace_source *a){
+ const sl_win_query_claim_source *c=&a->resource_attribute;size_t bytes;
+ const unsigned char *base=a->payload_original;const CLAIM_SECURITY_ATTRIBUTE_RELATIVE_V1 *h=c->original;
+ if((const void *)h!=(const void *)base||!aligned(h,_Alignof(CLAIM_SECURITY_ATTRIBUTE_RELATIVE_V1))||
+    !contains(base,a->payload_extent,h,offsetof(CLAIM_SECURITY_ATTRIBUTE_RELATIVE_V1,Values))||
+    c->value_count!=h->ValueCount||c->value_count>(SIZE_MAX - offsetof(CLAIM_SECURITY_ATTRIBUTE_RELATIVE_V1,Values))/sizeof(DWORD))return 0;
+ bytes=offsetof(CLAIM_SECURITY_ATTRIBUTE_RELATIVE_V1,Values)+c->value_count*sizeof(DWORD);
+ if(!contains(base,a->payload_extent,h,bytes)||!name(r,c->name_original,c->name_units)||
+    !contains(base,a->payload_extent,c->name_original,c->name_units*sizeof(WCHAR))||
+    h->Name!=(uintptr_t)c->name_original-(uintptr_t)base)return 0;
+ switch(h->ValueType){
+ case CLAIM_SECURITY_ATTRIBUTE_TYPE_INT64:case CLAIM_SECURITY_ATTRIBUTE_TYPE_UINT64:case CLAIM_SECURITY_ATTRIBUTE_TYPE_BOOLEAN:
+ case CLAIM_SECURITY_ATTRIBUTE_TYPE_STRING:case CLAIM_SECURITY_ATTRIBUTE_TYPE_SID:case CLAIM_SECURITY_ATTRIBUTE_TYPE_OCTET_STRING:break;
+ default:return 0;
+ }
+ if(c->value_count&&(!aligned(c->values_original,_Alignof(sl_win_query_claim_value_source))||
+    !array(c->value_count,sizeof(*c->values_original),&bytes)||!covered(r,c->values_original,bytes)))return 0;
+ for(size_t i=0;i<c->value_count;i++){
+  const sl_win_query_claim_value_source *v=&c->values_original[i];
+  uint32_t offset=read32(base+offsetof(CLAIM_SECURITY_ATTRIBUTE_RELATIVE_V1,Values)+i*sizeof(DWORD));
+  if(!declared(r,v->source_original)||!contains(base,a->payload_extent,v->original,v->bytes)||
+     offset!=(uintptr_t)v->original-(uintptr_t)base||!covered(r,v->original,v->bytes))return 0;
+  switch(h->ValueType){
+  case CLAIM_SECURITY_ATTRIBUTE_TYPE_INT64:case CLAIM_SECURITY_ATTRIBUTE_TYPE_UINT64:
+   if(v->bytes!=sizeof(uint64_t))return 0;break;
+  case CLAIM_SECURITY_ATTRIBUTE_TYPE_BOOLEAN:
+   if(v->bytes!=sizeof(uint64_t)||read64(v->original)>1)return 0;break;
+  case CLAIM_SECURITY_ATTRIBUTE_TYPE_STRING:{
+   if(v->bytes%sizeof(WCHAR)||!aligned(v->original,_Alignof(WCHAR)))return 0;
+   const WCHAR *s=(const WCHAR *)v->original;size_t units=v->bytes/sizeof(WCHAR);
+   if(!units||s[units-1])return 0;for(size_t j=0;j+1<units;j++)if(!s[j])return 0;break;
+  }
+  case CLAIM_SECURITY_ATTRIBUTE_TYPE_SID:
+   if(v->bytes<sizeof(DWORD)+offsetof(SID,SubAuthority)||read32(v->original)!=v->bytes-sizeof(DWORD)||
+      v->original[sizeof(DWORD)]!=SID_REVISION||v->original[sizeof(DWORD)+1]>SID_MAX_SUB_AUTHORITIES||
+      v->bytes-sizeof(DWORD)!=offsetof(SID,SubAuthority)+(size_t)v->original[sizeof(DWORD)+1]*sizeof(DWORD))return 0;break;
+  case CLAIM_SECURITY_ATTRIBUTE_TYPE_OCTET_STRING:
+   if(v->bytes<sizeof(DWORD)||read32(v->original)!=v->bytes-sizeof(DWORD))return 0;break;
+  default:return 0; /* Exact MS-DTYP relative source cases, not token-claim evaluation. */
+  }
+ }
+ return 1;
+}
+int sl_win_query_ace_source_matches(const sl_win_query_semantic_row *r,const sl_win_query_ace_source *a){
+ if(!r||!a)return 0;
+ const ACE_HEADER *h=a->original;size_t offset=offsetof(ACCESS_ALLOWED_ACE,SidStart);int object=0,payload=0,resource=0;
+ if(!covered(r,a,sizeof(*a))||!declared(r,a->source_original)||!aligned(h,_Alignof(ACCESS_ALLOWED_ACE))||a->bytes%sizeof(DWORD)||
+    !covered(r,h,a->bytes)||a->bytes<offset+offsetof(SID,SubAuthority)||h->AceSize!=a->bytes||
+    a->mask_original!=(const ACCESS_MASK *)((const unsigned char *)h+offsetof(ACCESS_ALLOWED_ACE,Mask)))return 0;
+ switch(h->AceType){
+ case ACCESS_ALLOWED_ACE_TYPE:case ACCESS_DENIED_ACE_TYPE:case SYSTEM_AUDIT_ACE_TYPE:case SYSTEM_ALARM_ACE_TYPE:
+ case SYSTEM_MANDATORY_LABEL_ACE_TYPE:case SYSTEM_SCOPED_POLICY_ID_ACE_TYPE:case SYSTEM_PROCESS_TRUST_LABEL_ACE_TYPE:break;
+ case ACCESS_ALLOWED_OBJECT_ACE_TYPE:case ACCESS_DENIED_OBJECT_ACE_TYPE:case SYSTEM_AUDIT_OBJECT_ACE_TYPE:case SYSTEM_ALARM_OBJECT_ACE_TYPE:object=1;break;
+ case ACCESS_ALLOWED_CALLBACK_ACE_TYPE:case ACCESS_DENIED_CALLBACK_ACE_TYPE:case SYSTEM_AUDIT_CALLBACK_ACE_TYPE:case SYSTEM_ALARM_CALLBACK_ACE_TYPE:
+ case SYSTEM_ACCESS_FILTER_ACE_TYPE:payload=1;break;
+ case ACCESS_ALLOWED_CALLBACK_OBJECT_ACE_TYPE:case ACCESS_DENIED_CALLBACK_OBJECT_ACE_TYPE:
+ case SYSTEM_AUDIT_CALLBACK_OBJECT_ACE_TYPE:case SYSTEM_ALARM_CALLBACK_OBJECT_ACE_TYPE:object=payload=1;break;
+ case SYSTEM_RESOURCE_ATTRIBUTE_ACE_TYPE:payload=resource=1;break;
+ default:return 0; /* Unknown/legacy compound form needs its actual365 source rule/native policy case; never header-only admission. */
+ }
+ if(object){
+  if(a->object_flags_original!=(const DWORD *)((const unsigned char *)h+offsetof(ACCESS_ALLOWED_OBJECT_ACE,Flags))||
+     !contains(h,a->bytes,a->object_flags_original,sizeof(DWORD))||
+     (*a->object_flags_original&~(ACE_OBJECT_TYPE_PRESENT|ACE_INHERITED_OBJECT_TYPE_PRESENT)))return 0;
+  offset=offsetof(ACCESS_ALLOWED_OBJECT_ACE,ObjectType);
+  if(*a->object_flags_original&ACE_OBJECT_TYPE_PRESENT){
+   if(a->object_type_original!=(const GUID *)((const unsigned char *)h+offset)||!contains(h,a->bytes,a->object_type_original,sizeof(GUID)))return 0;
+   offset+=sizeof(GUID);
+  }else if(a->object_type_original)return 0;
+  if(*a->object_flags_original&ACE_INHERITED_OBJECT_TYPE_PRESENT){
+   if(a->inherited_object_type_original!=(const GUID *)((const unsigned char *)h+offset)||!contains(h,a->bytes,a->inherited_object_type_original,sizeof(GUID)))return 0;
+   offset+=sizeof(GUID);
+  }else if(a->inherited_object_type_original)return 0;
+ }else if(a->object_flags_original||a->object_type_original||a->inherited_object_type_original)return 0;
+ if(!a->sid.original||!sid(r,&a->sid)||!contains(h,a->bytes,a->sid.original,a->sid.bytes)||
+    (const unsigned char *)a->sid.original!=(const unsigned char *)h+offset)return 0;
+ offset+=a->sid.bytes;
+ if(!payload)return offset==a->bytes&&!a->payload_original&&!a->payload_extent&&!a->payload_source&&zero(&a->resource_attribute,sizeof(a->resource_attribute));
+ if(offset==a->bytes)return !resource&&!a->payload_original&&!a->payload_extent&&!a->payload_source&&zero(&a->resource_attribute,sizeof(a->resource_attribute));
+ if(a->payload_original!=(const unsigned char *)h+offset||a->payload_extent!=a->bytes-offset||
+    !declared(r,a->payload_source)||!covered(r,a->payload_original,a->payload_extent))return 0;
+ return resource?claim(r,a):zero(&a->resource_attribute,sizeof(a->resource_attribute));
+}
 static int principal_case(const sl_win_query_semantic_row *r,const sl_win_query_principal_case *p,uint64_t *dimension){
  size_t bytes;
  if(!declared(r,p->source_original)||!p->effective_original||!p->primary_original||
@@ -125,14 +212,15 @@ static int principal_case(const sl_win_query_semantic_row *r,const sl_win_query_
   if(d->Dacl){
    const ACL *acl=p->dacl_original;size_t cursor=sizeof(*acl);
    if(!aligned(acl,_Alignof(ACL))||!contains(p->descriptor_bytes_original,p->descriptor_extent,acl,sizeof(*acl))||
+      (acl->AclRevision!=ACL_REVISION&&acl->AclRevision!=ACL_REVISION_DS)||
       d->Dacl!=(uintptr_t)acl-(uintptr_t)d||acl->AceCount!=p->ace_count||
       acl->AclSize<sizeof(*acl)||!contains(p->descriptor_bytes_original,p->descriptor_extent,acl,acl->AclSize))return 0;
    if(p->ace_count&&(!aligned(p->aces_original,_Alignof(sl_win_query_ace_source))||!array(p->ace_count,sizeof(*p->aces_original),&bytes)||!covered(r,p->aces_original,bytes)))return 0;
    for(size_t i=0;i<p->ace_count;i++){
     const sl_win_query_ace_source *v=&p->aces_original[i];
-    if(!declared(r,v->source_original)||!contains(acl,acl->AclSize,v->original,v->bytes)||
-       !aligned(v->original,_Alignof(ACE_HEADER))||v->bytes<sizeof(ACE_HEADER)||v->original->AceSize!=v->bytes||
+    if(!contains(acl,acl->AclSize,v->original,v->bytes)||!sl_win_query_ace_source_matches(r,v)||
        (const unsigned char *)v->original!=(const unsigned char *)acl+cursor||v->bytes>acl->AclSize-cursor)return 0;
+    if(v->object_flags_original&&acl->AclRevision!=ACL_REVISION_DS)return 0;
     cursor+=v->bytes;
    }
    if(cursor>acl->AclSize)return 0;
@@ -165,6 +253,7 @@ static int name(const sl_win_query_semantic_row *r,const WCHAR *p,size_t units){
 static int image(const sl_win_query_semantic_row *r,uint64_t *dimension){
  const sl_win_query_image_geometry *g=&r->source.image;size_t bytes;
  uint64_t module_units=0,mapped_units=0,file_bytes=0,memory_bytes=0,modules=0;
+ struct slcli_bq_resource_cost closure_cost={0},closure_failure={0};
  if(!declared(r,g->native_layout_source)||!g->mapping_count||g->mapping_count-1>UINT32_MAX||!aligned(g->members_original,_Alignof(sl_win_query_image_member))||!array(g->member_count,sizeof(*g->members_original),&bytes)||
     !covered(r,g->members_original,bytes)||!aligned(g->mappings_original,_Alignof(sl_win_query_mapping_source))||!array(g->mapping_count,sizeof(*g->mappings_original),&bytes)||
     !covered(r,g->mappings_original,bytes)||!array(g->loader_writer_count,sizeof(*g->loader_writer_original),&bytes)||
@@ -192,6 +281,7 @@ static int image(const sl_win_query_semantic_row *r,uint64_t *dimension){
    if(s->PointerToRawData>m->file_extent||s->SizeOfRawData>m->file_extent-s->PointerToRawData||
       s->VirtualAddress>h->OptionalHeader.SizeOfImage||s->Misc.VirtualSize>h->OptionalHeader.SizeOfImage-s->VirtualAddress)return 0;
   }
+  if(!sl_win_query_pe_source_matches(r,m,&closure_cost,&closure_failure))return 0;
   if(m->module_name_units>module_units)module_units=m->module_name_units;
   if(m->mapped_name_units>mapped_units)mapped_units=m->mapped_name_units;
   if(!add(&file_bytes,m->file_extent))return 0;
@@ -225,6 +315,7 @@ static int image(const sl_win_query_semantic_row *r,uint64_t *dimension){
  default:return 0;
  }
  if(!*dimension)return 0;
+ if(r->role==SL_WIN_QUERY_IMAGE_MODULES&&(!cost_covers(&r->cost,&closure_cost)||!cost_covers(&r->failed_overlap_cost,&closure_failure)))return 0;
  if((r->role==SL_WIN_QUERY_ARGUMENT_MODULE||r->role==SL_WIN_QUERY_IMAGE_NAME)&&*dimension>MAXDWORD)return 0;
  if(r->role==SL_WIN_QUERY_IMAGE_MODULES&&*dimension>MAXDWORD/sizeof(HMODULE))return 0;
  return 1;
@@ -260,6 +351,13 @@ static int source_shape(const sl_win_query_profile_source *s){
      !range(r->inputs_original,bytes)||(uintptr_t)r->inputs_original%_Alignof(struct slcli_product_initial_windows_source_span))return 0;
   for(size_t j=0;j<r->input_count;j++)if(!span(&r->inputs_original[j]))return 0;
   if(!declared(r,r->source_original))return 0;
+  if(r->arm==SL_WIN_QUERY_IMAGE){
+   const sl_win_query_image_geometry *g=&r->source.image,*original=&s->rows_original[SL_WIN_QUERY_ARGUMENT_MODULE].source.image;
+   if(g->members_original!=original->members_original||g->member_count!=original->member_count||
+      g->mappings_original!=original->mappings_original||g->mapping_count!=original->mapping_count||
+      g->loader_writer_original!=original->loader_writer_original||g->loader_writer_count!=original->loader_writer_count||
+      g->native_layout_source!=original->native_layout_source)return 0;
+  }
  }
  return 1;
 }

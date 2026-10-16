@@ -91,7 +91,8 @@ not a positive fallback. Factory control is not silently included in the 22 coun
 the complete roster adds it and every other non-startup actor independently.
 
 All capacities above require actual source operands. Existing schema3 supplies
-only query capacities, moduleUnitsIncludingNUL and writer stack/turn capacity,
+query capacities, moduleUnitsIncludingNUL, writer stack/turn capacity and
+creatorImages module/name/file/memory/region dimensions,
 not the missing pipe/ACL/token-name/attribute/service/cancellation/source bounds.
 Missing operands refuse; guessed defaults and successful probe sizes cannot
 retroactively finance the first query.
@@ -182,3 +183,30 @@ not names-only product completion. Implementation/header shape may proceed only
 after disposition and actual CLI typed operand roster. No target parser/import/
 generator/compiler/linker/build/test/native operation was executed here. No
 profile/header/hash/mock supplies native authority or release activation.
+
+
+## Selected bounded pure source implementation after acf intent GO
+
+Fresh DIFFERENT complete acf intent review returned GO. The source body now
+implements candidate_layout_windows.h/.c checked full-role geometry, separate
+physical cost subtotals/aggregate, retained source descriptor snapshots and
+all-source/control/copy exclusions. candidate_prepare_windows.h/.c binds only
+existing native startup/debug/profile typed views over fresh disjoint backing,
+with no factory/startup/native operation dispatch. Generated Go/query/helper
+geometry stays on the complete retained plan; authentic compiled source/profile
+and full physical/native binding remain missing operands, never inferred.
+
+The per-entry factory control is separate from its single external turns array;
+its binder preserves all original backing/freshness checks and now independently
+excludes BOTH control and turns from all20 other startup backings. The Windows
+source roster includes these source-only layout/preparation translations.
+
+New C fixtures cover checked geometry/cost overflow, missing role/category/cost,
+changed source descriptors, source/output alias and untouched output on denial,
+typed view mismatch, command capacity, fresh backing, non-dispatched startup and
+factory count/stack/turn alias/once-use. They remain UNRUN here: no matching
+native compiler/test command was selected or executed. Existing source CI does
+not automatically execute these native C fixtures. Actual CLI header/operation/
+family binding and complete runtime/helper/kernel cost acquisition remain open;
+no native issuer/profile/root/family/entry activation is claimed. Full known
+source freezes for fresh ENTIRE review before new actual-input admission.

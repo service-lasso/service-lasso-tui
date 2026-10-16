@@ -122,6 +122,8 @@ const roster = {
     "native/owner/terminal_linux.c"
   ],
   "windowsOwner": [
+    "native/owner/candidate_layout_windows.c",
+    "native/owner/candidate_prepare_windows.c",
     "native/owner/argument_sender_windows.c",
     "native/owner/argument_sender_factory_windows.c",
     "native/owner/argument_root_windows.c",

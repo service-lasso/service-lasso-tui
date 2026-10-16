@@ -174,3 +174,7 @@ Exact1f83 pair intent and exact5f0 receipt intent received independent INTENT_GO
 
 ### Issue1 complete Windows consumer quantitative pre-code
 Parent selected TUI-owned complete Windows layout/cost/source/operation/deadline/family mapping in TUI1-WINDOWS-CONSUMER-LAYOUT-PRECODE-20261016.md for bounded intent review before body. It maps exact21 external startup backing regions plus separate charged startup control (22 startup storage regions), separately charged factory control and turns exactly once, native/debug/query/helper/Go/OS/failure-overlap actors, pure checked geometry versus actual CLI child-local financing/binding and exact still-missing source operands. No Linux casts, schema3-as-whole-profile, new clock, fictional issuer, activation or local execution is selected.
+
+
+### Issue1 selected bounded Windows pure layout source
+After fresh DIFFERENT acf INTENT_GO, candidate_layout_windows.h/.c and candidate_prepare_windows.h/.c implement pure checked role/cost geometry, retained source/exclusion checks and non-dispatched native typed views; per-entry factory control/turns replace hidden static backing with exact21external/22startup/control-separate/turnsonce accounting. C refusal/prebinding fixtures are UNRUN and not automatically run by existing source CI. Complete actual CLI typed acquisition/operation/family/deadline/profile/helper binding remains missing, source-only no activation. Fresh ENTIRE review and complete actual-input admission remain required.

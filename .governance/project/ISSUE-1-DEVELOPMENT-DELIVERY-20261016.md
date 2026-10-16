@@ -192,6 +192,50 @@ inputs, preserving overlay tests and provenance. That boundary remains OPEN.
 
 ## Validation and custody
 
+Exact `d4b978619916bb752ee5ce72e0f2c722481d768d` entire49-file independent
+review returned bounded SOURCE_GO. Natural run38840120543 Windows116778041140,
+Linux116778041444 and both cross-compiles succeeded. Windows genuine EOF
+fixture passed in57.67ms, actual extra-pipe/error/foreign-binding cuts passed,
+and final source script group passed93/93. A later group had85 passes/1skip,
+which is not an all-native qualification. Required Linux native PTY
+job116778508645 is RUNNING; the combined step includes builds AND actual native
+preflight/five-action calls, so its fine phase is unknown until actual log
+evidence. The skipped deferred macOS matrix row is separate and must not be
+reported as the required Linux job. Mandatory owned GOROOT profile gate still
+fails closed. No publication/native-operator result is inferred.
+
+Parent selected source-only continuation while that immutable hosted job runs:
+[TUI1-STATIC-OWNED-CALLER-20261016.md](TUI1-STATIC-OWNED-CALLER-20261016.md)
+durably maps the two static generated caller helpers before implementation.
+They compose complete preeffect source/charge/copy/raw-input exclusions,
+compiled plan, SAME charge/public preparation and SAME ALREADY-CONSTRUCTED
+outer deadline/root/enrollment before existing dispatch. No clock is started
+or renewed in the helpers; no C main/_start/exported ABI/issuer is introduced.
+The genuine installer-owned containing reservation and operation-to-domain/
+charge relationship remain unavailable external call-control prerequisites,
+not authenticated by pointer equality, dimensions or serialized input.
+The actual generated-helper native C refusal fixture remains UNRUN and does
+not replace the still-required genuine prepared-owner/borrower fault matrix.
+
+The protected-publication document now matches the exact current scoped
+publisher's four required contexts, including owned GOROOT and scoped cross-
+compilation. Historical three-OS/five-check policy is retained separately;
+macOS stays N/A. No provider settings or credential is changed. Local source
+edits left the hosted head unchanged during the initial hold; the later parent
+disposition below lifts that hold for the two complete source units. Fresh
+entire-patch review and actual-input/exact-command admission remain owed for
+changed bytes.
+
+For the next exact head, parent also selected bounded literal public markers
+around the existing seven prepare_phase occurrences and actual preflight/
+five-action invocations in both identical required/deferred native bodies.
+Markers contain only source-owned ordinal/phase and enter/return literals;
+they print no path, argument, identity, payload, error or result. Existing
+commands, order, status capture, deadlines, timeouts and acceptance are intact.
+Under the existing errexit behavior, a failed command may prevent a return
+marker; neither marker proves PASS/issuer/native qualification. These markers
+cannot retroactively establish the fine phase of the current running d4b job.
+
 Exact `8aae573fd00cae13564241bd54d75e9340203d0d` natural run38839222876
 again passed Linux and both cross-compiles, but Windows116775203417 failed the
 SAME EOF fixture with the same30s timeout. This is consecutive EOF failure2,
@@ -288,3 +332,31 @@ Retain source under this owner for unfinished issue1/PR34. Cleanup trigger is
 verified landing, closed PR, clean/pushed status and policy ownership/lock/process
 checks. This continuation has created no disposable build/dependency/scratch
 output. Every intentional source commit is immediately pushed.
+
+### Selected existing Windows plan executor (local source only)
+
+Parent selected the actual executor of existing windowsPayloadFirstBuildPlan;
+precode/ownership mapping is TUI1-WINDOWS-PLAN-EXECUTOR-20261016.md, within
+SPEC004's held original build/native-owner path. The source operational body
+and refusal fixture are scripts/windows-payload-first-executor.mjs and its
+test. They consume required actual profile/entry/tool/transitive originals,
+retain full readbacks/native identity and actual argv/environment/file-backed
+streams/error/exit/close, execute emitter/payload/root/closed C roster/link,
+and retain live attempt originals on success or failure. Explicit after-last-
+borrower close is cached once; failed partial outputs and cleanup failures
+are retained. Refusal fixtures and both matching workflow inclusions are UNRUN.
+
+This new unit is separate from the preceding six-file static composition/doc/
+phase-marker unit. Actual genuine native compiler-family/operation custody and
+entry producer remain unconnected; direct child close/hash/plan supplies none
+of that authority. No boolean or generic callback substitutes for the existing
+typed binding. Native activation stays closed; profile acquisition remains CLI
+owned, and actual pair/schema4/Core119 consumer wiring is a subsequent unit.
+Parent lifted the earlier coordination hold after both meaningful source units
+completed: self-review, cohesive commit and immediate normal push are selected.
+No manual cancel/rerun, concurrency/timeout/settings changes or skipped gates
+are selected. At04:26UTC the old d4b job116778508645 was still RUNNING in the
+combined step, later adversaries pending, fine phase UNKNOWN. A normal-policy
+cancellation following the new push is unqualified, never a success. New exact-
+head natural CI and fresh DIFFERENT ENTIRE review are required. No local target
+execution, genuine entry/family activation or native qualification is claimed.

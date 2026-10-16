@@ -147,7 +147,7 @@ jobs:
           python scripts/producer-child-continuity.test.py
           python scripts/posix-read-continuity.test.py
           node --test scripts/release-probe-finalization.test.mjs
-          node --test scripts/held-overlay-inputs.test.mjs scripts/linux-candidate-build-plan.test.mjs scripts/candidate-profile-source.test.mjs
+          node --test scripts/held-overlay-inputs.test.mjs scripts/linux-candidate-build-plan.test.mjs scripts/candidate-profile-source.test.mjs scripts/windows-payload-first-executor.test.mjs
           node --test scripts/scoped-candidate.test.mjs scripts/native-producer-child.test.mjs scripts/native-producer-handoff.test.mjs scripts/required-native-dependency.test.mjs
           node --test scripts/tui20-native-core.recovery.test.mjs scripts/verify-tui20-native-public-receipt.test.mjs scripts/verify-real-core-conpty.test.mjs scripts/verify-release-asset-conpty.test.mjs scripts/verify-candidate-publication.test.mjs scripts/verify-candidate-publication-fresh-job.test.mjs
       - name: Test actual native custody producer and receipt consumer
@@ -254,7 +254,7 @@ jobs:
           python scripts/producer-child-continuity.test.py
           python scripts/posix-read-continuity.test.py
           node --test scripts/release-probe-finalization.test.mjs
-          node --test scripts/held-overlay-inputs.test.mjs scripts/linux-candidate-build-plan.test.mjs scripts/candidate-profile-source.test.mjs
+          node --test scripts/held-overlay-inputs.test.mjs scripts/linux-candidate-build-plan.test.mjs scripts/candidate-profile-source.test.mjs scripts/windows-payload-first-executor.test.mjs
           node --test scripts/scoped-candidate.test.mjs scripts/native-producer-child.test.mjs scripts/native-producer-handoff.test.mjs scripts/required-native-dependency.test.mjs
           node --test scripts/tui20-native-core.recovery.test.mjs scripts/verify-tui20-native-public-receipt.test.mjs scripts/verify-real-core-conpty.test.mjs scripts/verify-release-asset-conpty.test.mjs scripts/verify-candidate-publication.test.mjs scripts/verify-candidate-publication-fresh-job.test.mjs
       - name: Test actual native custody producer and receipt consumer
@@ -455,24 +455,42 @@ jobs:
           PY
           TUI20_PHASE
           }
+          printf '%s\n' 'tui20-native prepare-01-preflight enter'
           prepare_phase "$attempt/preflight"
+          printf '%s\n' 'tui20-native prepare-01-preflight return'
+          printf '%s\n' 'tui20-native prepare-02-five-actions enter'
           prepare_phase "$attempt/five-actions"
+          printf '%s\n' 'tui20-native prepare-02-five-actions return'
+          printf '%s\n' 'tui20-native prepare-03-finalization-failure enter'
           prepare_phase "$attempt/finalization-failure"
+          printf '%s\n' 'tui20-native prepare-03-finalization-failure return'
+          printf '%s\n' 'tui20-native prepare-04-adverse-controller enter'
           prepare_phase "$attempt/adverse-controller"
+          printf '%s\n' 'tui20-native prepare-04-adverse-controller return'
+          printf '%s\n' 'tui20-native prepare-05-adverse-owner-death enter'
           prepare_phase "$attempt/adverse-owner-death"
+          printf '%s\n' 'tui20-native prepare-05-adverse-owner-death return'
+          printf '%s\n' 'tui20-native prepare-06-handoff-timeout enter'
           prepare_phase "$attempt/handoff-timeout"
+          printf '%s\n' 'tui20-native prepare-06-handoff-timeout return'
+          printf '%s\n' 'tui20-native prepare-07-shutdown-pipe-failure enter'
           prepare_phase "$attempt/shutdown-pipe-failure"
+          printf '%s\n' 'tui20-native prepare-07-shutdown-pipe-failure return'
           phase="$attempt/preflight"
           binary="$phase/service-lasso-tui"
            set +e
+           printf '%s\n' 'tui20-native invoke-01-preflight enter'
            SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json" node scripts/tui20-native-core.mjs --root "$phase" --executable "$binary" --source-commit "$CI_SOURCE_SHA" --core-commit "$CORE_COMMIT" --helper scripts/tui20-native-posix-five-action.py --invalid-ready-receipt true
            preflight_status=$?
+           printf '%s\n' 'tui20-native invoke-01-preflight return'
            set -e
            test "$preflight_status" -ne 0
            node -e 'const fs=require("fs"); const root=process.argv[1]; const closed=JSON.parse(fs.readFileSync(root+"/owner-private-closed.json","utf8")); const projection=JSON.parse(fs.readFileSync(root+"/native-public-projection.json","utf8")); if (closed.reason!=="owner_reported_failure" || !closed.actualExitObserved || closed.runtimeChildExit!=="terminal_exited_zero" || projection.result!=="failed" || projection.ownedRuntimeClosed!==true) process.exit(1);' "$phase"
           phase="$attempt/five-actions"
           binary="$phase/service-lasso-tui"
+          printf '%s\n' 'tui20-native invoke-02-five-actions enter'
           SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json" node scripts/tui20-native-core.mjs --root "$phase" --executable "$binary" --source-commit "$CI_SOURCE_SHA" --core-commit "$CORE_COMMIT" --helper scripts/tui20-native-posix-five-action.py
+          printf '%s\n' 'tui20-native invoke-02-five-actions return'
       - name: Retain actual runtime ownership on failed handoff and shutdown pipe
         shell: bash
         run: |
@@ -735,24 +753,42 @@ jobs:
           PY
           TUI20_PHASE
           }
+          printf '%s\n' 'tui20-native prepare-01-preflight enter'
           prepare_phase "$attempt/preflight"
+          printf '%s\n' 'tui20-native prepare-01-preflight return'
+          printf '%s\n' 'tui20-native prepare-02-five-actions enter'
           prepare_phase "$attempt/five-actions"
+          printf '%s\n' 'tui20-native prepare-02-five-actions return'
+          printf '%s\n' 'tui20-native prepare-03-finalization-failure enter'
           prepare_phase "$attempt/finalization-failure"
+          printf '%s\n' 'tui20-native prepare-03-finalization-failure return'
+          printf '%s\n' 'tui20-native prepare-04-adverse-controller enter'
           prepare_phase "$attempt/adverse-controller"
+          printf '%s\n' 'tui20-native prepare-04-adverse-controller return'
+          printf '%s\n' 'tui20-native prepare-05-adverse-owner-death enter'
           prepare_phase "$attempt/adverse-owner-death"
+          printf '%s\n' 'tui20-native prepare-05-adverse-owner-death return'
+          printf '%s\n' 'tui20-native prepare-06-handoff-timeout enter'
           prepare_phase "$attempt/handoff-timeout"
+          printf '%s\n' 'tui20-native prepare-06-handoff-timeout return'
+          printf '%s\n' 'tui20-native prepare-07-shutdown-pipe-failure enter'
           prepare_phase "$attempt/shutdown-pipe-failure"
+          printf '%s\n' 'tui20-native prepare-07-shutdown-pipe-failure return'
           phase="$attempt/preflight"
           binary="$phase/service-lasso-tui"
            set +e
+           printf '%s\n' 'tui20-native invoke-01-preflight enter'
            SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json" node scripts/tui20-native-core.mjs --root "$phase" --executable "$binary" --source-commit "$CI_SOURCE_SHA" --core-commit "$CORE_COMMIT" --helper scripts/tui20-native-posix-five-action.py --invalid-ready-receipt true
            preflight_status=$?
+           printf '%s\n' 'tui20-native invoke-01-preflight return'
            set -e
            test "$preflight_status" -ne 0
            node -e 'const fs=require("fs"); const root=process.argv[1]; const closed=JSON.parse(fs.readFileSync(root+"/owner-private-closed.json","utf8")); const projection=JSON.parse(fs.readFileSync(root+"/native-public-projection.json","utf8")); if (closed.reason!=="owner_reported_failure" || !closed.actualExitObserved || closed.runtimeChildExit!=="terminal_exited_zero" || projection.result!=="failed" || projection.ownedRuntimeClosed!==true) process.exit(1);' "$phase"
           phase="$attempt/five-actions"
           binary="$phase/service-lasso-tui"
+          printf '%s\n' 'tui20-native invoke-02-five-actions enter'
           SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json" node scripts/tui20-native-core.mjs --root "$phase" --executable "$binary" --source-commit "$CI_SOURCE_SHA" --core-commit "$CORE_COMMIT" --helper scripts/tui20-native-posix-five-action.py
+          printf '%s\n' 'tui20-native invoke-02-five-actions return'
       - name: Retain actual runtime ownership on failed handoff and shutdown pipe
         shell: bash
         run: |

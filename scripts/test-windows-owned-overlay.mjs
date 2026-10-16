@@ -1,13 +1,13 @@
 import {mkdir, writeFile} from 'node:fs/promises';
-import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import path from 'node:path';
 import {windowsOwnedOverlayMappings} from './native-owner-build-plan.mjs';
 import {HeldOverlayInputs,requireEmittedQueryPair} from './held-overlay-inputs.mjs';
+import {runOwnedOverlayCommand} from './owned-overlay-command.mjs';
 
 // Actual invocation-local failures are kept without inspecting an opaque error.
 // This is not independent external custody or native qualification.
-const privateOwner={primaryPresent:false,primaryOriginal:null,secondaryOriginals:[]};
+const privateOwner={primaryPresent:false,primaryOriginal:null,secondaryOriginals:[],commandOwners:[]};
 async function run(){
 
 // Exact-command admission and genuine provider/profile ownership belong to the
@@ -31,26 +31,19 @@ async function original(file) {
   return row.bytes;
 }
 async function command(program, argv) {
-  await heldInputs.revalidate();
   const index=record.commands.length;
   const row={command:program, argv, cwd:sourceRoot, environment, state:'starting'};
   record.commands.push(row);
-  const stdoutChunks=[], stderrChunks=[];
-  const child=spawn(program, argv, {cwd:sourceRoot, env:environment, stdio:['ignore','pipe','pipe'], windowsHide:true});
-  child.stdout.on('data', bytes=>{stdoutChunks.push(bytes);});
-  child.stderr.on('data', bytes=>{stderrChunks.push(bytes);});
+  const completion={command:program,argv:[...argv],cwd:sourceRoot,environment,
+    stdoutPath:path.join(outputRoot,index+'.stdout'),stderrPath:path.join(outputRoot,index+'.stderr')};
+  privateOwner.commandOwners.push(completion); // strong original before spawn
   try {
-    await new Promise((resolve,reject)=>{
-      child.once('error',original=>{row.state='spawn-failed';privateOwner.secondaryOriginals.push(original);reject(original);});
-      child.once('close',(code,signal)=>{row.exitCode=code;row.signal=signal;if(row.state!=='spawn-failed')row.state='closed';resolve();});
-    });
+    const bytes=await runOwnedOverlayCommand(completion,heldInputs);
+    return new TextDecoder('utf-8',{fatal:true}).decode(bytes);
   } finally {
-    await writeFile(path.join(outputRoot, index+'.stdout'),Buffer.concat(stdoutChunks),{flag:'wx'});
-    await writeFile(path.join(outputRoot, index+'.stderr'),Buffer.concat(stderrChunks),{flag:'wx'});
+    row.state=completion.closeObserved?'closed':'not-started-or-unresolved';
+    if(completion.closeOriginal){row.exitCode=completion.closeOriginal.code;row.signal=completion.closeOriginal.signal;}
   }
-  if(row.exitCode!==0||row.signal!==null)throw new Error('overlay command failed: '+index);
-  await heldInputs.revalidate();
-  return new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(stdoutChunks));
 }
 try {
   await original(go);
@@ -59,6 +52,7 @@ try {
   await original(path.join(sourceRoot,'toolchain-overlay/go1.26.0/go.mod'));
   await original(path.join(sourceRoot,'scripts/test-windows-owned-overlay.mjs'));
   await original(path.join(sourceRoot,'scripts/held-overlay-inputs.mjs'));
+  await original(path.join(sourceRoot,'scripts/owned-overlay-command.mjs'));
   record.phase='acquire-authentic-query-profile';
   const profileBytes=await original(queryProfile);
   record.phase='decode-authentic-query-profile';

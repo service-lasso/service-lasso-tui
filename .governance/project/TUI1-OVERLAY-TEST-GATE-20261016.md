@@ -40,3 +40,21 @@ review and new exact-command admission. Original positive native entry, complete
 Windows/Linux operator acceptance, protected DEV publication and identical-byte
 Core integration remain required. Existing PR34 is continued at clean 1a8fca3
 under the explicit parent ownership transfer; PR33 and its indexes stay retained.
+## Entire4fd8 completion and capture repair
+
+The different full55-file review found two P2 actual gate lifetime failures.
+Parent selected a bounded aggregate repair: a strongly rooted private command
+owner and the same actual child/transport completion algorithm now await real
+child close even after errors. Both raw captures are attempted independently;
+all error originals retain occurrence order and the first remains primary.
+Opaque originals stay in commandOwners, separate from serialized command
+metadata. Actual child close is not native family/issuer authority.
+
+The event-driven owned-overlay-command.test.mjs uses actual held files and
+children, deliberate actual transport destruction while real stdin keeps the
+child live, actual input release/close, failed spawn and real persistence
+failures. It checks held inputs remain open through close, both captures run,
+stderr bytes survive stdout failure and exact original identities persist.
+Tests are UNRUN locally; fresh exact-head CI/review/admission remain distinct.
+No timer/kill/retry/disposition, public authority, authentic profile or entry
+producer is introduced by this fix.

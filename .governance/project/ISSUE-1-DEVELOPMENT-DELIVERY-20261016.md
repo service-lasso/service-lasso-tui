@@ -360,3 +360,30 @@ combined step, later adversaries pending, fine phase UNKNOWN. A normal-policy
 cancellation following the new push is unqualified, never a success. New exact-
 head natural CI and fresh DIFFERENT ENTIRE review are required. No local target
 execution, genuine entry/family activation or native qualification is claimed.
+
+### Entire4fd8 review: two overlay command custody repairs
+
+Different ENTIRE55 source review returned SOURCE_NO_GO for two P2 findings
+in the existing matching-host overlay gate: child error rejected before actual
+close, permitting held input cleanup too early; stdout persistence failure
+skipped stderr and could replace an earlier actual failure. Parent selected
+one aggregate repair under the existing overlay-gate mapping.
+
+The gate now roots each private actual command completion owner before spawn.
+The shared owned-overlay-command body records actual child and transport
+errors, waits for the SAME actual child close, then independently attempts both
+raw captures and post-borrower input revalidation. First and later opaque
+originals retain observed order; no error original is serialized into the
+private metadata projection or public diagnostic. Direct-child close never
+settles native compiler-family or issuer custody. No timer/kill/retry or native
+authority is added. Existing gate cleanup runs only after this completion.
+
+UNRUN event-driven fixtures use real Node children, real held file originals,
+actual stdout destruction with the SAME controlled transport error, live input
+until deliberate release, real failed spawn, and native filesystem persistence
+failures. They require no settlement/input release before actual close, both
+capture attempts despite failures, complete actual stderr and exact first/later
+error identities. Both source-test job bodies include the same fixture. No
+local target execution/admission; each commit is immediately pushed and the
+new exact head requires fresh DIFFERENT ENTIRE review. Genuine query profile,
+actual entry and native family binding remain separate unresolved debt.

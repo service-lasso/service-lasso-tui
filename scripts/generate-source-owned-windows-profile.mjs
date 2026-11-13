@@ -52,7 +52,7 @@ const profile = {
   creatorImages: {
     moduleCapacity: '256',
     mappedNameUnitsIncludingNUL: 4096,
-    fileBytes: '67108864',
+    fileBytes: '15000000',
     memoryBytes: '268435456',
     memoryRegionCapacity: '4096',
     originalSHA256: hash('creatorImages'),

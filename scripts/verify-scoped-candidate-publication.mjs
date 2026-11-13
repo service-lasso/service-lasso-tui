@@ -35,7 +35,7 @@ function fixedArchiveAssets(version) { return REQUIRED_PLATFORMS.map(platform =>
 function fixedInventoryNames(version) { return [...fixedArchiveAssets(version).map(asset => asset.name), "SHA256SUMS.txt", "candidate-manifest.json"].sort(); }
 
 export function candidateIdentity({ sourceRef, sourceCommit, version, tag }) {
-  if (sourceRef !== "refs/heads/develop" || !SHA1.test(sourceCommit)) fail("candidate source must be the full develop commit");
+  if (!["refs/heads/develop", "refs/heads/main"].includes(sourceRef) || !SHA1.test(sourceCommit)) fail("candidate source must be the full develop or main commit");
   if (!/^\d{4}\.\d{1,2}\.\d{1,2}-[a-f0-9]{7}$/u.test(version) || version.slice(-7) !== sourceCommit.slice(0, 7)) fail("candidate version must bind the source short SHA");
   if (tag !== `candidate-${version}`) fail("candidate tag must bind the version");
   return { sourceRef, sourceCommit, version, tag };

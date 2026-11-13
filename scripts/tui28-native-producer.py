@@ -95,7 +95,7 @@ def _main_attempt(run):
         raise RuntimeError("held Go tool root shape denied")
     env.update({"GOROOT":goroot,"GOOS":"windows" if host=="win32" else "linux","GOARCH":"amd64","GOAMD64":"v1","GOENV":"off","GOTOOLCHAIN":"local","GOFIPS140":"off","GOEXPERIMENT":"","GOFLAGS":"","GOWORK":"off","CGO_ENABLED":"0","GOCACHEPROG":"","GOCACHE":os.path.join(root,"go-cache"),"GOMODCACHE":os.path.join(root,"go-modules"),"SERVICE_LASSO_WORKSPACE_ROOT":workspace,"SERVICE_LASSO_INSTANCE_REGISTRY_PATH":instances,"SERVICE_LASSO_HOST_PORT_REGISTRY_PATH":ports})
     commit=run([tools["git"],"rev-parse","HEAD"],source,env).decode().strip(); tree=run([tools["git"],"rev-parse","HEAD^{tree}"],source,env).decode().strip(); dirty=run([tools["git"],"status","--porcelain=v1","--untracked-files=all"],source,env)
-    if dirty or commit!=os.environ.get("GITHUB_SHA") or os.environ.get("GITHUB_REF")!="refs/heads/develop" or args.version.split("-")[-1]!=commit[:7]: raise RuntimeError("native clean source denied")
+    if dirty or commit!=os.environ.get("GITHUB_SHA") or os.environ.get("GITHUB_REF") not in ("refs/heads/develop","refs/heads/main") or args.version.split("-")[-1]!=commit[:7]: raise RuntimeError("native clean source denied")
     policy=os.path.join(source,".governance","project","ga-platform-scope.json")
     if file_hash(policy)!=POLICY: raise RuntimeError("native source policy denied")
     tracked=run([tools["git"],"ls-files","-z"],source,env).split(b"\0"); inventory=[]

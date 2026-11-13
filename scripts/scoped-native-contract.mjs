@@ -11,7 +11,7 @@ export const hash=bytes=>createHash("sha256").update(bytes).digest("hex");
 export function exact(value,keys){if(!value||typeof value!=="object"||Array.isArray(value)||Object.keys(value).sort().join("\0")!==[...keys].sort().join("\0"))fail();}
 export function byteRef(value){exact(value,["name","sha256","size"]);if(typeof value.name!=="string"||!/^[A-Za-z0-9._-]{1,200}$/u.test(value.name)||!/^[a-f0-9]{64}$/u.test(value.sha256)||!Number.isSafeInteger(value.size)||value.size<=0||value.size>1024*1024*1024)fail();return value;}
 export function assertRun(run){exact(run,["id","attempt","workflowSha"]);if(!Number.isSafeInteger(run.id)||run.id<=0||!Number.isSafeInteger(run.attempt)||run.attempt<=0||!/^[a-f0-9]{40}$/u.test(run.workflowSha))fail();return run;}
-export function assertSource(source){exact(source,["repository","commit","ref"]);if(source.repository!=="service-lasso/service-lasso-tui"||source.ref!=="refs/heads/develop"||!/^[a-f0-9]{40}$/u.test(source.commit))fail();return source;}
+export function assertSource(source){exact(source,["repository","commit","ref"]);if(source.repository!=="service-lasso/service-lasso-tui"||!["refs/heads/develop","refs/heads/main"].includes(source.ref)||!/^[a-f0-9]{40}$/u.test(source.commit))fail();return source;}
 export function nativeArtifactName(platform,run){if(!NATIVE_PLATFORMS.includes(platform))fail();assertRun(run);return `scoped-native-${platform}-${run.id}-${run.attempt}`;}
 export function assertNativeWrapper(value,{source,run,version,platform,bodies}) {
   const pair=value?.schema==='service-lasso.tui-native-candidate.v2';
@@ -35,7 +35,7 @@ export function assertNativeWrapper(value,{source,run,version,platform,bodies}) 
   if(inner.input.source.tuiCommit!==source.commit||inner.binary.sha256!==hash(binary)||inner.binary.size!==binary.length||inner.core.coreCommit!==CORE_COMMIT||inner.projection.result!=="succeeded"||inner.projection.actionsPassed!==true||inner.projection.ownedRuntimeClosed!==true)fail();
   return value;
 }
-export function assertProviderRun(provider,run,source){assertRun(run);assertSource(source);if(provider?.id!==run.id||provider.run_attempt!==run.attempt||provider.head_sha!==source.commit||provider.head_branch!=="develop"||provider.path!==".github/workflows/release-scoped.yml"||run.workflowSha!==source.commit)fail();}
+export function assertProviderRun(provider,run,source){assertRun(run);assertSource(source);if(provider?.id!==run.id||provider.run_attempt!==run.attempt||provider.head_sha!==source.commit||!["develop","main"].includes(provider.head_branch)||![".github/workflows/release-scoped.yml",".github/workflows/release-scoped-main.yml"].includes(provider.path)||run.workflowSha!==source.commit)fail();}
 export function assertProviderJob(job,platform,run,source,{terminal=true}={}) {
   if(!NATIVE_PLATFORMS.includes(platform)||job?.name!==`native-candidate (${platform})`||!Number.isSafeInteger(job.id)||job.id<=0||job.run_id!==run.id||job.run_attempt!==run.attempt||job.head_sha!==source.commit||!Array.isArray(job.labels)||!job.labels.includes(platform==="win32"?"windows-latest":"ubuntu-latest")||typeof job.runner_name!=="string"||!job.runner_name)fail();
   if(terminal?(job.status!=="completed"||job.conclusion!=="success"):job.status!=="in_progress")fail();return job;

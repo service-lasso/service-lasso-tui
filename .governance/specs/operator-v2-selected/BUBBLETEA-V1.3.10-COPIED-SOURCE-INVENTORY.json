@@ -1,0 +1,272 @@
+[
+  {
+    "path": ".gitattributes",
+    "length": 15,
+    "sha256": "1A6ECA2E3073F4B1668985D36A740AD5FA8447719ACEFB911C791CE12F72AD80"
+  },
+  {
+    "path": ".github/CODEOWNERS",
+    "length": 30,
+    "sha256": "F465F0CACC761BC0ECA7EF8BD83F7F8FBC21443D86EE0C9A2F29BE698D17C7CE"
+  },
+  {
+    "path": ".github/dependabot.yml",
+    "length": 1657,
+    "sha256": "6C373AB623058B7DA9B22577FE6108DE401B7C50A11EE4C4003B138617D0C4D5"
+  },
+  {
+    "path": ".github/ISSUE_TEMPLATE/bug_report.md",
+    "length": 828,
+    "sha256": "30D12D7F60156AE172284E3C143EC001ABF33360945028706BCA5C0ACB18CFDF"
+  },
+  {
+    "path": ".github/ISSUE_TEMPLATE/bug.yml",
+    "length": 1705,
+    "sha256": "BBFF73D675DE948B71AB5AECBB13FBE0FA76E243C468FF4B9CB11B540C468EA2"
+  },
+  {
+    "path": ".github/ISSUE_TEMPLATE/config.yml",
+    "length": 120,
+    "sha256": "9F5D79A1E3DFCCC50DF22D93C206D13D9320880AEE8A88B378A958BCBF114EE2"
+  },
+  {
+    "path": ".github/ISSUE_TEMPLATE/feature_request.md",
+    "length": 604,
+    "sha256": "72A5F467B083C24507B1E848BBB958800F783FE1D313A8CA017F2A2673ACAD47"
+  },
+  {
+    "path": ".github/workflows/build.yml",
+    "length": 446,
+    "sha256": "BBAEAFEBB85F6EFD3722FBFFEEB62B0CCF7A104BC7ECFCFF269FFCABF062DB51"
+  },
+  {
+    "path": ".github/workflows/coverage.yml",
+    "length": 643,
+    "sha256": "BB161686738D39DDC71FD3543F361581BD924C7471D67EB121BAA764801BEBC8"
+  },
+  {
+    "path": ".github/workflows/dependabot-sync.yml",
+    "length": 419,
+    "sha256": "0249803B2AACC20FFBAD1E9FAE1FC2B05DC643BBE7C82730C7365A3560C6A71C"
+  },
+  {
+    "path": ".github/workflows/examples.yml",
+    "length": 881,
+    "sha256": "064CD0C7090C1F3C6858407506215A55449B783D0E1B537BB0D2568426779053"
+  },
+  {
+    "path": ".github/workflows/lint-sync.yml",
+    "length": 271,
+    "sha256": "4AAE4B11DA86DF7E116598707B906C0CAB47642148B101A6D3C686DD68EB1CEB"
+  },
+  {
+    "path": ".github/workflows/lint.yml",
+    "length": 115,
+    "sha256": "CA728C4F603F0321C302AA684455403973545D0C8D1E264B71D4F92356AD1B2B"
+  },
+  {
+    "path": ".github/workflows/release.yml",
+    "length": 1106,
+    "sha256": "0283A6FBA93CB5DF2470BD018B0124258789CA7152462ABAD18DBA5FFC7F9129"
+  },
+  {
+    "path": ".gitignore",
+    "length": 525,
+    "sha256": "CD057161A89ACFB427DEA0A796091E0320E51A4C5AE612E281E8071AA69C642E"
+  },
+  {
+    "path": ".golangci.yml",
+    "length": 695,
+    "sha256": "1D4484A3379EFBDA5F8ABE15FADABEAB513E8FDCCEE8708F3BDB47D619193B1D"
+  },
+  {
+    "path": ".goreleaser.yml",
+    "length": 168,
+    "sha256": "837072A625C64AF44B9ED505F193BBE00539CF3C182B925FEEE29342DDF538CE"
+  },
+  {
+    "path": "commands_test.go",
+    "length": 2291,
+    "sha256": "19474220D6821FFEB526A10B08F3A53F3E71A6CD8602881004CA8AB177379195"
+  },
+  {
+    "path": "commands.go",
+    "length": 5922,
+    "sha256": "E4733645ED4A3AFE7B90585BC4014198F937D140D099B069FF16164D8E9FB949"
+  },
+  {
+    "path": "exec_test.go",
+    "length": 1795,
+    "sha256": "0936ACFEED563B6D7D1C67E5EEFC5C6E893CD7F157B9BD6A9F1B3C42F5E1E1EC"
+  },
+  {
+    "path": "exec.go",
+    "length": 3666,
+    "sha256": "80739D13C56F1A95EE08568FB667BEB1EDC9423F0D704AFC9B32B97DBA24F2D0"
+  },
+  {
+    "path": "focus.go",
+    "length": 247,
+    "sha256": "AC27153C7127A434EDF501816150C1919FB6B8D9C8DDD542F4293A7E053A50D3"
+  },
+  {
+    "path": "go.mod",
+    "length": 1017,
+    "sha256": "903F2904B09B37DD74092F437AD306794E7633329DDC5AF7B201D469E2D937FB"
+  },
+  {
+    "path": "go.sum",
+    "length": 3932,
+    "sha256": "5FE23FD458F3A5C92A77AA933E0A6D83DE545A0B59B33C698A9C33E39D057755"
+  },
+  {
+    "path": "inputreader_other.go",
+    "length": 344,
+    "sha256": "EB0AE77B31947E3E996B23DE0B85B606C969B87A7A456AD564A3B1C3C3800B13"
+  },
+  {
+    "path": "inputreader_windows.go",
+    "length": 2967,
+    "sha256": "5E2FB998078E1455E9F8A5EC871F0ED950E219C93BBC04AF17DAA228074BA7BA"
+  },
+  {
+    "path": "key_other.go",
+    "length": 204,
+    "sha256": "AE456D473D43A8DEF40CA31EC7826A40392B84D47B8C27BFE3F12006BCF3C2FF"
+  },
+  {
+    "path": "key_sequences.go",
+    "length": 3547,
+    "sha256": "A552FC2CE1E0EEC029FEF551F981A50BFD4166289AA378EC4BF8906F05395E48"
+  },
+  {
+    "path": "key_test.go",
+    "length": 16306,
+    "sha256": "0BD074AA6295CE9DE56929F0AF78F198639E7C82B0A8AC538B0BCA35EAC41DCA"
+  },
+  {
+    "path": "key_windows.go",
+    "length": 10756,
+    "sha256": "A84BC6EB41A98580539236061F91C5B83FB2FFB61DD1DC4B8E80CF14E02943B5"
+  },
+  {
+    "path": "key.go",
+    "length": 21809,
+    "sha256": "364667133BCD72E7BFE22E30EB92D462F18AADAFFA96A4C32CDCCBE00368B43F"
+  },
+  {
+    "path": "LICENSE",
+    "length": 1080,
+    "sha256": "69793670485E4AE8BF28FCBE5639141F604256D5BB6C1862571F3A32823FA221"
+  },
+  {
+    "path": "logging_test.go",
+    "length": 517,
+    "sha256": "7B1523891EB1B7378CE0094C6A60F6412534FEF6139EB80C561BD8DA41DC8EB2"
+  },
+  {
+    "path": "logging.go",
+    "length": 1389,
+    "sha256": "AF7EAAF5B8AE2A4EDC631A8750E93644459DAE91BCB25E3C3DE94A3B9E6593AD"
+  },
+  {
+    "path": "mouse_test.go",
+    "length": 18125,
+    "sha256": "39020C9E07B2231EAAF9E14B267C421B32870FB198A52ACFA5CDA7C9CC27FAE8"
+  },
+  {
+    "path": "mouse.go",
+    "length": 7903,
+    "sha256": "D91927F56A91DDE0FE7F62EBCB26F954CD86BC68AE4006270E34417F8C2BC983"
+  },
+  {
+    "path": "nil_renderer_test.go",
+    "length": 418,
+    "sha256": "CE9F21E9F74F092D93255EAD5BB5633D762652A7C77112410A00086A366BBB1E"
+  },
+  {
+    "path": "nil_renderer.go",
+    "length": 1382,
+    "sha256": "6DCF82B44A05DF0AF91CE6B70443BDC88DA2BC2A429276CA1811790DD71102CD"
+  },
+  {
+    "path": "options_test.go",
+    "length": 4234,
+    "sha256": "A601F50DCF3DC81F02C1BE69EC9E807F0F2AA74CA27CFA651E434681D481EF2C"
+  },
+  {
+    "path": "options.go",
+    "length": 8299,
+    "sha256": "4F78A834D8F82CA45DDA6F292BCC54B53F198C089A059D207FF02F8E606891CA"
+  },
+  {
+    "path": "README.md",
+    "length": 14822,
+    "sha256": "7E833229A4756671250358F368D6E7A140B868C77F6F7BD067541DA2D664A4A5"
+  },
+  {
+    "path": "renderer.go",
+    "length": 2509,
+    "sha256": "2C53589B014D3B7BC2C74D4C332D29862EB064971B150A66C0FA38F6FEF61F43"
+  },
+  {
+    "path": "screen_test.go",
+    "length": 2887,
+    "sha256": "AE316CD554EB3C84866E59136309ADD25673044569497D151399F8500F49A3DB"
+  },
+  {
+    "path": "screen.go",
+    "length": 8776,
+    "sha256": "13539B00D61AF207D9C968ED198A0B57CFF428D86D65509F54C9F146546523CB"
+  },
+  {
+    "path": "signals_unix.go",
+    "length": 662,
+    "sha256": "3954426922AE0A399A29769ED8E85ACE7C451F33BB835B7009336ED086E65BF3"
+  },
+  {
+    "path": "signals_windows.go",
+    "length": 225,
+    "sha256": "25437273FA773A70B2A11C8F6F63674D7483460F65D0352A2C5CA1D2C1677C4A"
+  },
+  {
+    "path": "standard_renderer.go",
+    "length": 20890,
+    "sha256": "FE30321708716B962F78965CAB407C4EDCCAC2BC22F9DD5E72AC506420A1B4D6"
+  },
+  {
+    "path": "Taskfile.yaml",
+    "length": 183,
+    "sha256": "6665C361AEFEF2740E4173D1341C4C5B9A98CCD873486374B7296E7E83976988"
+  },
+  {
+    "path": "tea_init.go",
+    "length": 712,
+    "sha256": "87E7BCD11967AB1E5B0E541C5B89D3A0B4BAF5695899F08DC1EEB6C94A4A5E91"
+  },
+  {
+    "path": "tea_test.go",
+    "length": 9951,
+    "sha256": "F61E8482198AA5ADFCDC92CE08268F2FC6130B7935BD6AF8B2705B2336A3274B"
+  },
+  {
+    "path": "tea.go",
+    "length": 24848,
+    "sha256": "93A3744362223921E3F82DED63C65BF8029FF77D2E4A46604B77FBD37F87162E"
+  },
+  {
+    "path": "tty_unix.go",
+    "length": 1094,
+    "sha256": "1206FDAC0FC2D6940EC957F4C530638DF2B6611DE4A123CFDB99375BD7545F3F"
+  },
+  {
+    "path": "tty_windows.go",
+    "length": 1839,
+    "sha256": "AF4316838B7CAC5E9230B82A93B4B407EF91B755A57005135D93F0EB2C8B6AAD"
+  },
+  {
+    "path": "tty.go",
+    "length": 3061,
+    "sha256": "DB99D0FE947FA401D079429DAD62DAAF4889C19F6121BB89258A132A87214144"
+  }
+]

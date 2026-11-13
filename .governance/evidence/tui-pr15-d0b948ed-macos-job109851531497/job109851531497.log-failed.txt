@@ -1,0 +1,28 @@
+macOS test and build	Test direct-probe evidence guards	﻿2026-09-30T10:48:04.3643680Z ##[group]Run python scripts/verify-release-asset-conpty-python.test.py
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:04.3644240Z [36;1mpython scripts/verify-release-asset-conpty-python.test.py[0m
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:04.3644900Z [36;1mnode --test scripts/verify-real-core-conpty.test.mjs scripts/verify-release-asset-conpty.test.mjs[0m
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:04.3691460Z shell: /bin/bash -e {0}
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:04.3691770Z env:
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:04.3691950Z   GOTOOLCHAIN: local
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:04.3692110Z ##[endgroup]
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3703180Z ..F
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3705010Z ======================================================================
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3706420Z FAIL: test_reconnect_timeout_uses_the_helper_path_and_writes_no_terminal_text (__main__.ReceiptTests.test_reconnect_timeout_uses_the_helper_path_and_writes_no_terminal_text)
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3707620Z ----------------------------------------------------------------------
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3708360Z Traceback (most recent call last):
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3709380Z   File "/Users/runner/work/service-lasso-tui/service-lasso-tui/scripts/verify-release-asset-conpty-python.test.py", line 39, in test_reconnect_timeout_uses_the_helper_path_and_writes_no_terminal_text
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3712850Z     self.assertEqual(json.load(saved), {"stage": "startup", "outcome": "timeout", "closedReason": "timed_out"})
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3714890Z     ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3716600Z AssertionError: {'stage': 'launch', 'outcome': 'error', 'closedReason': 'stage_failed'} != {'stage': 'startup', 'outcome': 'timeout', 'closedReason': 'timed_out'}
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3717520Z - {'closedReason': 'stage_failed', 'outcome': 'error', 'stage': 'launch'}
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3718030Z ?                   - ------ ^                  -- ^             ^  ^^^
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3719440Z 
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3719710Z + {'closedReason': 'timed_out', 'outcome': 'timeout', 'stage': 'startup'}
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3720200Z ?                     ^  ++++               +++  ^^             ^^ ++ ^
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3720480Z 
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3720560Z 
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3720810Z ----------------------------------------------------------------------
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3721190Z Ran 3 tests in 0.006s
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3721450Z 
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3721620Z FAILED (failures=1)
+macOS test and build	Test direct-probe evidence guards	2026-09-30T10:48:05.3896330Z ##[error]Process completed with exit code 1.

@@ -2,41 +2,652 @@ package app
 
 import (
 	"context"
+	"bytes"
+	"os"
+	"path/filepath"
 	"errors"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/service-lasso/service-lasso-tui/internal/api"
 )
 
-type fakeClient struct {
-	health    api.Health
-	services  []api.Service
-	healthErr error
+type fakeClient struct{ services []api.Service }
+
+func (f fakeClient) Health(context.Context) (api.Health, error)      { return api.Health{}, nil }
+func (f fakeClient) Services(context.Context) ([]api.Service, error) { return f.services, nil }
+func (f fakeClient) Capabilities(context.Context) (api.Capabilities, error) {
+	return api.Capabilities{}, nil
+}
+func (f fakeClient) SetupStatus(context.Context) (api.SetupStatus, error) {
+	return api.SetupStatus{}, nil
+}
+func (f fakeClient) RuntimeIdentity(context.Context) (api.RuntimeIdentity, error) {
+	return api.RuntimeIdentity{}, nil
+}
+func (f fakeClient) Inbox(context.Context, string) (api.Inbox, error) { return api.Inbox{}, nil }
+func (f fakeClient) HealthHistory(context.Context, string) (api.HealthHistory, error) {
+	return api.HealthHistory{}, nil
 }
 
-func (f fakeClient) Health(context.Context) (api.Health, error) { return f.health, f.healthErr }
-func (f fakeClient) Services(context.Context) ([]api.Service, error) {
-	return f.services, nil
+type durableFake struct {
+	fakeClient
+	reconciliation string
 }
 
-func TestNavigationShowsServiceDetails(t *testing.T) {
-	client := fakeClient{services: []api.Service{{ID: "echo", Name: "Echo", Description: "test service", Enabled: true}}}
-	initial := New(client, context.Background()).(model)
-	updated, _ := initial.Update(loadedMsg{services: client.services})
+// recordingDurableClient makes the command boundary observable. It is used to
+// prove that a frozen preview is submitted unchanged and recovery performs a
+// read through the retained client without another lifecycle mutation.
+type recordingDurableClient struct {
+	fakeClient
+	mu                  sync.Mutex
+	availability        []api.LifecycleAvailability
+	preview             api.LifecyclePreview
+	submittedPreview    api.LifecyclePreview
+	operation           api.Operation
+	availabilityErr     error
+	previewErr          error
+	submitErr           error
+	operationErr        error
+	cancelErr           error
+	availabilityCalls   int
+	previewCalls        int
+	submitCalls         int
+	operationCalls      int
+	cancelCalls         int
+	availabilityService string
+	previewService      string
+	previewAction       string
+	reconciliation      string
+}
+
+func (c *recordingDurableClient) LifecycleAvailability(_ context.Context, serviceID string) ([]api.LifecycleAvailability, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.availabilityCalls++
+	c.availabilityService = serviceID
+	return c.availability, c.availabilityErr
+}
+func (c *recordingDurableClient) PreviewLifecycle(_ context.Context, serviceID, action string) (api.LifecyclePreview, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.previewCalls++
+	c.previewService, c.previewAction = serviceID, action
+	return c.preview, c.previewErr
+}
+func (c *recordingDurableClient) SubmitLifecycle(_ context.Context, preview api.LifecyclePreview, _ string) (api.Operation, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.submitCalls++
+	c.submittedPreview = preview
+	return c.operation, c.submitErr
+}
+func (c *recordingDurableClient) Operation(context.Context, string) (api.Operation, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.operationCalls++
+	return c.operation, c.operationErr
+}
+func (c *recordingDurableClient) CancelOperation(context.Context, string) (api.Operation, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cancelCalls++
+	return c.operation, c.cancelErr
+}
+func (c *recordingDurableClient) ReconciliationContext() (string, bool, error) {
+	return c.reconciliation, c.reconciliation != "", nil
+}
+
+func (c *recordingDurableClient) calls() (availability, preview, submit, operation, cancel int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.availabilityCalls, c.previewCalls, c.submitCalls, c.operationCalls, c.cancelCalls
+}
+
+func (f durableFake) LifecycleAvailability(context.Context, string) ([]api.LifecycleAvailability, error) {
+	return nil, nil
+}
+func (f durableFake) PreviewLifecycle(context.Context, string, string) (api.LifecyclePreview, error) {
+	return api.LifecyclePreview{}, nil
+}
+func (f durableFake) SubmitLifecycle(context.Context, api.LifecyclePreview, string) (api.Operation, error) {
+	return api.Operation{}, errors.New("not called in keyboard test")
+}
+func (f durableFake) Operation(context.Context, string) (api.Operation, error) {
+	return api.Operation{}, nil
+}
+func (f durableFake) CancelOperation(context.Context, string) (api.Operation, error) {
+	return api.Operation{}, nil
+}
+func (f durableFake) ReconciliationContext() (string, bool, error) {
+	return f.reconciliation, f.reconciliation != "", nil
+}
+
+type fakeConnectionManager struct {
+	current string
+	clients map[string]*api.Client
+}
+
+func (m *fakeConnectionManager) Names() []string { return []string{"local", "remote"} }
+func (m *fakeConnectionManager) Current() string { return m.current }
+func (m *fakeConnectionManager) Switch(name string) (*api.Client, error) {
+	c, ok := m.clients[name]
+	if !ok {
+		return nil, errors.New("unknown profile")
+	}
+	m.current = name
+	return c, nil
+}
+
+func preparedModel(t *testing.T, client runtimeClient) model {
+	if recording, ok := client.(*recordingDurableClient); ok && recording.availability == nil { recording.availability = []api.LifecycleAvailability{{Action: "start", Available: true, RequiresConfirmation: true}} }
+	t.Helper()
+
+	m := New(client, context.Background()).(model)
+	m.services, m.selectedServiceID, m.screen = []api.Service{{ID: "echo", Name: "Echo"}}, "echo", detailScreen
+	m.pendingAction, m.pendingServiceID = "start", "echo"
+	m.pendingPreview = &api.LifecyclePreview{Action: "start", ServiceID: "echo", ConfirmationID: "mcp-confirmation-12345678", ConfirmationPhrase: "confirm start", Targets: []string{"echo"}, Effects: []string{"start"}}
+	return m
+}
+func key(r rune) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}} }
+
+func TestConfirmationFreezesEveryUnadvertisedKey(t *testing.T) {
+	for _, candidate := range []rune{'d', 'v', 'i', '?', 'r', 'p', '/', 'n', 'q', 'j'} {
+		t.Run(string(candidate), func(t *testing.T) {
+			m := preparedModel(t, durableFake{})
+			before := m
+			updated, command := m.Update(key(candidate))
+			got := updated.(model)
+			if command != nil || got.screen != before.screen || got.pendingAction != "start" || got.pendingServiceID != "echo" || got.pendingPreview == nil || got.searching || got.loading != before.loading {
+				t.Fatalf("%q changed frozen confirmation: %#v", candidate, got)
+			}
+		})
+	}
+}
+
+func TestConfirmationOnlyEscCancelsAndYSubmits(t *testing.T) {
+	m := preparedModel(t, durableFake{})
+	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if command != nil || updated.(model).pendingAction != "" || updated.(model).lastResult != "Confirmation cancelled." {
+		t.Fatalf("escape did not cancel: %#v", updated)
+	}
+	m = preparedModel(t, durableFake{})
+	updated, command = m.Update(key('y'))
+	if command == nil || updated.(model).operation == nil || updated.(model).pendingAction != "" {
+		t.Fatalf("y did not make one durable submission: %#v", updated)
+	}
+}
+
+func TestConfirmationBackspaceDoesNotCancel(t *testing.T) {
+	m := preparedModel(t, durableFake{})
+	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	got := updated.(model)
+	if command != nil || got.pendingAction != "start" || got.pendingPreview == nil || got.lastResult != "" {
+		t.Fatalf("backspace altered a confirmation that advertises only y and Escape: %#v", got)
+	}
+}
+
+func TestLateSameEpochListCannotInvalidateFrozenPreview(t *testing.T) {
+	client := &recordingDurableClient{operation: api.Operation{ID: "operation-1", Status: "running", Phase: "preflight"}}
+	m := preparedModel(t, client)
+	preview := *m.pendingPreview
+	updated, command := m.Update(loadedMsg{epoch: m.connectionEpoch, services: []api.Service{{ID: "other", Name: "Other"}}})
+	got := updated.(model)
+	if command != nil || got.pendingPreview == nil || got.pendingPreview.Action != preview.Action || got.pendingPreview.ServiceID != preview.ServiceID || got.pendingPreview.ConfirmationID != preview.ConfirmationID || got.pendingServiceID != "echo" {
+		t.Fatalf("late list result changed the frozen preview: %#v", got)
+	}
+	updated, submit := got.Update(key('y'))
+	if submit == nil || updated.(model).operation == nil {
+		t.Fatal("frozen preview could not be submitted after a late list result")
+	}
+	message := submit()
+	if _, ok := message.(operationMsg); !ok {
+		t.Fatalf("submit returned %T, want operationMsg", message)
+	}
+	_, _, submits, _, _ := client.calls()
+	if submits != 1 || client.submittedPreview.Action != preview.Action || client.submittedPreview.ServiceID != preview.ServiceID || client.submittedPreview.ConfirmationID != preview.ConfirmationID {
+		t.Fatalf("submission did not use exactly the displayed Core preview: calls=%d preview=%#v", submits, client.submittedPreview)
+	}
+}
+
+func TestConfirmationSubmitsOnceAndRepeatedEscapeCannotMutate(t *testing.T) {
+	client := &recordingDurableClient{operation: api.Operation{ID: "operation-1", Status: "running"}}
+	m := preparedModel(t, client)
+	updated, first := m.Update(key('y'))
+	if first == nil {
+		t.Fatal("first y did not submit")
+	}
+	_, second := updated.(model).Update(key('y'))
+	if second != nil {
+		t.Fatal("repeated y queued a second submission")
+	}
+	_ = first()
+	_, _, submits, _, _ := client.calls()
+	if submits != 1 {
+		t.Fatalf("submission count = %d, want 1", submits)
+	}
+
+	cancelled := preparedModel(t, client)
+	updated, command := cancelled.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if command != nil || updated.(model).pendingAction != "" {
+		t.Fatalf("Escape did not cancel the frozen preview: %#v", updated)
+	}
+	_, replay := updated.(model).Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if replay != nil {
+		t.Fatal("repeated Escape dispatched a lifecycle command")
+	}
+}
+
+func TestCoreAvailabilityAndPreviewGateConfirmation(t *testing.T) {
+	workflows := []struct {
+		name   string
+		key    rune
+		action string
+	}{
+		{name: "install", key: 'i', action: "install"},
+		{name: "config", key: 'c', action: "config"},
+		{name: "start", key: 's', action: "start"},
+		{name: "stop", key: 'x', action: "stop"},
+		{name: "restart", key: 'R', action: "restart"},
+	}
+	for _, workflow := range workflows {
+		t.Run(workflow.name, func(t *testing.T) {
+			preview := api.LifecyclePreview{Action: workflow.action, ServiceID: "echo", ConfirmationID: "core-confirm-1", ConfirmationPhrase: "confirm", Targets: []string{"echo"}, Effects: []string{workflow.action}}
+			client := &recordingDurableClient{
+				availability: []api.LifecycleAvailability{{Action: workflow.action, Available: true, RequiresConfirmation: true}},
+				preview:      preview,
+				operation:    api.Operation{ID: "mcp-operation-12345678", Action: map[string]string{"install":"service_install", "config":"service_configure", "start":"service_start", "stop":"service_stop", "restart":"service_restart"}[workflow.action], Status: "running", Phase: "preflight", Ownership: "own", Targets: []string{"echo"}},
+			}
+
+	m := New(client, context.Background()).(model)
+			// The other service proves the client uses the selected service only;
+			// a keyboard action cannot be retargeted by adjacent dashboard data.
+			m.services, m.selectedServiceID, m.screen = []api.Service{{ID: "echo", Name: "Echo"}, {ID: "other", Name: "Other"}}, "echo", detailScreen
+			updated, prepare := m.Update(key(workflow.key))
+			if prepare == nil || !updated.(model).preparingAction {
+				t.Fatalf("%s did not request Core availability and preview", workflow.action)
+			}
+			confirmed, _ := updated.(model).Update(prepare())
+			got := confirmed.(model)
+			if got.pendingPreview == nil || got.pendingPreview.ConfirmationID != preview.ConfirmationID || got.preparingAction {
+				t.Fatalf("Core preview did not become the confirmation context: %#v", got)
+			}
+			availability, previews, submits, _, _ := client.calls()
+			if availability != 1 || previews != 1 || submits != 0 || client.availabilityService != "echo" || client.previewService != "echo" || client.previewAction != workflow.action {
+				t.Fatalf("unexpected pre-confirmation calls: availability/preview/submit=%d/%d/%d service/action=%q/%q", availability, previews, submits, client.previewService, client.previewAction)
+			}
+			submitted, submit := got.Update(key('y'))
+			if submit == nil || submitted.(model).operation == nil {
+				t.Fatalf("%s confirmation did not create one submission", workflow.action)
+			}
+			_ = submit()
+			_, _, submits, _, _ = client.calls()
+			if submits != 1 || !reflect.DeepEqual(client.submittedPreview, preview) {
+				t.Fatalf("%s submitted a changed or duplicate preview: calls=%d preview=%#v", workflow.action, submits, client.submittedPreview)
+			}
+		})
+	}
+}
+
+func TestRefreshReadsRetainedOperationWithItsOriginalClient(t *testing.T) {
+	original := &recordingDurableClient{operation: api.Operation{ID: "operation-1", Status: "succeeded", Outcome: "completed"}}
+	current := &recordingDurableClient{}
+	m := New(current, context.Background()).(model)
+	m.operation = &operationSubmission{id: 4, client: original, connectionName: "original", connectionEpoch: 0, operation: api.Operation{ID: "operation-1", Status: "unknown_after_crash"}}
+
+	updated, refresh := m.Update(key('r'))
+	if refresh == nil || updated.(model).operation == nil {
+		t.Fatal("refresh discarded the retained uncertain operation")
+	}
+	batch, ok := refresh().(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("refresh returned %T, want tea.BatchMsg", refresh())
+	}
+	var readback operationMsg
+	for _, command := range batch {
+		if message, ok := command().(operationMsg); ok {
+			readback = message
+		}
+	}
+	_, _, originalSubmits, originalReads, originalCancels := original.calls()
+	_, _, currentSubmits, _, currentCancels := current.calls()
+	if originalReads != 1 || originalSubmits != 0 || originalCancels != 0 || currentSubmits != 0 || currentCancels != 0 {
+		t.Fatalf("refresh made an operation request other than the retained read: original submit/read/cancel=%d/%d/%d current submit/cancel=%d/%d", originalSubmits, originalReads, originalCancels, currentSubmits, currentCancels)
+	}
+	finished, _ := updated.(model).Update(readback)
+	if finished.(model).operation != nil || !strings.Contains(finished.(model).lastResult, "completed") {
+		t.Fatalf("terminal operation readback did not complete recovery: %#v", finished)
+	}
+}
+
+func TestOperationReadFailureRetainsRecoveryAndSaveFailureDoesNotDiscardIt(t *testing.T) {
+	store := failingOperationStore{err: errors.New("save failed")}
+	m := New(durableFake{}, context.Background()).(model)
+	m.operationStore = &store
+	m.operation = &operationSubmission{id: 9, client: durableFake{}, reconciliationContext: "core-context", operation: api.Operation{ID: "operation-9", Status: "running"}}
+	updated, _ := m.Update(operationMsg{submissionID: 9, operation: api.Operation{ID: "operation-9", Status: "running"}})
+	if updated.(model).operation == nil || updated.(model).err == nil {
+		t.Fatalf("persistence failure discarded a nonterminal operation: %#v", updated)
+	}
+	updated, _ = updated.(model).Update(operationMsg{submissionID: 9, err: errors.New("401 unauthorized")})
+	if updated.(model).operation == nil || !strings.Contains(updated.(model).lastResult, "uncertain") {
+		t.Fatalf("read failure did not leave terminal recovery available: %#v", updated)
+	}
+}
+
+func TestAcceptedOperationSurvivesProfileActivationAndDoesNotReplay(t *testing.T) {
+	local, err := api.NewClient("http://127.0.0.1:17883", nil, "local-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote, err := api.NewClientWithAuth("https://remote.example.test", nil, "remote-token", api.AuthModeOAuthBearer, "service-lasso:read", "service-lasso:lifecycle:write")
+	if err != nil {
+		t.Fatal(err)
+	}
+	connections := &fakeConnectionManager{current: "local", clients: map[string]*api.Client{"local": local, "remote": remote}}
+	m := NewWithConnections(local, connections, context.Background()).(model)
+	m.services, m.selectedServiceID, m.screen = []api.Service{{ID: "echo", Name: "Echo"}}, "echo", detailScreen
+	m.operation = &operationSubmission{id: 7, client: local, connectionName: "local", connectionEpoch: 0}
+	updated, _ := m.Update(key('p'))
+	updated, _ = updated.(model).Update(key('j'))
 	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
-	view := updated.(model).View()
-	if !strings.Contains(view, "Echo (echo)") || !strings.Contains(view, "esc back") {
-		t.Fatalf("detail view did not render selection: %s", view)
+	switched := updated.(model)
+	if switched.connectionName != "remote" || switched.operation == nil || switched.operation.id != 7 {
+		t.Fatalf("profile switch lost submitted operation: %#v", switched)
+	}
+	accepted := api.Operation{ID: "mcp-operation-12345678", Action: "service_start", Status: "running", Phase: "executing", Progress: 50, Ownership: "own"}
+	updated, poll := switched.Update(operationMsg{submissionID: 7, operation: accepted})
+	if poll == nil || updated.(model).operation == nil || updated.(model).operation.operation.ID != accepted.ID {
+		t.Fatalf("late acceptance was lost: %#v", updated)
+	}
+	_, replay := updated.(model).Update(key('y'))
+	if replay != nil {
+		t.Fatal("accepted operation replayed after profile switch")
 	}
 }
 
-func TestErrorStateShowsRetryPath(t *testing.T) {
-	initial := New(fakeClient{}, context.Background()).(model)
-	updated, _ := initial.Update(loadedMsg{err: errors.New("connection refused")})
-	view := updated.(model).View()
-	if !strings.Contains(view, "Runtime API unavailable") || !strings.Contains(view, "Press r to retry") {
-		t.Fatalf("error view omitted retry path: %s", view)
+func TestDeniedAndReloadNeverCreateConfirmation(t *testing.T) {
+	m := New(fakeClient{services: []api.Service{{ID: "echo", Name: "Echo"}}}, context.Background()).(model)
+	m.services, m.selectedServiceID, m.screen = []api.Service{{ID: "echo", Name: "Echo"}}, "echo", detailScreen
+	updated, command := m.Update(key('s'))
+	if command != nil || updated.(model).pendingAction != "" || !strings.Contains(updated.(model).err.Error(), "durable lifecycle operations") {
+		t.Fatalf("non-durable client offered a mutation: %#v", updated)
 	}
+	m = preparedModel(t, durableFake{})
+	m.pendingAction, m.pendingPreview = "", nil
+	updated, command = m.Update(key('l'))
+	if command != nil || updated.(model).pendingAction != "" || !strings.Contains(updated.(model).err.Error(), "reload is unavailable") {
+		t.Fatalf("reload offered a mutation: %#v", updated)
+	}
+}
+
+func TestCoreDenialClearsPreparingConfirmation(t *testing.T) {
+	m := New(durableFake{}, context.Background()).(model)
+	m.services, m.selectedServiceID, m.screen = []api.Service{{ID: "echo", Name: "Echo"}}, "echo", detailScreen
+	command := m.beginPendingAction("start")
+	if command == nil || !m.preparingAction {
+		t.Fatalf("durable preview did not start: %#v", m)
+	}
+	updated, _ := m.Update(command())
+	got := updated.(model)
+	if got.pendingAction != "" || got.pendingPreview != nil || got.preparingAction || got.err == nil || !strings.Contains(got.err.Error(), "check lifecycle permission") {
+		t.Fatalf("Core denial left a confirmable action: %#v", got)
+	}
+}
+
+func TestReconnectKeepsUncertainOperationAndCancellationDispatchesOnce(t *testing.T) {
+	m := New(durableFake{}, context.Background()).(model)
+	m.operation = &operationSubmission{id: 4, client: durableFake{}, operation: api.Operation{ID: "mcp-operation-12345678", Status: "running", Phase: "executing", Ownership: "own", CancellationSupported: true}, preview: &api.LifecyclePreview{Action: "start", ServiceID: "echo", Targets: []string{"echo"}}}
+	updated, retry := m.Update(operationMsg{submissionID: 4, err: errors.New("temporary read failure")})
+	if retry != nil || updated.(model).operation == nil || !strings.Contains(updated.(model).lastResult, "uncertain") {
+		t.Fatalf("uncertain operation was discarded: %#v", updated)
+	}
+	updated, refresh := updated.(model).Update(key('r'))
+	if refresh == nil || updated.(model).operation == nil || updated.(model).operation.id != 4 {
+		t.Fatalf("reconnect lost uncertain operation: %#v", updated)
+	}
+	updated, first := updated.(model).Update(key('z'))
+	if first == nil || !updated.(model).operation.cancellationPending {
+		t.Fatalf("first cancellation was not marked pending: %#v", updated)
+	}
+	_, second := updated.(model).Update(key('z'))
+	if second != nil {
+		t.Fatal("repeated cancellation dispatched while the first request was pending")
+	}
+}
+
+func TestPersistenceRequiresServerSuppliedContext(t *testing.T) {
+	store := &memoryOperationStore{}
+	m := preparedModel(t, durableFake{})
+	m.operationStore = store
+	updated, _ := m.Update(key('y'))
+	_, _ = updated.(model).Update(operationMsg{submissionID: 1, operation: api.Operation{ID: "mcp-operation-12345678", Action: "service_start", Status: "running", Phase: "executing", Ownership: "own", Targets: []string{"echo"}}})
+	if store.value != nil {
+		t.Fatal("operation persisted without a Core reconciliation context")
+	}
+	m = preparedModel(t, &recordingDurableClient{reconciliation: "core-context-opaque-123"})
+	m.operationStore = store
+	updated, command := m.Update(key('y'))
+	message := command().(operationMsg)
+	message.operation = api.Operation{ID: "mcp-operation-12345678", Action: "service_start", Status: "running", Phase: "executing", Ownership: "own", Targets: []string{"echo"}}
+	_, _ = updated.(model).Update(message)
+	if store.value == nil || store.value.Version != 2 || store.value.Binding != "core-context-opaque-123" {
+		t.Fatalf("server context was not retained: %#v", store.value)
+	}
+}
+
+type memoryOperationStore struct{ value *persistedOperation }
+
+func (s *memoryOperationStore) Load() (*persistedOperation, error) { return s.value, nil }
+func (s *memoryOperationStore) Save(v persistedOperation) error    { s.value = &v; return nil }
+func (s *memoryOperationStore) Clear(expected persistedOperation) error {
+	if s.value != nil && *s.value != expected { return errors.New("retained operation changed") }
+	s.value = nil
+	return nil
+}
+
+type failingOperationStore struct{ err error }
+
+func (s *failingOperationStore) Load() (*persistedOperation, error) { return nil, nil }
+func (s *failingOperationStore) Save(persistedOperation) error      { return s.err }
+func (s *failingOperationStore) Clear(persistedOperation) error     { return nil }
+
+func TestDashboardNavigationSearchResizeAndSanitizationRemainCovered(t *testing.T) {
+	m := New(fakeClient{}, context.Background()).(model)
+	updated, _ := m.Update(loadedMsg{services: []api.Service{{ID: "echo", Name: "Echo\x1b[31m\nINJECT"}, {ID: "other", Name: "Other"}}})
+	updated, _ = updated.(model).Update(dashboardMsg{identity: api.RuntimeIdentity{Status: "active\x1b[2J"}, inbox: api.Inbox{Items: []api.InboxItem{{Title: "alert\nitem"}}}, failures: []string{"operator inbox"}})
+	updated, _ = updated.(model).Update(tea.WindowSizeMsg{Width: 60, Height: 20})
+	updated, _ = updated.(model).Update(key('/'))
+	updated, _ = updated.(model).Update(key('e'))
+	updated, _ = updated.(model).Update(key('n'))
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(model)
+	if !got.narrow || strings.Contains(got.View(), "\x1b") || !strings.Contains(got.View(), "Unavailable optional reads: operator inbox") {
+		t.Fatalf("navigation, resize, or terminal sanitization regressed: %q", got.View())
+	}
+	updated, _ = got.Update(key('i'))
+	if !strings.Contains(updated.(model).View(), "Operator inbox") {
+		t.Fatalf("inbox navigation regressed: %s", updated.(model).View())
+	}
+}
+
+func TestStaleSnapshotAndEpochIsolationRemainCovered(t *testing.T) {
+	m := New(fakeClient{}, context.Background()).(model)
+	updated, _ := m.Update(loadedMsg{services: []api.Service{{ID: "echo", Name: "Echo"}}})
+	updated, _ = updated.(model).Update(loadedMsg{err: errors.New("connection refused")})
+	if !strings.Contains(updated.(model).View(), "stale") || !strings.Contains(updated.(model).View(), "Echo") {
+		t.Fatalf("stale service snapshot regressed: %s", updated.(model).View())
+	}
+	m = updated.(model)
+	m.connectionEpoch = 2
+	ignored, _ := m.Update(loadedMsg{epoch: 1, services: []api.Service{{ID: "old", Name: "Old result"}}})
+	if strings.Contains(ignored.(model).View(), "Old result") {
+		t.Fatal("stale connection result was rendered")
+	}
+}
+
+
+
+func TestStoredOperationContextIsEpochBoundAndNeverReplays(t *testing.T) {
+    client := &recordingDurableClient{reconciliation:"server-context"}
+    m := preparedModel(t,client)
+    m.operationStore=&memoryOperationStore{value:&persistedOperation{Version:2,OperationID:"mcp-operation-12345678",ConnectionName:m.connectionName,Binding:"server-context"}}
+    command:=m.readStoredOperation()
+    stale:=command()
+    m.connectionEpoch++
+    updated, next:=m.Update(stale)
+    if next!=nil || updated.(model).operation!=nil { t.Fatal("stale context restoration read a different connection") }
+    m.connectionEpoch--
+    updated,next=m.Update(command())
+    if next==nil || updated.(model).operation==nil || updated.(model).operation.reconciliationContext!="server-context" { t.Fatal("matching server context failed to retain original operation") }
+    if client.submitCalls!=0 { t.Fatal("restoration replayed a mutation") }
+}
+
+func TestPersistedOperationRejectsUnknownAndDuplicateAuthority(t *testing.T) {
+    for _, raw := range []string{
+        `{"version":2,"operationId":"operation-fixture","connectionName":"fixture","reconciliationContext":"one","reconciliationContext":"two"}`,
+        `{"version":2,"operationId":"operation-fixture","connectionName":"fixture","reconciliationContext":"one","credential":"inert"}`,
+        `{"version":2,"operationId":"operation-fixture","connectionName":"fixture","reconciliationContext":"one"} {}`,
+    } {
+        var value persistedOperation
+        if decodeOperationMetadata([]byte(raw), &value)==nil { t.Fatal("unsafe durable metadata admitted") }
+    }
+}
+
+// This fault adapter exercises a real Save filesystem failure and real Clear
+// against the original file. The original file is a regular leaf, so using it
+// as Save's parent fails before replacement, independent of platform privileges.
+type replacementFailureStore struct {
+    fileOperationStore
+    clears int
+}
+func (s *replacementFailureStore) Save(value persistedOperation) error {
+    return (fileOperationStore{path: filepath.Join(s.path, "blocked-replacement")}).Save(value)
+}
+func (s *replacementFailureStore) Clear(expected persistedOperation) error {
+    s.clears++
+    return s.fileOperationStore.Clear(expected)
+}
+
+func TestTerminalReplacementFailurePreservesOriginalRecordBytes(t *testing.T) {
+    for _, terminal := range []api.Operation{
+        {ID: "operation-B", Status: "succeeded", Outcome: "completed"},
+        {ID: "operation-B", Status: "unknown_after_crash"},
+    } {
+        t.Run(terminal.Status, func(t *testing.T) {
+            path := filepath.Join(t.TempDir(), "operation.json")
+            // Noncanonical whitespace proves preservation of original bytes,
+            // rather than equivalent parsed metadata reconstructed by the UI.
+            original := []byte("{\n \"version\":2,\"operationId\":\"operation-A\",\"connectionName\":\"profile-A\",\"reconciliationContext\":\""+selectedOperatorTestContext("a").LegacyDigest()+"\"\n}\n")
+            if err := os.WriteFile(path, original, 0600); err != nil { t.Fatal(err) }
+            store := &replacementFailureStore{fileOperationStore: fileOperationStore{path: path}}
+            m := New(durableFake{}, context.Background()).(model)
+            m.operationStore = store
+            m.operation = &operationSubmission{id: 8, client: durableFake{}, connectionName: "profile-B", reconciliationContext: selectedOperatorTestContext("b").LegacyDigest(), operation: api.Operation{ID: terminal.ID, Status: "running"}}
+            updated, command := m.Update(operationMsg{submissionID: 8, operation: terminal})
+            got := updated.(model)
+            after, err := os.ReadFile(path)
+            if err != nil || !bytes.Equal(after, original) || store.clears != 0 {
+                t.Fatalf("failed B replacement removed or changed original A: error=%v clear=%d bytes=%q", err, store.clears, after)
+            }
+            if got.err == nil || got.operation == nil || command != nil { t.Fatal("terminal storage failure lost visible error or recovery") }
+            retained, err := store.Load()
+            if err != nil || retained.OperationID != "operation-A" { t.Fatalf("original recovery record unavailable: %v %#v", err, retained) }
+            // A late restoration must not substitute A for the active B.
+            restored, next := got.Update(storedOperationMsg{epoch: got.connectionEpoch, stored: retained, bound: true, binding: selectedOperatorTestContext("a").LegacyDigest()})
+            if next != nil || restored.(model).operation.id != 8 { t.Fatal("late stored read stole failed B recovery") }
+        })
+    }
+}
+
+type clearFailureStore struct {
+    fileOperationStore
+    clearErr error
+}
+func (s *clearFailureStore) Clear(expected persistedOperation) error {
+    if s.clearErr != nil { return s.clearErr }
+    return s.fileOperationStore.Clear(expected)
+}
+
+func TestTerminalClearErrorKeepsRecoveryAndExactPersistedRecord(t *testing.T) {
+    store := &clearFailureStore{fileOperationStore: fileOperationStore{path: filepath.Join(t.TempDir(), "operation.json")}, clearErr: errors.New("clear denied")}
+    m := New(durableFake{}, context.Background()).(model)
+    m.operationStore = store
+    m.operation = &operationSubmission{id: 6, client: durableFake{}, connectionName: "original-profile", reconciliationContext: selectedOperatorTestContext("a").LegacyDigest(), operation: api.Operation{ID: "operation-B"}}
+    // The active display epoch/profile may change, but ownership remains that
+    // of the captured original submission and its retained client.
+    m.connectionEpoch, m.connectionName = 9, "different-profile"
+    updated, command := m.Update(operationMsg{submissionID: 6, operation: api.Operation{ID: "operation-B", Outcome: "completed"}})
+    got := updated.(model)
+    retained, err := store.Load()
+    if err != nil || retained == nil || retained.ConnectionName != "original-profile" || retained.Binding != selectedOperatorTestContext("a").LegacyDigest() { t.Fatalf("clear failure lost original ownership: %v %#v", err, retained) }
+    if !errors.Is(got.err, store.clearErr) || got.operation == nil || command != nil { t.Fatal("clear failure was hidden or recovery discarded") }
+    store.clearErr = nil
+    finished, _ := got.Update(operationMsg{submissionID: 6, operation: api.Operation{ID: "operation-B", Outcome: "completed"}})
+    // Retry uses readback only and now reaches actual file removal.
+    if finished.(model).operation != nil { t.Fatal("successful terminal readback did not close in-memory recovery") }
+    if _, err := os.Stat(store.path); !os.IsNotExist(err) { t.Fatal("successful retry retained completed record") }
+}
+
+func TestFileClearRequiresExactRetainedOwnership(t *testing.T) {
+    store := fileOperationStore{path: filepath.Join(t.TempDir(), "operation.json")}
+    original := persistedOperation{Version: 2, OperationID: "operation-A", ConnectionName: "profile-A", Binding: selectedOperatorTestContext("a").LegacyDigest()}
+    if err := store.Save(original); err != nil { logRecordFailure(t,err); t.Fatal(err) }
+    before, err := os.ReadFile(store.path); if err != nil { t.Fatal(err) }
+    for _, different := range []persistedOperation{
+        {Version: 2, OperationID: "operation-B", ConnectionName: original.ConnectionName, Binding: original.Binding},
+        {Version: 2, OperationID: original.OperationID, ConnectionName: "profile-B", Binding: original.Binding},
+        {Version: 2, OperationID: original.OperationID, ConnectionName: original.ConnectionName, Binding: selectedOperatorTestContext("b").LegacyDigest()},
+    } {
+        if store.Clear(different) == nil { t.Fatal("different retained identity authorized removal") }
+        after, err := os.ReadFile(store.path); if err != nil || !bytes.Equal(before, after) { t.Fatal("ownership denial changed retained bytes") }
+    }
+    if err := store.Clear(original); err != nil { t.Fatal(err) }
+    if _, err := os.Stat(store.path); !os.IsNotExist(err) { t.Fatal("matching retained identity did not remove its record") }
+}
+
+func TestTerminalUnboundOrStaleMessageDoesNotTouchRetainedStore(t *testing.T) {
+    store := &memoryOperationStore{value: &persistedOperation{Version: 2, OperationID: "operation-A", ConnectionName: "profile-A", Binding: selectedOperatorTestContext("a").LegacyDigest()}}
+    m := New(durableFake{}, context.Background()).(model)
+    m.operationStore = store
+    m.operation = &operationSubmission{id: 3, client: durableFake{}, operation: api.Operation{ID: "operation-B"}}
+    ignored, _ := m.Update(operationMsg{submissionID: 2, operation: api.Operation{ID: "operation-B", Outcome: "completed"}, binding: selectedOperatorTestContext("b").LegacyDigest()})
+    if ignored.(model).operation.reconciliationContext != "" || store.value.OperationID != "operation-A" { t.Fatal("stale submission changed recovery") }
+    finished, _ := ignored.(model).Update(operationMsg{submissionID: 3, operation: api.Operation{ID: "operation-B", Outcome: "completed"}})
+    if finished.(model).operation != nil || store.value.OperationID != "operation-A" { t.Fatal("unbound terminal removed another retained record") }
+}
+
+func TestMismatchedOperationReadbackCannotChangeRetainedAuthority(t *testing.T) {
+    for _, message := range []operationMsg{
+        {submissionID: 3, operation: api.Operation{ID: "different-operation", Outcome: "completed"}},
+        {submissionID: 3, operation: api.Operation{ID: "operation-A", Outcome: "completed"}, binding: "different-context"},
+        {submissionID: 3, operation: api.Operation{Outcome: "completed"}},
+    } {
+        original := persistedOperation{Version: 2, OperationID: "operation-A", ConnectionName: "profile-A", Binding: selectedOperatorTestContext("a").LegacyDigest()}
+        store := &memoryOperationStore{value: &original}
+        m := New(durableFake{}, context.Background()).(model)
+        m.operationStore = store
+        m.operation = &operationSubmission{id: 3, client: durableFake{}, connectionName: original.ConnectionName, reconciliationContext: original.Binding, operation: api.Operation{ID: original.OperationID}}
+        updated, command := m.Update(message)
+        if updated.(model).err == nil || updated.(model).operation == nil || command != nil || store.value == nil || *store.value != original { t.Fatal("mismatched host response changed retained recovery") }
+    }
+}
+func TestDelayedStoredReadCannotResurrectCompletedOperation(t *testing.T) {
+    client := &recordingDurableClient{reconciliation: selectedOperatorTestContext("a").LegacyDigest()}
+
+	m := New(client, context.Background()).(model)
+    m.connectionName = "profile-A"
+    store := &memoryOperationStore{value: &persistedOperation{Version: 2, OperationID: "operation-A", ConnectionName: "profile-A", Binding: selectedOperatorTestContext("a").LegacyDigest()}}
+    m.operationStore = store
+    delayed := m.readStoredOperation()()
+    m.nextSubmissionID = 1
+    m.operation = &operationSubmission{id: 1, client: client, connectionName: "profile-A", reconciliationContext: selectedOperatorTestContext("a").LegacyDigest(), operation: api.Operation{ID: "operation-B"}}
+    finished, _ := m.Update(operationMsg{submissionID: 1, operation: api.Operation{ID: "operation-B", Outcome: "completed"}})
+    if store.value != nil { t.Fatal("completed B was not cleared") }
+    restored, command := finished.(model).Update(delayed)
+    if restored.(model).operation != nil || command != nil || store.value != nil { t.Fatal("delayed read resurrected superseded A") }
+    if client.submitCalls != 0 { t.Fatal("recovery replayed submission") }
 }

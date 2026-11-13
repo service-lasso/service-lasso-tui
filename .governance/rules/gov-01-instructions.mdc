@@ -1,0 +1,9 @@
+# GOV-01 Instructions
+
+`.governance/` is the repository governance source of truth. Read the rule
+files in numeric order before governed implementation. Keep the project intent,
+active specification, backlog, and delivery evidence current.
+
+Development begins from `develop` on an issue-scoped branch. Do not use `main`
+as development input. Product changes require a focused issue, active spec,
+tests appropriate to the changed contract, and a pull request to `develop`.

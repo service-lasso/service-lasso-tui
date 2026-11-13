@@ -1,0 +1,20 @@
+{
+  "timeUTC": "2026-10-08T01:41:17.1884343Z",
+  "classification": "PROGRESS",
+  "proposal": "D:/projects/service-lasso/_audit/ga-windows-linux-resume-20261004-01/tui-storage-outcome-selected-source.raw.md",
+  "bytes": 11308,
+  "sha256": "88DBC32D6ACC21B4DA6084635420E28CED8408FD2D80D3B9B1B1524C2D090EAB",
+  "binding": "Whole copied bytes read EOF; original before/after/copy SHA equal88DBC32D6ACC21B4DA6084635420E28CED8408FD2D80D3B9B1B1524C2D090EAB",
+  "selection": "PRIVATE OUTCOME REPRESENTATION SELECTED FOR SOURCE IMPLEMENTATION ONLY",
+  "disposition": [
+    "Publication effect and native cleanup release are independent actual observations; never fabricate unchanged after an applied effect or fabricate released on close failure.",
+    "This selection does not discharge or relax original BLUEPRINT79/81 failed-save/migration preservation guarantees. Any unproved or unmet original predicate remains failed/unqualified full delivery.",
+    "Original exact selected documents stay byte-identical; adopt proposal plus this disposition coherently in governance before representation source changes.",
+    "Prepare/write/sync/duplicate/prepublication-writer-close/CAS failures preserve old original bytes; later effects must retain original/candidate evidence and explicit unresolved ownership rather than guess.",
+    "Settled effect must have genuine exact native readback and every supported durability prerequisite; Windows primitive API success is insufficient.",
+    "All helper acquisition/read/compare/discard/native-close/delete outcomes need bounded original outer custody and durable restart/exclusion protocol; no memory pointer/receipt surrogate, unsafe pathname cleanup or retry.",
+    "Caller model follows proved actual bytes/effects with independent persistent warning and release owner; unresolved publication blocks unsafe clear/overwrite/replay."
+  ],
+  "gates": "No SOURCE_GO/storageGO/input admission/native execution/qualification/publication/same-byte integration/release claim",
+  "coreRead": "Whole current operator-v2-mutations.ts; routed cumulative direct DTO byte cap before WeakSet identity; original raw byte parser admission remains mandatory and route not wired"
+}

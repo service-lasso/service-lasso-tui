@@ -1,0 +1,6 @@
+# GOV-03 Communication
+
+Describe evidence precisely. Separate local tests, hosted CI, real-runtime
+validation, release qualification, and GA decisions. Report API limitations,
+permission denials, and unavailable runtime state clearly. Never include
+credentials, tokens, raw sensitive values, or unredacted error payloads.

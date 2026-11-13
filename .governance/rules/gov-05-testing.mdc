@@ -1,0 +1,6 @@
+# GOV-05 Testing
+
+Run formatting, focused unit tests, and a build for changed Go code. Test API
+failure handling, sensitive-output redaction, confirmation behavior, keyboard
+state transitions, and request contracts for every implemented mutation.
+Hosted CI supplements but does not replace real-runtime evidence.

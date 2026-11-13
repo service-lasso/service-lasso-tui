@@ -1,0 +1,9 @@
+# Candidate N source selection amendment: privileged open-file authority
+
+This amendment is mandatory alongside tui30-candidate-n-parent-source-selection-20261011.md (357B479B577B71CBA28F23746F633D41D489E76D58E260FAF92B93BECC340383). Parent whole-read author packet NATIVE-MIGRATION-OPEN-FILE-AUTHORITY-100.md, SHA736BC233F68296152B13BFB600BAAA1C3151ADCF0A9EC8F06B70A2B9B0F63E1B. Select the conditional source implementation only with correction100;099 alone is insufficient.
+
+Dropped current capabilities and changed cgroup namespace do not neutralize an existing privileged migration open-file description. The supported profile must positively exclude inherited, proc/pidfd-duplicated and transferred privileged cgroup.procs/cgroup.threads descriptions and privileged outside migration assistance. Known child descriptor closure is necessary, not a sufficient proof. Owner protocol must never export management descriptors; actual existing proc/ptrace/pidfd, namespace/control and ancillary-transfer policy must cover accessible supplier/broker routes. A snapshot, process-name whitelist, root-owned mode or absent audit record cannot prove future exclusion.
+
+Implement these concrete predicates in the supported profile and preserve denial when their actual source/policy relation is unknown. This grants no policy provisioning, new mount, broader authority, execution admission, host qualification or hostile-administrator theorem. Ordinary postdrop newly opened views and transfers of existing privileged descriptions need separate relations. Keep all useful public functionality and the complete Windows/Linux delivery obligations; a refusal-only implementation is not completion.
+
+All original selection chronology, retained partial-state obligations, finite backing, independent whole-source review and exact-command admission requirements remain. macOS remains user-deferred N/A. No runtime acceptance or release is claimed.

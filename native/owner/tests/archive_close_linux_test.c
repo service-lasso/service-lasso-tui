@@ -1,0 +1,19 @@
+/* UNRUN actual failed-preexec closure cut, substituted native close only. */
+#include "../public_startup_linux.h"
+#include <assert.h>
+#include <errno.h>
+#include <sys/syscall.h>
+static unsigned calls,mode;static int closed[6];
+long sl_linux_call6(sl_linux_call *c,const char *source,long n,long a,long b,long d,long e,long f,long g){(void)b;(void)d;(void)e;(void)f;(void)g;assert(n==SYS_close);closed[calls++]=(int)a;c->source=source;c->number=n;atomic_store(&c->entered,1);c->result=(mode==0||mode==5)&&calls==1?-EINTR:mode==5&&calls==2?-EIO:0;atomic_store(&c->returned,1);return c->result;}
+#include "../archive_close_linux.c"
+typedef struct {sl_linux_public_controller c;sl_linux_public_startup s;} fixture;
+static void opened(sl_linux_call *c,int fd){c->source="fixture.open";c->number=SYS_openat2;c->result=fd;atomic_init(&c->entered,1);atomic_init(&c->returned,1);}
+static void prepare(fixture *f){f->c.attempted=1;f->c.construction_result=-77;f->c.startup_original=&f->s;f->s.controller_original=&f->c;f->s.candidate_preexec_returned=1;f->s.candidate_preexec_result=-77;sl_linux_archive_files *o=&f->s.archive_files;o->attempted=o->returned=1;o->result=-88;o->local.attempted=o->local.returned=o->final.attempted=o->final.returned=1;o->local.raw_fd=o->local.fd=41;o->final.raw_fd=o->final.fd=42;opened(&o->local.open,41);opened(&o->final.open,42);o->local.lift.attempted=o->final.lift.attempted=1;o->local.lift.original_fd=o->local.lift.held_fd=41;o->final.lift.original_fd=o->final.lift.held_fd=42;sl_linux_archive_directory *d=&f->s.archive_directory;d->attempted=d->returned=1;d->raw_fd=d->fd=30;opened(&d->open,30);d->lift.attempted=1;d->lift.original_fd=d->lift.held_fd=30;}
+int main(void){fixture cases[7]={0};for(mode=0;mode<7;mode++){fixture *f=&cases[mode];prepare(f);sl_linux_archive_files *o=&f->s.archive_files;calls=0;
+ if(mode==1){opened(&o->final.open,0);o->final.raw_fd=0;o->final.lift.original_fd=0;opened(&o->final.lift.duplicate,42);o->final.lift.duplicate.number=SYS_fcntl;o->final.lift.close_original.result=-EINTR;atomic_init(&o->final.lift.close_original.entered,1);atomic_init(&o->final.lift.close_original.returned,1);}
+ if(mode==2)atomic_store(&o->final.open.returned,0);if(mode==3)f->c.entry.birth.attempted=1;if(mode==4)f->s.candidate_preexec_result=0;
+ if(mode>=5){sl_linux_archive_read_view *v=&f->s.final_reader;v->attempted=v->returned=1;v->raw_fd=v->fd=43;opened(&v->open,43);v->lift.attempted=1;v->lift.original_fd=v->lift.held_fd=43;if(mode==6){opened(&v->open,0);v->raw_fd=0;v->lift.original_fd=0;opened(&v->lift.duplicate,43);v->lift.duplicate.number=SYS_fcntl;v->lift.close_original.result=-EINTR;atomic_init(&v->lift.close_original.entered,1);atomic_init(&v->lift.close_original.returned,1);}}
+ long r=sl_linux_close_failed_archive_before_birth(&f->c);
+ if(mode<3||mode>=5){assert(o->closes_attempted&&o->closes_returned);if(mode==0)assert(r==-EINTR&&calls==3&&closed[0]==42&&closed[1]==41&&closed[2]==30&&o->close_failure_original==&o->closes[0]);if(mode==1)assert(r==-EINTR&&calls==3&&!o->closes[0].raw_attempted&&o->closes[0].failure_original==&o->final.lift.close_original);if(mode==2)assert(r==-EINVAL&&calls==2&&closed[0]==41&&closed[1]==30&&o->closes[0].unsettled_original==&o->final.open);if(mode==5)assert(r==-EINTR&&calls==4&&closed[0]==43&&closed[1]==42&&closed[2]==41&&closed[3]==30&&o->close_failure_original==&o->closes[3]&&o->closes[0].result==-EIO);if(mode==6)assert(r==-EINTR&&calls==4&&closed[0]==43&&!o->closes[3].raw_attempted&&o->closes[3].failure_original==&f->s.final_reader.lift.close_original);unsigned before=calls;assert(sl_linux_close_failed_archive_before_birth(&f->c)==-EINVAL&&calls==before);}
+ else assert(r==-EINVAL&&!calls&&!o->closes_attempted);assert(o->result==-88&&f->c.construction_result==-77);
+ }return 0;}

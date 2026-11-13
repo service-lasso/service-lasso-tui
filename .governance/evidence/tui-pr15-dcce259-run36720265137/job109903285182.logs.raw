@@ -1,0 +1,254 @@
+﻿2026-09-30T13:16:09.2033488Z Current runner version: '2.337.0'
+2026-09-30T13:16:09.2052786Z ##[group]Runner Image Provisioner
+2026-09-30T13:16:09.2053701Z Hosted Compute Agent
+2026-09-30T13:16:09.2054179Z Version: 20260901.588
+2026-09-30T13:16:09.2054692Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-09-30T13:16:09.2055296Z Build Date: 2026-09-01T19:56:44Z
+2026-09-30T13:16:09.2055840Z Worker ID: {e9a5b695-b25b-4a6e-a9e4-2910abb9b104}
+2026-09-30T13:16:09.2056507Z Azure Region: centralus
+2026-09-30T13:16:09.2057011Z ##[endgroup]
+2026-09-30T13:16:09.2058145Z ##[group]Operating System
+2026-09-30T13:16:09.2058678Z Microsoft Windows Server 2025
+2026-09-30T13:16:09.2059174Z 10.0.26100
+2026-09-30T13:16:09.2059616Z Datacenter
+2026-09-30T13:16:09.2060031Z ##[endgroup]
+2026-09-30T13:16:09.2060452Z ##[group]Runner Image
+2026-09-30T13:16:09.2060949Z Image: windows-2025-vs2026
+2026-09-30T13:16:09.2061993Z Version: 20260925.250.1
+2026-09-30T13:16:09.2063267Z Included Software: https://github.com/actions/runner-images/blob/win25-vs2026/20260925.250/images/windows/Windows2025-VS2026-Readme.md
+2026-09-30T13:16:09.2064614Z Image Release: https://github.com/actions/runner-images/releases/tag/win25-vs2026%2F20260925.250
+2026-09-30T13:16:09.2065465Z ##[endgroup]
+2026-09-30T13:16:09.2066323Z ##[group]GITHUB_TOKEN Permissions
+2026-09-30T13:16:09.2068258Z Contents: read
+2026-09-30T13:16:09.2068715Z Metadata: read
+2026-09-30T13:16:09.2069166Z ##[endgroup]
+2026-09-30T13:16:09.2070830Z Secret source: Actions
+2026-09-30T13:16:09.2071562Z Cache mode: write
+2026-09-30T13:16:09.2072099Z Prepare workflow directory
+2026-09-30T13:16:09.2377777Z Prepare all required actions
+2026-09-30T13:16:09.2419086Z Getting action download info
+2026-09-30T13:16:09.4941798Z Download action repository 'actions/checkout@v5' (SHA:fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09)
+2026-09-30T13:16:09.5954551Z Download action repository 'actions/setup-go@v6' (SHA:924ae3a1cded613372ab5595356fb5720e22ba16)
+2026-09-30T13:16:09.9772679Z Download action repository 'actions/setup-python@v6' (SHA:ece7cb06caefa5fff74198d8649806c4678c61a1)
+2026-09-30T13:16:10.2006767Z Complete job name: Windows test and build
+2026-09-30T13:16:10.3289885Z ##[group]Run actions/checkout@v5
+2026-09-30T13:16:10.3291371Z with:
+2026-09-30T13:16:10.3291816Z   repository: service-lasso/service-lasso-tui
+2026-09-30T13:16:10.3295662Z   token: ***
+2026-09-30T13:16:10.3296211Z   ssh-strict: true
+2026-09-30T13:16:10.3296681Z   ssh-user: git
+2026-09-30T13:16:10.3297145Z   persist-credentials: true
+2026-09-30T13:16:10.3297665Z   clean: true
+2026-09-30T13:16:10.3298127Z   sparse-checkout-cone-mode: true
+2026-09-30T13:16:10.3298678Z   fetch-depth: 1
+2026-09-30T13:16:10.3299179Z   fetch-tags: false
+2026-09-30T13:16:10.3299633Z   show-progress: true
+2026-09-30T13:16:10.3300118Z   lfs: false
+2026-09-30T13:16:10.3300554Z   submodules: false
+2026-09-30T13:16:10.3301036Z   set-safe-directory: true
+2026-09-30T13:16:10.3301557Z   allow-unsafe-pr-checkout: false
+2026-09-30T13:16:10.3302294Z ##[endgroup]
+2026-09-30T13:16:10.4634701Z Syncing repository: service-lasso/service-lasso-tui
+2026-09-30T13:16:10.4636595Z ##[group]Getting Git version info
+2026-09-30T13:16:10.4637319Z Working directory is 'D:\a\service-lasso-tui\service-lasso-tui'
+2026-09-30T13:16:10.5502310Z [command]"C:\Program Files\Git\bin\git.exe" version
+2026-09-30T13:16:10.9646380Z git version 2.55.0.windows.5
+2026-09-30T13:16:10.9690161Z ##[endgroup]
+2026-09-30T13:16:10.9708375Z Temporarily overriding HOME='D:\a\_temp\428f2aa0-9cca-4c82-884b-7f513fc745ee' before making global git config changes
+2026-09-30T13:16:10.9711911Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-30T13:16:10.9719343Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\service-lasso-tui\service-lasso-tui
+2026-09-30T13:16:11.0338664Z Deleting the contents of 'D:\a\service-lasso-tui\service-lasso-tui'
+2026-09-30T13:16:11.0344239Z ##[group]Initializing the repository
+2026-09-30T13:16:11.0352169Z [command]"C:\Program Files\Git\bin\git.exe" init D:\a\service-lasso-tui\service-lasso-tui
+2026-09-30T13:16:11.1155155Z Initialized empty Git repository in D:/a/service-lasso-tui/service-lasso-tui/.git/
+2026-09-30T13:16:11.1197482Z [command]"C:\Program Files\Git\bin\git.exe" remote add origin https://github.com/service-lasso/service-lasso-tui
+2026-09-30T13:16:11.1799221Z ##[endgroup]
+2026-09-30T13:16:11.1801283Z ##[group]Disabling automatic garbage collection
+2026-09-30T13:16:11.1808359Z [command]"C:\Program Files\Git\bin\git.exe" config --local gc.auto 0
+2026-09-30T13:16:11.2065358Z ##[endgroup]
+2026-09-30T13:16:11.2067198Z ##[group]Setting up auth
+2026-09-30T13:16:11.2075833Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2026-09-30T13:16:11.2332598Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2026-09-30T13:16:12.6324889Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-30T13:16:12.6574991Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2026-09-30T13:16:13.1182300Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-30T13:16:13.1442956Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+2026-09-30T13:16:13.5969281Z [command]"C:\Program Files\Git\bin\git.exe" config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+2026-09-30T13:16:13.6228937Z ##[endgroup]
+2026-09-30T13:16:13.6229957Z ##[group]Fetching the repository
+2026-09-30T13:16:13.6242286Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +9c2f721c52b90756c046fb0361a5f57f4fb5b444:refs/remotes/pull/15/merge
+2026-09-30T13:16:14.7014763Z From https://github.com/service-lasso/service-lasso-tui
+2026-09-30T13:16:14.7015596Z  * [new ref]         9c2f721c52b90756c046fb0361a5f57f4fb5b444 -> pull/15/merge
+2026-09-30T13:16:14.7058471Z ##[endgroup]
+2026-09-30T13:16:14.7059295Z ##[group]Determining the checkout info
+2026-09-30T13:16:14.7060047Z ##[endgroup]
+2026-09-30T13:16:14.7069549Z [command]"C:\Program Files\Git\bin\git.exe" sparse-checkout disable
+2026-09-30T13:16:14.7449908Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all extensions.worktreeConfig
+2026-09-30T13:16:14.7721224Z ##[group]Checking out the ref
+2026-09-30T13:16:14.7728608Z [command]"C:\Program Files\Git\bin\git.exe" checkout --progress --force refs/remotes/pull/15/merge
+2026-09-30T13:16:14.8341253Z Note: switching to 'refs/remotes/pull/15/merge'.
+2026-09-30T13:16:14.8341639Z 
+2026-09-30T13:16:14.8342050Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-09-30T13:16:14.8342626Z changes and commit them, and you can discard any commits you make in this
+2026-09-30T13:16:14.8343139Z state without impacting any branches by switching back to a branch.
+2026-09-30T13:16:14.8343462Z 
+2026-09-30T13:16:14.8343858Z If you want to create a new branch to retain commits you create, you may
+2026-09-30T13:16:14.8344534Z do so (now or later) by using -c with the switch command. Example:
+2026-09-30T13:16:14.8344921Z 
+2026-09-30T13:16:14.8345083Z   git switch -c <new-branch-name>
+2026-09-30T13:16:14.8345306Z 
+2026-09-30T13:16:14.8345410Z Or undo this operation with:
+2026-09-30T13:16:14.8345669Z 
+2026-09-30T13:16:14.8345830Z   git switch -
+2026-09-30T13:16:14.8345959Z 
+2026-09-30T13:16:14.8346207Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-09-30T13:16:14.8347213Z 
+2026-09-30T13:16:14.8347626Z HEAD is now at 9c2f721 Merge dcce259bddd888c3e7b92731b4406d046aaad0f5 into 0fa84ce38630e7f5b0066d2aaa103c55b0485c06
+2026-09-30T13:16:14.8446647Z ##[endgroup]
+2026-09-30T13:16:14.8822216Z [command]"C:\Program Files\Git\bin\git.exe" log -1 --format=%H
+2026-09-30T13:16:14.9040043Z 9c2f721c52b90756c046fb0361a5f57f4fb5b444
+2026-09-30T13:16:14.9462140Z ##[group]Run actions/setup-go@v6
+2026-09-30T13:16:14.9462566Z with:
+2026-09-30T13:16:14.9462835Z   go-version-file: go.mod
+2026-09-30T13:16:14.9463098Z   check-latest: false
+2026-09-30T13:16:14.9465149Z   token: ***
+2026-09-30T13:16:14.9465403Z   cache: true
+2026-09-30T13:16:14.9465656Z ##[endgroup]
+2026-09-30T13:16:15.0843557Z Setup go version spec 1.26.0
+2026-09-30T13:16:15.0858568Z Attempting to download 1.26.0...
+2026-09-30T13:16:15.8699591Z matching 1.26.0...
+2026-09-30T13:16:15.8736758Z Acquiring 1.26.0 from https://github.com/actions/go-versions/releases/download/1.26.0-21889650668/go-1.26.0-win32-x64.zip
+2026-09-30T13:16:16.5968604Z Extracting Go...
+2026-09-30T13:16:16.6857596Z [command]"C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Unrestricted -Command "$ErrorActionPreference = 'Stop' ; try { Add-Type -AssemblyName System.IO.Compression.ZipFile } catch { } ; try { [System.IO.Compression.ZipFile]::ExtractToDirectory('D:\a\_temp\go-1.26.0-win32-x64.zip', 'D:\a\_temp\50db5bf5-f2b8-4616-961f-91db56d0740b', $true) } catch { if (($_.Exception.GetType().FullName -eq 'System.Management.Automation.MethodException') -or ($_.Exception.GetType().FullName -eq 'System.Management.Automation.RuntimeException') ){ Expand-Archive -LiteralPath 'D:\a\_temp\go-1.26.0-win32-x64.zip' -DestinationPath 'D:\a\_temp\50db5bf5-f2b8-4616-961f-91db56d0740b' -Force } else { throw $_ } } ;"
+2026-09-30T13:16:19.9936438Z Successfully extracted go to D:\a\_temp\50db5bf5-f2b8-4616-961f-91db56d0740b
+2026-09-30T13:16:19.9939596Z Adding to the cache ...
+2026-09-30T13:16:29.2241742Z Created link C:\hostedtoolcache\windows\go\1.26.0\x64 => D:\hostedtoolcache\windows\go\1.26.0\x64
+2026-09-30T13:16:29.2245400Z Created link C:\hostedtoolcache\windows\go\1.26.0\x64.complete => D:\hostedtoolcache\windows\go\1.26.0\x64.complete
+2026-09-30T13:16:29.2246115Z Successfully cached go to C:\hostedtoolcache\windows\go\1.26.0\x64
+2026-09-30T13:16:29.2251976Z Added go to the path
+2026-09-30T13:16:29.2254384Z Successfully set up Go version 1.26.0
+2026-09-30T13:16:29.4564114Z [command]C:\hostedtoolcache\windows\go\1.26.0\x64\bin\go.exe env GOMODCACHE
+2026-09-30T13:16:29.4604911Z [command]C:\hostedtoolcache\windows\go\1.26.0\x64\bin\go.exe env GOCACHE
+2026-09-30T13:16:29.4787982Z C:\Users\runneradmin\go\pkg\mod
+2026-09-30T13:16:29.4815856Z C:\Users\runneradmin\AppData\Local\go-build
+2026-09-30T13:16:29.7708658Z Cache hit for: setup-go-Windows-x64-go-1.26.0-d9d6de777bbe2dbb6064cc7bbb75cf29d9b917db1033ec0cf714d3a0d2763d56
+2026-09-30T13:16:30.7571223Z Received 52479449 of 52479449 (100.0%), 61.6 MBs/sec
+2026-09-30T13:16:30.7573230Z Cache Size: ~50 MB (52479449 B)
+2026-09-30T13:16:30.7642020Z [command]"C:\Program Files\Git\usr\bin\tar.exe" -xf D:/a/_temp/02cfed95-232b-47a7-a2a9-b50f2ab0482f/cache.tzst -P -C D:/a/service-lasso-tui/service-lasso-tui --force-local --use-compress-program "zstd -d"
+2026-09-30T13:16:38.3257103Z Cache restored successfully
+2026-09-30T13:16:38.3315724Z Cache restored from key: setup-go-Windows-x64-go-1.26.0-d9d6de777bbe2dbb6064cc7bbb75cf29d9b917db1033ec0cf714d3a0d2763d56
+2026-09-30T13:16:38.3336557Z go version go1.26.0 windows/amd64
+2026-09-30T13:16:38.3336823Z 
+2026-09-30T13:16:38.3337276Z ##[group]go env
+2026-09-30T13:16:38.6465321Z set AR=ar
+2026-09-30T13:16:38.6465833Z set CC=gcc
+2026-09-30T13:16:38.6466229Z set CGO_CFLAGS=-O2 -g
+2026-09-30T13:16:38.6466728Z set CGO_CPPFLAGS=
+2026-09-30T13:16:38.6467124Z set CGO_CXXFLAGS=-O2 -g
+2026-09-30T13:16:38.6467641Z set CGO_ENABLED=1
+2026-09-30T13:16:38.6468003Z set CGO_FFLAGS=-O2 -g
+2026-09-30T13:16:38.6468386Z set CGO_LDFLAGS=-O2 -g
+2026-09-30T13:16:38.6469152Z set CXX=g++
+2026-09-30T13:16:38.6469570Z set GCCGO=gccgo
+2026-09-30T13:16:38.6469853Z set GO111MODULE=
+2026-09-30T13:16:38.6470151Z set GOAMD64=v1
+2026-09-30T13:16:38.6470455Z set GOARCH=amd64
+2026-09-30T13:16:38.6470750Z set GOAUTH=netrc
+2026-09-30T13:16:38.6471026Z set GOBIN=
+2026-09-30T13:16:38.6473135Z set GOCACHE=C:\Users\runneradmin\AppData\Local\go-build
+2026-09-30T13:16:38.6473540Z set GOCACHEPROG=
+2026-09-30T13:16:38.6474074Z set GODEBUG=
+2026-09-30T13:16:38.6474470Z set GOENV=C:\Users\runneradmin\AppData\Roaming\go\env
+2026-09-30T13:16:38.6474838Z set GOEXE=.exe
+2026-09-30T13:16:38.6475135Z set GOEXPERIMENT=
+2026-09-30T13:16:38.6475448Z set GOFIPS140=off
+2026-09-30T13:16:38.6475772Z set GOFLAGS=
+2026-09-30T13:16:38.6476516Z set GOGCCFLAGS=-m64 -mthreads -Wl,--no-gc-sections -fmessage-length=0 -ffile-prefix-map=C:\Users\RUNNER~1\AppData\Local\Temp\go-build93583188=/tmp/go-build -gno-record-gcc-switches
+2026-09-30T13:16:38.6477199Z set GOHOSTARCH=amd64
+2026-09-30T13:16:38.6477526Z set GOHOSTOS=windows
+2026-09-30T13:16:38.6477824Z set GOINSECURE=
+2026-09-30T13:16:38.6478166Z set GOMOD=D:\a\service-lasso-tui\service-lasso-tui\go.mod
+2026-09-30T13:16:38.6478556Z set GOMODCACHE=C:\Users\runneradmin\go\pkg\mod
+2026-09-30T13:16:38.6478992Z set GONOPROXY=
+2026-09-30T13:16:38.6479542Z set GONOSUMDB=
+2026-09-30T13:16:38.6479941Z set GOOS=windows
+2026-09-30T13:16:38.6480837Z set GOPATH=C:\Users\runneradmin\go
+2026-09-30T13:16:38.6481458Z set GOPRIVATE=
+2026-09-30T13:16:38.6481825Z set GOPROXY=https://proxy.golang.org,direct
+2026-09-30T13:16:38.6482217Z set GOROOT=C:\hostedtoolcache\windows\go\1.26.0\x64
+2026-09-30T13:16:38.6482569Z set GOSUMDB=sum.golang.org
+2026-09-30T13:16:38.6482923Z set GOTELEMETRY=local
+2026-09-30T13:16:38.6483534Z set GOTELEMETRYDIR=C:\Users\runneradmin\AppData\Roaming\go\telemetry
+2026-09-30T13:16:38.6483922Z set GOTMPDIR=
+2026-09-30T13:16:38.6484369Z set GOTOOLCHAIN=local
+2026-09-30T13:16:38.6484778Z set GOTOOLDIR=C:\hostedtoolcache\windows\go\1.26.0\x64\pkg\tool\windows_amd64
+2026-09-30T13:16:38.6485239Z set GOVCS=
+2026-09-30T13:16:38.6485491Z set GOVERSION=go1.26.0
+2026-09-30T13:16:38.6485910Z set GOWORK=
+2026-09-30T13:16:38.6486231Z set PKG_CONFIG=pkg-config
+2026-09-30T13:16:38.6486387Z 
+2026-09-30T13:16:38.6486910Z ##[endgroup]
+2026-09-30T13:16:38.6914674Z ##[group]Run go test ./...
+2026-09-30T13:16:38.6915204Z [36;1mgo test ./...[0m
+2026-09-30T13:16:38.7499084Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-09-30T13:16:38.7499628Z env:
+2026-09-30T13:16:38.7499933Z   GOTOOLCHAIN: local
+2026-09-30T13:16:38.7500242Z ##[endgroup]
+2026-09-30T13:16:39.7770914Z ?   	github.com/service-lasso/service-lasso-tui/cmd/service-lasso-tui	[no test files]
+2026-09-30T13:16:41.2322098Z ok  	github.com/service-lasso/service-lasso-tui/internal/api	0.050s
+2026-09-30T13:16:41.2350644Z ok  	github.com/service-lasso/service-lasso-tui/internal/app	0.024s
+2026-09-30T13:16:41.4075220Z ##[group]Run go build ./cmd/service-lasso-tui
+2026-09-30T13:16:41.4075700Z [36;1mgo build ./cmd/service-lasso-tui[0m
+2026-09-30T13:16:41.4132157Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-09-30T13:16:41.4132573Z env:
+2026-09-30T13:16:41.4132910Z   GOTOOLCHAIN: local
+2026-09-30T13:16:41.4133233Z ##[endgroup]
+2026-09-30T13:16:42.6805560Z ##[group]Run actions/setup-python@v6
+2026-09-30T13:16:42.6806024Z with:
+2026-09-30T13:16:42.6806350Z   python-version: 3.14
+2026-09-30T13:16:42.6806614Z   check-latest: false
+2026-09-30T13:16:42.6808577Z   token: ***
+2026-09-30T13:16:42.6808880Z   update-environment: true
+2026-09-30T13:16:42.6809171Z   allow-prereleases: false
+2026-09-30T13:16:42.6809450Z   freethreaded: false
+2026-09-30T13:16:42.6809689Z env:
+2026-09-30T13:16:42.6809994Z   GOTOOLCHAIN: local
+2026-09-30T13:16:42.6810243Z ##[endgroup]
+2026-09-30T13:16:42.8505291Z ##[group]Installed versions
+2026-09-30T13:16:42.8678369Z Successfully set up CPython (3.14.7)
+2026-09-30T13:16:42.8679748Z ##[endgroup]
+2026-09-30T13:16:42.8925604Z ##[group]Run python -m pip install --require-hashes --only-binary=:all: --no-deps -r scripts/requirements-conpty.txt
+2026-09-30T13:16:42.8926604Z [36;1mpython -m pip install --require-hashes --only-binary=:all: --no-deps -r scripts/requirements-conpty.txt[0m
+2026-09-30T13:16:42.8927381Z [36;1mgo build -o service-lasso-tui.exe ./cmd/service-lasso-tui[0m
+2026-09-30T13:16:42.8928217Z [36;1mpython scripts/verify-release-asset-conpty.py --executable service-lasso-tui.exe --mode unavailable --api-url http://127.0.0.1:1[0m
+2026-09-30T13:16:42.9036975Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-09-30T13:16:42.9037492Z env:
+2026-09-30T13:16:42.9037786Z   GOTOOLCHAIN: local
+2026-09-30T13:16:42.9038213Z   pythonLocation: C:\hostedtoolcache\windows\Python\3.14.7\x64
+2026-09-30T13:16:42.9038834Z   PKG_CONFIG_PATH: C:\hostedtoolcache\windows\Python\3.14.7\x64/lib/pkgconfig
+2026-09-30T13:16:42.9039565Z   Python_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.14.7\x64
+2026-09-30T13:16:42.9040071Z   Python2_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.14.7\x64
+2026-09-30T13:16:42.9040583Z   Python3_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.14.7\x64
+2026-09-30T13:16:42.9041393Z ##[endgroup]
+2026-09-30T13:16:47.5247165Z Collecting pywinpty==3.0.5 (from -r scripts/requirements-conpty.txt (line 3))
+2026-09-30T13:16:47.5990206Z   Downloading pywinpty-3.0.5-cp314-cp314-win_amd64.whl (2.1 MB)
+2026-09-30T13:16:47.6873141Z      ---------------------------------------- 2.1/2.1 MB 34.2 MB/s  0:00:00
+2026-09-30T13:16:47.8461687Z Installing collected packages: pywinpty
+2026-09-30T13:16:47.9099560Z Successfully installed pywinpty-3.0.5
+2026-09-30T13:16:56.6641630Z {"ok":false,"stage":"startup","receipt":{"stage":"startup","outcome":"error","closedReason":"terminal_closed"}}
+2026-09-30T13:16:56.7516481Z ##[error]Process completed with exit code 1.
+2026-09-30T13:16:56.7741165Z Post job cleanup.
+2026-09-30T13:16:56.9294434Z [command]"C:\Program Files\Git\bin\git.exe" version
+2026-09-30T13:16:56.9520469Z git version 2.55.0.windows.5
+2026-09-30T13:16:56.9576410Z Temporarily overriding HOME='D:\a\_temp\0e693ca7-f41f-4f6f-866a-457c36c2d1fb' before making global git config changes
+2026-09-30T13:16:56.9577492Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-30T13:16:56.9585609Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\service-lasso-tui\service-lasso-tui
+2026-09-30T13:16:56.9860786Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2026-09-30T13:16:57.0133014Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2026-09-30T13:16:57.4663212Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-30T13:16:57.4877148Z http.https://github.com/.extraheader
+2026-09-30T13:16:57.4916818Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all http.https://github.com/.extraheader
+2026-09-30T13:16:57.5168824Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2026-09-30T13:16:58.0028010Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-30T13:16:58.0277788Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+2026-09-30T13:16:58.5011505Z Cleaning up orphan processes

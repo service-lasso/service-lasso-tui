@@ -1,5 +1,13 @@
 # Development instructions
 
+## VibeGov
+
+Read `.governance/rules/gov-01-instructions.mdc` through
+`.governance/rules/gov-08-exploratory-review.mdc` in order before governed
+changes. The canonical bootstrap references are
+`https://vibegov.io/agent.txt`, `https://vibegov.io/bootstrap.json`, and
+`https://vibegov.io/docs/bootstrap/`.
+
 ## Branch boundary
 
 - Development work starts from `develop` and uses an issue-scoped branch.

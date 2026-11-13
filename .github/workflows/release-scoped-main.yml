@@ -1,0 +1,226 @@
+name: Publish main Windows Linux macOS native TUI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      candidate_version:
+        description: Exact yyyy.m.d-sevenSHA version
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  validate-source:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      version: ${{ steps.source.outputs.version }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.23.2'
+      - id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ inputs.candidate_version }}"
+          if [ -z "$version" ]; then
+            version="$(date -u +%Y.%-m.%-d)-${GITHUB_SHA::7}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - id: source
+        name: Bind checked-out source and canonical policy before acquisition
+        env:
+          CANDIDATE_VERSION: ${{ steps.version.outputs.version }}
+        run: node scripts/bind-scoped-source.mjs
+
+  native-candidate:
+    needs: validate-source
+    name: native-candidate (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: win32
+            runner: windows-latest
+          - platform: linux
+            runner: ubuntu-latest
+    env:
+      CANDIDATE_VERSION: ${{ needs.validate-source.outputs.version }}
+      GOFLAGS: ''
+      GOWORK: 'off'
+      GOAMD64: 'v1'
+      GOARCH: 'amd64'
+      GOENV: 'off'
+      GOTOOLCHAIN: 'local'
+      GOFIPS140: 'off'
+      GOEXPERIMENT: ''
+      CGO_ENABLED: '0'
+      GOCACHEPROG: ''
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.validate-source.outputs.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.23.2'
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.14'
+      - name: Bind source before native acquisition
+        run: node scripts/bind-scoped-source.mjs
+      - name: Generate source-owned Windows query profile
+        if: matrix.platform == 'win32'
+        shell: bash
+        run: node scripts/generate-source-owned-windows-profile.mjs --output "$RUNNER_TEMP/windows-query-profile.json" --source-commit "$GITHUB_SHA"
+      - name: Build and qualify original executable on actual matching host
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          private="$RUNNER_TEMP/scoped-native-private-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}"
+          public="$RUNNER_TEMP/scoped-native-public-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}"
+          if [ "${{ matrix.platform }}" = "win32" ]; then
+            node scripts/produce-scoped-native.mjs "$private" "$public" "$RUNNER_TEMP/windows-query-profile.json"
+          else
+            node scripts/produce-scoped-native.mjs "$private" "$public"
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: scoped-native-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scoped-native-public-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}/*
+          if-no-files-found: error
+          retention-days: 90
+
+  darwin-candidate:
+    needs: validate-source
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.validate-source.outputs.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Build native darwin TUI
+        shell: bash
+        run: |
+          set -euo pipefail
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o "$RUNNER_TEMP/service-lasso-tui" ./cmd/service-lasso-tui
+          tar -czf "$RUNNER_TEMP/service-lasso-tui-${{ needs.validate-source.outputs.version }}-darwin-arm64.tar.gz" -C "$RUNNER_TEMP" service-lasso-tui
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: scoped-native-darwin-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/service-lasso-tui-${{ needs.validate-source.outputs.version }}-darwin-arm64.tar.gz
+          if-no-files-found: error
+          retention-days: 90
+
+  aggregate:
+    needs: [validate-source, native-candidate]
+    runs-on: ubuntu-latest
+    env:
+      CANDIDATE_VERSION: ${{ needs.validate-source.outputs.version }}
+    steps:
+      - name: Deny incomplete source or native gates
+        env:
+          SOURCE_RESULT: ${{ needs.validate-source.result }}
+          NATIVE_RESULT: ${{ needs.native-candidate.result }}
+        run: test "$SOURCE_RESULT" = success && test "$NATIVE_RESULT" = success
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.validate-source.outputs.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.23.2'
+      - id: selected
+        name: Bind exact current provider jobs and artifacts before retrieval
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/bind-scoped-source.mjs select-native
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ steps.selected.outputs.win32_id }}
+          path: ${{ runner.temp }}/scoped-inputs/win32
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ steps.selected.outputs.linux_id }}
+          path: ${{ runner.temp }}/scoped-inputs/linux
+          merge-multiple: true
+      - name: Verify original native bodies and independent artifact byte readback
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/assemble-scoped-candidate.mjs "${{ runner.temp }}/scoped-inputs" "${{ runner.temp }}/scoped-package/release-assets" "${{ runner.temp }}/scoped-package/evidence"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: scoped-package-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scoped-package
+          if-no-files-found: error
+          retention-days: 90
+
+  release:
+    needs: [validate-source, aggregate, darwin-candidate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Deny incomplete gates
+        env:
+          SOURCE_RESULT: ${{ needs.validate-source.result }}
+          AGGREGATE_RESULT: ${{ needs.aggregate.result }}
+          DARWIN_RESULT: ${{ needs.darwin-candidate.result }}
+        run: test "$SOURCE_RESULT" = success && test "$AGGREGATE_RESULT" = success && test "$DARWIN_RESULT" = success
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: scoped-package-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scoped-package
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: scoped-native-darwin-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/scoped-darwin
+      - name: Assemble the three native release archives and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.validate-source.outputs.version }}"
+          mkdir -p release-assets
+          cp "$RUNNER_TEMP/scoped-package/release-assets/service-lasso-tui-$version-win32-amd64.zip" release-assets/
+          cp "$RUNNER_TEMP/scoped-package/release-assets/service-lasso-tui-$version-linux-amd64.tar.gz" release-assets/
+          cp "$RUNNER_TEMP/scoped-darwin/service-lasso-tui-$version-darwin-arm64.tar.gz" release-assets/
+          (cd release-assets && sha256sum service-lasso-tui-"$version"-win32-amd64.zip service-lasso-tui-"$version"-linux-amd64.tar.gz service-lasso-tui-"$version"-darwin-arm64.tar.gz > SHA256SUMS.txt)
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.validate-source.outputs.version }}
+          name: ${{ needs.validate-source.outputs.version }}
+          target_commitish: ${{ needs.validate-source.outputs.sha }}
+          files: |
+            release-assets/service-lasso-tui-*.zip
+            release-assets/service-lasso-tui-*.tar.gz
+            release-assets/SHA256SUMS.txt
+          generate_release_notes: true

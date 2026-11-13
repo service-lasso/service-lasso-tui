@@ -1,0 +1,13 @@
+# Parent clarification: local native startup is an implementation obligation
+
+2026-10-11. Source implementation clarification only, under standing COMPLETE delivery authorization. Not SOURCE_GO, actual-input admission, execution, provisioning or native acceptance.
+
+Read in full: TUI NATIVE-OWNER-AND-ACCEPTANCE-SELECTION.md SHA256 6245C844FA255B927BB5E1B27DEB0AF5E61A26F9E00163C343025E1AF257A9A6 and NATIVE-OWNER-PACKAGING-DIRECTION.md SHA256 DCC014508941CB03B0B84D5859126479118EA592817D97C5C812934AB419164E.
+
+The selected Linux local owner must implement actual clone3 birth into an owned protected cgroup-v2 with genuine delegated rights, migration exclusion, namespace/credential relations and exact control results. The selection says a completed Core/CLI factory CAN supply implementation; it does not require that factory or an external native issuer. It explicitly describes genuine native original custody as an implementation obligation, not an invented reviewer/issuer identity gate. Windows local source construction has the corresponding selected actual Job-list/suspended entry/handle-list obligations.
+
+Therefore absence of an existing Core factory or external native issuer does not prevent author30 implementing the public native argv-to-held-Go-layout startup path within the selected trust/rights model. The native public executable may establish its local owner itself through concrete source-bound OS acquisitions. Actual existing rights/profile/cgroup/namespace predicates must be observed before contained birth; names, env-FD numbers, caller booleans, projected ACKs or nominal package membership do not supply them. Missing actual OS premises deny the affected positive entry and remain explicit external qualification inputs.
+
+Do not invent a new provider, privileged service, credential, human approval, host setting or cgroup provisioning grant. Actual operator-v2 API issuer/principal/JWKS acceptance inputs are separate from local native owner construction and remain required for genuine product journeys. Native source implementation and later native qualification remain separate.
+
+Author30 is sole TUI writer and must propagate the corrected distinction through current precode/progress/topology before dependent product implementation. Core119 is informed so a future Core factory is not treated as an artificial source dependency. Preserve full D2/S1-S7/46/M01-M08/18 views/nine families/storage/useful positives, full runtime finite derivation, ordinary public behavior, complete review/input/CI/native/publication/identical-byte integration gates. macOS deferred N/A, never PASS. No GA/promotion/deployment/settings change.

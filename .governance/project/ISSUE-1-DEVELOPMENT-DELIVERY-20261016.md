@@ -1,0 +1,543 @@
+# Issue 1 development delivery continuation, 2026-10-16
+
+## Exact606b478 whole review and natural source progress
+
+Different fresh `/root/review_tui34_entire606_oct16` returned bounded entire43
+SOURCE_GO/no P0-P3. Exact606 run38837835923 is terminal failed: Linux test/build
+116770828108 and both source cross-compilation jobs succeed. Windows116770828219
+passes command/API/app/lifetime Go packages (app1.379s), including the actual
+Save/Clear/retry/independent-original/onceclose source cases, and progresses
+through the real unavailable ConPTY probe. This is source/native-component
+evidence, not full default-v2/operator acceptance or whole Windows job success.
+
+Windows then fails a later Python source fixture with KeyError for the virtual
+replacement path: its fixed POSIX dictionary keys disagree with the actual
+Windows-host os.path.join used by the controlled Linux source body. The bounded
+repair derives all virtual keys with SAME host path algebra. Every original
+primary/secondary identity, independent cleanup, restoration and once-close
+assertion remains. No production behavior, skip, deadline or gate is changed.
+
+Overlay116770828207's public artifact12019613294 confirms incomplete phase
+acquire-authentic-query-profile, sourceCommit null, native acceptance false.
+Only that public summary was read; owned temporary ZIP/manifest/directory were
+removed immediately after checked cleanup. Genuine provider input remains absent.
+macOS failure remains N/A, never PASS; native PTY dependencies are skipped/NOT_RUN.
+New fixture source is locally UNRUN and requires a new entire exact-head review.
+
+## d5 whole review and clear-lifetime successor
+
+Different fresh `/root/review_tui34_entire_d5e_oct16` reviewed exactd5/all41
+and returned bounded SOURCE_GO with no P0-P3 findings. This is neither complete
+native product source GO nor execution admission. Exactd5 natural run38836913419
+fails: both cross-compilation jobs pass; Windows source116767982942 confirms
+first Save now reaches subsequent Clear/retry failures. Linux116767982619 passes
+the actual paired/held-input10 source cases and prior source groups, then fails
+only one of88 later cases because the guard's LF marker misses a CRLF job key.
+Unreached later commands/native jobs are NOT_RUN, never inferred successful.
+
+Parent read and selected `TUI1-CLEAR-ORIGINAL-LIFETIME-20261016.md` before
+implementation. The new source unit preserves independent read-only native
+originals through delete-owner once-close, actual absence and complete raw
+readback; final cleanup retains separate original outcomes. It also repairs the
+line-ending interpretation with LF/CRLF/mixed real-workflow cases and mirrors the
+source-only diagnostic command without altering macOS N/A or required gates.
+All new source cases remain locally UNRUN; static diff hygiene only. The new
+head requires fresh different entire review and new authentic ROOT/exact-command
+admission. No protected publication, same-byte Core or native operator proof.
+
+## Exact66c9b55 natural evidence
+
+Run38836091222 is terminal failed. Both source cross-compilation jobs pass only.
+Windows116765446671 still fails the same three public store cases; actual native
+rename status now3221225539 (STATUS_SHARING_VIOLATION), unchanged/released effect.
+This is new direct boundary evidence, not success or a waived exclusion guard.
+Microsoft's native rename contract identifies the target-directory internal
+write open; the current selected list-directory/share0 exclusion needs an
+explicit coherent architecture disposition before any sharing change.
+
+Overlay116765446463 emits only a closed failure and public summary. Actual
+artifact12019670914 was read: phase acquire-authentic-query-profile, incomplete,
+sourceCommit null and native acceptance false. It reached original input
+acquisition; no genuine profile/native execution is established. Only public
+summary was downloaded temporarily, and the owned ZIP/manifest/directory were
+removed after checked absolute/no-reparse cleanup. No private dump was read.
+
+Linux116765446697 passes prior27/19/3/11 source groups (platform skips retained),
+then the Windows orchestration fixture fails production image/parent admission:
+its mock returns a relative executable while its birth image is absolute.
+Correct the source fixture to supply the genuine constructor's absolute tuple;
+keep production guards and exact original finish-receipt/recovery assertions.
+Remaining subsequent source groups were not reached and are NOT_RUN.
+
+Parent then selected the documented smaller same-directory class65 operand
+refinement in TUI1-PAIRED-SOURCE-EMITTER-20261016.md. Actual prepared creation
+parent/identity plus current exclusive parent and fresh named/held/raw rejoin
+precede the native simple-leaf RootDirectory=NULL operation. Both share0 owners
+and all applied-effect/readback/release guards remain. Constructor-based source
+fixtures cover actual same-directory rename, escape leaves, different actual
+prepared parent and changed original parent carrier. They remain locally UNRUN.
+This does not fabricate a complete changed-native-file/retained-failure borrower
+fixture: that direct qualification remains pending with the full native owner.
+Current source needs a new different entire review before any local execution.
+
+## 4b0d0d5 actual findings and next coherent source unit
+
+Exact4b natural run38835205422 completed failed. Scoped and historical source
+cross-compilation passed; neither is native acceptance. Windows product module
+traversal no longer enters toolchain-overlay, but the same three legacy/store
+cases fail. Retained native diagnostics establish publication-rename Errno87,
+unchanged/released effect, rather than a sharing-cause inference. Linux's prior
+27 harness tests pass with one platform skip; a later observer fixture fails
+because its global text open mock intercepts argparse/gettext binary reads.
+The overlay job fails its combined entry guard before genuine input acquisition;
+it does not yet prove the missing-profile failure gate was reached.
+
+DIFFERENT ENTIRE4b review is SOURCE_NO_GO: opaque profile/native exceptions can
+leak through an uncaught CI error, and hashed originals were closed before the
+later pathname borrowers without full revalidation/generated-digest joins.
+The next source unit retains actual handles and complete distinct read originals
+through subprocess borrowers, compares held/native pathname identity and exact
+bytes before/after, joins emitted Go/header digests, and keeps opaque failures
+private behind a closed summary. Actual replacement/mutation and malformed/
+opaque child negatives are source-authored, locally UNRUN.
+
+`TUI1-PAIRED-SOURCE-EMITTER-20261016.md` maps the real held-file Go/C producer
+and plan caller, same-root direct NT rename causal route and exact source docs.
+The producer has no genuine issuer/provider/finance or native C entry authority.
+The Windows mechanism is not qualified until actual direct observations pass;
+sharing, identity, namespace/effect/release guards remain required. All future
+source changes need a fresh different entire cumulative review and new ROOT.
+
+## Transferred successor overlay/harness unit
+
+The fresh successor owns this existing clean PR34 checkout from exact1a8fca3
+by parent transfer. Mapping and actual input boundary:
+`TUI1-OVERLAY-TEST-GATE-20261016.md`. The source unit adds the correct overlay
+module boundary together with a mandatory actual matching-host GOROOT executor
+and publisher requirements, never a silent test exclusion. Authentic schema3
+profile and private external custody remain unavailable; the gate fails closed.
+Actual Linux harness fixture repairs retain SAME primary/cause/secondary error
+identities and strengthen both real upload allowlists. Test-only Windows native
+boundary/code diagnostics preserve existing failed Save/Clear behavior pending
+actual cause evidence. All new source is UNRUN locally; no parser/compiler/test/
+generator/import/install/native execution and no source/native/full release GO.
+Original positive entry/source/provider/finance and all full delivery gates stay
+active. No disposable scratch/output was created by this source-only unit.
+
+Owner: fresh TUI delivery worker under parent `/root`; source branch
+`fix/1-development-release-oct16`, PR34 into `develop`, based on
+`f29a6143cc12980ef46f96c08b10b3c8c1010be4`. This continues the complete
+SPEC001/operator-v2-selected scope; it does not replace it with compilation.
+The retained PR33 checkout and its inherited alternate index are read only.
+
+## Concrete current repairs and requirement mapping
+
+- SPEC001 keyboard/error/source ownership: the nested cancelreader module
+  declares Go1.17. Its original-operation fields now use `interface{}` rather
+  than the Go1.18 `any` alias, preserving actual object references.
+- Selected native construction/original custody: ordinary Linux builds retain
+  an actual once-only rejected construction when no candidate is installed.
+  That rejection owns its Receiver, original argument aliases and exact failure;
+  repeated calls cannot overwrite it. It grants no profile, geometry or IO.
+  Paired generated source uses the explicit `service_lasso_native_candidate`
+  build lane, with original arguments attached at construction.
+- Selected native source/build provenance: `linuxCandidateBuildPlan` carries
+  distinct held paired Go/C generated inputs, the same candidate tag and overlay
+  for full tests and payload, the complete native production source roster, and
+  explicit review/input-root/command/provider/containing prerequisites. A plan
+  grants none of those prerequisites. No emitted or native artifact exists.
+- SPEC001 keyboard/cancel/error and S1-S7 message originals: both Windows mouse
+  reader reinitialization failures now return through the three-value owned
+  message finish path. The actual consumer completes and requests loop stop.
+  New source regressions exercise both failure branches and SAME originals.
+- Response-original regressions now use valid operation UUIDs so the intended
+  typed outcome error is reached; assertions for actual error and redaction
+  remain unchanged. Constructor regression now requires stronger missing-source
+  refusal before native queries. Its independent real socket/parent observer
+  test remains unchanged.
+- Storage amendment R36/M07/C03/D03: Windows replacement now settles only after
+  the existing actual rename plus independent named/held identity/size/exact
+  byte readback succeeds. Clear retains the original target after disposition
+  and performs a distinct native relative open under the SAME held parent;
+  only positively observed exact namespace absence settles clear_applied.
+  Unexpected presence/errors remain unresolved with native outputs retained.
+  Cleanup release remains an independent outcome. Existing actual filesystem
+  Save/Clear/recovery tests remain unchanged and qualification is still pending.
+- The vertical-cursor fixture now uses the specified four-cell literal ESC
+  rendering `\x1b` plus the wide glyph's two cells. Existing up/down and original
+  byte preservation checks remain; rendering/cursor production code is unchanged.
+
+## Current authentic inputs and remaining connected work
+
+The profile emitter is called only by synthetic source fixtures. It requires
+the complete original SLCPROF1 profile, original evidence/relations, selected
+Go/C ABI geometry and full closed native quantity roster. Source can derive
+field layouts and arithmetic; it cannot manufacture installed issuer/policy,
+actual containing/runtime/stack/TLS/provider inputs, or numerical qualification.
+The emitter has static prepare/dispatch functions but no actual native C
+`main`/`_start` construction. The ordinary Go `main` is still the historical
+public entry and is not native acceptance evidence.
+
+Complete actual initial entry/source charge, native argv/environment and
+raw-fork/TLS/provider safety, separate parent policy/current/fscreate/creation
+and all25purpose graph, archive readers/emission/stability/external late custody,
+LOCAL/FINAL/disposition, Windows complete early stream/bootstrap/provider path,
+and useful five-action/keyboard/cancel/error/Core integration remain required.
+
+Windows natural CI also rejects the standard-library overlay sources when
+root `go test ./...` treats them as product packages. Do not simply exclude them:
+a correct source boundary requires a mandatory actual matching-host GOROOT
+overlay test invocation with authentic generated query-region and provider
+inputs, preserving overlay tests and provenance. That boundary remains OPEN.
+
+## Validation and custody
+
+Exact `d4b978619916bb752ee5ce72e0f2c722481d768d` entire49-file independent
+review returned bounded SOURCE_GO. Natural run38840120543 Windows116778041140,
+Linux116778041444 and both cross-compiles succeeded. Windows genuine EOF
+fixture passed in57.67ms, actual extra-pipe/error/foreign-binding cuts passed,
+and final source script group passed93/93. A later group had85 passes/1skip,
+which is not an all-native qualification. Required Linux native PTY
+job116778508645 is RUNNING; the combined step includes builds AND actual native
+preflight/five-action calls, so its fine phase is unknown until actual log
+evidence. The skipped deferred macOS matrix row is separate and must not be
+reported as the required Linux job. Mandatory owned GOROOT profile gate still
+fails closed. No publication/native-operator result is inferred.
+
+Parent selected source-only continuation while that immutable hosted job runs:
+[TUI1-STATIC-OWNED-CALLER-20261016.md](TUI1-STATIC-OWNED-CALLER-20261016.md)
+durably maps the two static generated caller helpers before implementation.
+They compose complete preeffect source/charge/copy/raw-input exclusions,
+compiled plan, SAME charge/public preparation and SAME ALREADY-CONSTRUCTED
+outer deadline/root/enrollment before existing dispatch. No clock is started
+or renewed in the helpers; no C main/_start/exported ABI/issuer is introduced.
+The genuine installer-owned containing reservation and operation-to-domain/
+charge relationship remain unavailable external call-control prerequisites,
+not authenticated by pointer equality, dimensions or serialized input.
+The actual generated-helper native C refusal fixture remains UNRUN and does
+not replace the still-required genuine prepared-owner/borrower fault matrix.
+
+The protected-publication document now matches the exact current scoped
+publisher's four required contexts, including owned GOROOT and scoped cross-
+compilation. Historical three-OS/five-check policy is retained separately;
+macOS stays N/A. No provider settings or credential is changed. Local source
+edits left the hosted head unchanged during the initial hold; the later parent
+disposition below lifts that hold for the two complete source units. Fresh
+entire-patch review and actual-input/exact-command admission remain owed for
+changed bytes.
+
+For the next exact head, parent also selected bounded literal public markers
+around the existing seven prepare_phase occurrences and actual preflight/
+five-action invocations in both identical required/deferred native bodies.
+Markers contain only source-owned ordinal/phase and enter/return literals;
+they print no path, argument, identity, payload, error or result. Existing
+commands, order, status capture, deadlines, timeouts and acceptance are intact.
+Under the existing errexit behavior, a failed command may prevent a return
+marker; neither marker proves PASS/issuer/native qualification. These markers
+cannot retroactively establish the fine phase of the current running d4b job.
+
+Exact `8aae573fd00cae13564241bd54d75e9340203d0d` natural run38839222876
+again passed Linux and both cross-compiles, but Windows116775203417 failed the
+SAME EOF fixture with the same30s timeout. This is consecutive EOF failure2,
+not a new successful boundary. Pinned libuv `win/fs.c` then established the
+previously missed source constraint: closing descriptors0..2 is a successful
+no-op. The earlier end/close route was insufficient. No native handle census,
+callback trace or successful EOF is inferred from those source facts.
+
+Parent selected and reviewed the internal boundary before implementation in
+[TUI1-HANDOFF-PIPE-ORIGINAL-20261016.md](TUI1-HANDOFF-PIPE-ORIGINAL-20261016.md).
+The real ChildProcess observer now privately retains all original stdio pipes,
+deduplicates aliases and retains extra-pipe directions/EOF/finish/errors/close
+count. Optional handoff selection resolves only an actual readable original
+of that SAME already-observed child, excluding stdin. Foreign/absent/numeric/
+late-added streams cannot acquire listeners. The production call remains
+fixed to original stdout; its30s/quota/strict-parser/child listeners remain.
+Only Windows EOF source fixture uses real inherited pipe3 and realclose3;
+non-Windows retains original stdoutclose1. Real extra-pipe ready and local-
+destroy negatives cover actual ownership/terminal cuts. Actual EOF while
+child remains alive and successful full child/extra-pipe closure after stdin
+release are mandatory. Public projections are not original-binding authority.
+This unit is UNRUN locally; review/CI/native qualification remain separate.
+
+Exact `57e2379c30dc05e256cb560d309943aecba9eca3` natural run38838743804
+passed Linux, both cross-compiles, all Windows Go packages and the actual
+held-input replacement/mutation/failure case. Windows job116773667220 advanced
+to a different sole failure: the natural-EOF handoff fixture closed CRT fd1 but
+the parent received no pipe EOF, so the unchanged 30-second handoff budget
+expired. This is the first observed signature at that boundary, not a repeat
+of the earlier replacement EPERM. Required GOROOT remains closed on missing
+authentic profile; native PTY jobs are NOT_RUN.
+
+Only the Windows EOF fixture route changes: finish the actual `process.stdout`
+writable stream, then close the CRT fd1 in its successful callback while stdin
+keeps the child alive. End/close errors are not swallowed. The parent must see
+actual stdout EOF, no child exit/close, no ready record and removed readiness
+listener. After stdin release, the same original child must close successfully
+with complete actual pipe observations; a prior EOF cannot conceal a later
+callback failure. Other hosts retain the already-passing `closeSync(1)` route.
+Production deadlines and handoff behavior are unchanged. This source fixture
+is UNRUN locally and awaits exact-head natural CI.
+
+The exact Node v22.23.2 bundled libuv
+[`uv_pipe_open` and pipe shutdown](https://github.com/nodejs/node/blob/v22.23.2/deps/uv/src/win/pipe.c)
+duplicate Windows stdio handles0..2, derive actual access and close the
+non-readable pipe handle on successful shutdown before invoking its callback.
+The ordinary Windows stdout child pipe is writable only. Node's
+[`getStdout`](https://github.com/nodejs/node/blob/v22.23.2/lib/internal/bootstrap/switches/is_main_thread.js)
+overrides destroy so a destroy event alone does not close the underlying
+descriptor. These source facts explain the selected two-original close order;
+the live-alias explanation remains a source-backed hypothesis joined to the
+observed missing EOF, not an actual native handle census or proof of unique
+ownership. They do not certify the proposed native result, timeout behavior,
+or any native holder qualification.
+
+Exact `d2fdf30ae61a5d6c48c046089dd58a30af0de435` natural run38838272672
+passed Linux and both cross-compiles. Windows job116772181641 passed the
+previous Python host-path fixture and advanced to the held-input source fixture:
+`rename(replacement,input)` failed with EPERM while the original input remained
+open. This is one observed destination-overwrite failure, not repeated proof
+that a rename to an unused name fails. The owned GOROOT gate remains incomplete
+without an authentic query profile; native PTY jobs were skipped, not passed.
+
+The fixture now moves the original name to a separate unused leaf while keeping
+the SAME original handle live, then moves the replacement into the absent name.
+Successful substitution is mandatory: actual named identity must differ and
+complete bytes must match, while the held original retains its actual identity
+and full bytes. A failed second rename case retains and reads the parked
+original, confirms the original pathname is absent, and still requires refusal.
+Mutation and revalidation assertions remain required. Cleanup attempts both
+held close and removal and retains every primary/cleanup failure. Production
+sharing and ownership guards are unchanged. This route remains UNRUN until
+natural CI observes it; EPERM is never accepted as successful substitution.
+
+Primary semantic binding: Node v22.23.2's actual bundled libuv
+[`fs__open` and `fs__rename`](https://github.com/nodejs/node/blob/v22.23.2/deps/uv/src/win/fs.c)
+use read/write/delete sharing for ordinary opens and
+`MoveFileExW(...,MOVEFILE_REPLACE_EXISTING)` for rename. Microsoft's
+[`MoveFileExW` contract](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw)
+distinguishes an existing destination replacement from a destination absent at
+the operation. These source facts motivate the causal fixture change; they do
+not establish its actual native result.
+
+No local target formatter/parser/import/generator/compiler/build/test/native or
+product crypto command has run. New regressions are UNRUN. Natural exact-head
+CI is separate; no rerun, cancellation or weakened gate is authorised here.
+Different whole-source review, new complete authentic INPUTROOT and parent
+exact-command admission still precede local target execution. Required native
+Windows/Linux, protected DEV publication and identical published-byte Core
+integration remain unproved. macOS is N/A, never PASS. No GA/deployment claim.
+
+Owned checkout: `D:/projects/service-lasso/_worktrees/service-lasso-tui/1-development-release-oct16`.
+Retain source under this owner for unfinished issue1/PR34. Cleanup trigger is
+verified landing, closed PR, clean/pushed status and policy ownership/lock/process
+checks. This continuation has created no disposable build/dependency/scratch
+output. Every intentional source commit is immediately pushed.
+
+### Selected existing Windows plan executor (local source only)
+
+Parent selected the actual executor of existing windowsPayloadFirstBuildPlan;
+precode/ownership mapping is TUI1-WINDOWS-PLAN-EXECUTOR-20261016.md, within
+SPEC004's held original build/native-owner path. The source operational body
+and refusal fixture are scripts/windows-payload-first-executor.mjs and its
+test. They consume required actual profile/entry/tool/transitive originals,
+retain full readbacks/native identity and actual argv/environment/file-backed
+streams/error/exit/close, execute emitter/payload/root/closed C roster/link,
+and retain live attempt originals on success or failure. Explicit after-last-
+borrower close is cached once; failed partial outputs and cleanup failures
+are retained. Refusal fixtures and both matching workflow inclusions are UNRUN.
+
+This new unit is separate from the preceding six-file static composition/doc/
+phase-marker unit. Actual genuine native compiler-family/operation custody and
+entry producer remain unconnected; direct child close/hash/plan supplies none
+of that authority. No boolean or generic callback substitutes for the existing
+typed binding. Native activation stays closed; profile acquisition remains CLI
+owned, and actual pair/schema4/Core119 consumer wiring is a subsequent unit.
+Parent lifted the earlier coordination hold after both meaningful source units
+completed: self-review, cohesive commit and immediate normal push are selected.
+No manual cancel/rerun, concurrency/timeout/settings changes or skipped gates
+are selected. At04:26UTC the old d4b job116778508645 was still RUNNING in the
+combined step, later adversaries pending, fine phase UNKNOWN. A normal-policy
+cancellation following the new push is unqualified, never a success. New exact-
+head natural CI and fresh DIFFERENT ENTIRE review are required. No local target
+execution, genuine entry/family activation or native qualification is claimed.
+
+### Entire4fd8 review: two overlay command custody repairs
+
+Different ENTIRE55 source review returned SOURCE_NO_GO for two P2 findings
+in the existing matching-host overlay gate: child error rejected before actual
+close, permitting held input cleanup too early; stdout persistence failure
+skipped stderr and could replace an earlier actual failure. Parent selected
+one aggregate repair under the existing overlay-gate mapping.
+
+The gate now roots each private actual command completion owner before spawn.
+The shared owned-overlay-command body records actual child and transport
+errors, waits for the SAME actual child close, then independently attempts both
+raw captures and post-borrower input revalidation. First and later opaque
+originals retain observed order; no error original is serialized into the
+private metadata projection or public diagnostic. Direct-child close never
+settles native compiler-family or issuer custody. No timer/kill/retry or native
+authority is added. Existing gate cleanup runs only after this completion.
+
+UNRUN event-driven fixtures use real Node children, real held file originals,
+actual stdout destruction with the SAME controlled transport error, live input
+until deliberate release, real failed spawn, and native filesystem persistence
+failures. They require no settlement/input release before actual close, both
+capture attempts despite failures, complete actual stderr and exact first/later
+error identities. Both source-test job bodies include the same fixture. No
+local target execution/admission; each commit is immediately pushed and the
+new exact head requires fresh DIFFERENT ENTIRE review. Genuine query profile,
+actual entry and native family binding remain separate unresolved debt.
+
+### Second iteration: shared first-cause and independent settlement pipeline
+
+Fresh DIFFERENT ENTIRE57 review of bab8 returned SOURCE_NO_GO: the SAME stable
+first-cause/independent-capture signature remained at buffered preparation and
+the Windows executor's serial sync/readback. This is implementation iteration2;
+the counter is not reset for a different helper/reviewer. A third equivalent
+failure triggers the governed scoped circuit breaker.
+
+The aggregate source repair uses invocation-private CommandFailureLedger for
+both actual command paths. Child/transport errors are recorded at occurrence,
+before later captures. Each buffered channel prepares inside its own protected
+attempt, then persists if actual preparation completed. Each file-backed
+channel separately attempts sync, complete readback and named original
+retention even after the preceding operation failed. Every destination and
+post-borrower revalidation is independently attempted before the SAME first
+opaque original is thrown. All later occurrences stay with the actual rooted
+command owner. No opaque original serialization, authority registry, public
+command seam, retry/timer/kill or native-family completion grant is added.
+
+The source audit covers both command/transport paths, all capture preparation/
+persistence/readback/retention stages, destinations and post-borrower validation.
+Pre-spawn refusal has no born child or capture borrower; opened handles remain
+with the failed attempt. Gate final input revalidation/close and both metadata
+writes already have independent attempts. File-backed compiler descendants and
+late borrowers still require genuine enclosing custody, currently UNCONNECTED.
+
+UNRUN fixtures use actual child and filesystem failures: stdout persistence
+cannot skip complete stderr or changed-original revalidation; closed parent
+stdout handle while a real child owns its inherited duplicate cannot skip
+stderr sync/readback/retention or revalidation; actual failed spawn stays first
+through missing named-output and changed-input failures. Existing transport-
+error/live-input/actual-close and two-persistence-error cases remain mandatory.
+Raw read occurrences and exact first/later error identities are asserted.
+Allocation-frontier handling is source implementation only, not an executed
+OOM/reservation proof; no huge allocation stunt or fake native positive is used.
+No local target execution/admission. Commit is immediately pushed, then new
+freeze and fresh DIFFERENT ENTIRE review are required for changed exact bytes.
+
+### Selected cross-repository pair-wiring pre-code review
+
+Parent selected TUI1-PAIR-WIRING-PRECODE-20261016.md as documentation only,
+mapped in active SPEC004, backlog and project intent. It pins the actual current
+Core develop/PR1775 consumer files and exact blobs, which still reject schema4;
+historical Core119 worker attribution is not a receiving implementation. The
+proposal maps strict closed v2 native wrappers to the existing ordered schema4
+pair contract through producer/evidence/assembler/verifier/publisher, retaining
+legacy schemas1/2/3, all fixed names/caps/public receipts/provider/source and
+policy bindings. Existing Core2633 native evidence pin is not changed.
+
+Commit and immediate push of this document mapping are selected before fresh
+bounded independent cross-repository intent review. No new producer/assembler/
+verifier body or activation is selected. Genuine entry/profile/family ownership
+and actual Core consumer remain required before positive packaging/native
+claims. d720 ENTIRE60 SOURCE_GO and natural Windows/Linux fixture passes stay
+historical for their exact bytes; no local target execution admission follows.
+
+### Pair receipt delta pre-code review (archive body remains dirty WIP)
+
+Exact1f83 pair intent received independent INTENT_GO and parent selected the
+archive/contract/assembler/verifier source unit, currently uncommitted WIP.
+Current build-output schema1 lacks a private-payload binding. Parent therefore
+selected the additive schema2 receipt proposal in TUI1-PAIR-WIRING-PRECODE-
+20261016.md for separate bounded intent review before its body: exact ordered
+native-owner/go-payload role+digest+size refs, nativeBinary equals first member,
+same exact candidate/source/run/provider attempt, unchanged member/aggregate
+caps and five public filenames/privacy rules, v2 requires2 and legacy v1
+requires1 without fallback/mixing. Actual retained pair writer provenance is
+required; JSON shape/hash cannot establish native acquisition. Production stays
+refused without the real constructor/qualification and Core receiving source.
+
+Only this receipt pre-code documentation is committed now. Existing approved
+archive/readback/producer/fixture code remains dirty WIP, not part of the
+documentation commit or an executed/qualified candidate. No schema2 receipt
+parser/writer body or local target execution is selected before disposition.
+
+### Selected complete pair/receipt source bundle awaiting entire review
+
+Independent receipt5f0 intent returned INTENT_GO. Selected source now implements
+strict v1/schema1 versus v2/schema2 native evidence, homogeneous v2/schema4
+assembly, exact pair-byte packaging and actual local/upload/draft/public archive
+interpretation/readbacks. Effective Core256MiB is checked before pair reads;
+all other fixed caps/names/public receipts/provider/source-policy bindings and
+historical formats remain. Both public receipt validator surfaces share the
+closed schema2 checker. The metadata writer reads all five actual enclosing
+GitHub source/run fields and joins expected originals, refusing missing run IDs
+or source/attempt differences instead of upgrading old SHA/ref-only Go output.
+
+Current new-production acquisition explicitly refuses before Go-only fallback.
+The operational byte packaging/metadata functions do not create genuine native
+issuer, entry, profile, family, finance or provider authority. A future genuine
+writer must retain SAME pair/run/source and actual provider observations through
+all borrowers; no such production constructor or accepted Core receiver exists
+here. Old Core2633 pin is unchanged. Parent coordinates the actual Core owner.
+
+New synthetic source suites cover legacy/mixed schemas, both validator surfaces,
+actual member-byte/path/order substitutions, receipts/source/run/attempt/role/
+size caps, coherent provider references and draft originals, and actual enclosing
+environment reads in a real child. No fake native proof or large allocation is
+used. All new source remains UNRUN locally. Source/diff hygiene precedes cohesive
+commit and immediate push, then fresh DIFFERENT ENTIRE review and NEW complete
+actual-input/exact-command admission before any local target execution. No
+publication/activation/qualification or provider settings change is claimed.
+
+### Next owned caller/entry pre-code boundary
+
+Exact2a04/tree9e83 received DIFFERENT ENTIRE70 SOURCE_GO. Hosted Windows/Linux
+source tests and both crosscompiles passed; owned GOROOT remains failed and
+required Linux native combined-step result remains pending. Source is not
+native/publication qualification. The next TUI-owned caller adapter and actual
+entry integration, precise CLI genuine-original dependency, and UNADMITTED
+exact-command proposals are mapped in TUI1-POSITIVE-CALLER-PRECODE-20261016.md.
+No new ABI/body is selected until CLI supplies its actual constructor/bridge.
+
+
+### Issue1 complete Windows consumer quantitative pre-code
+Parent selected TUI-owned complete Windows layout/cost/source/operation/deadline/family mapping in TUI1-WINDOWS-CONSUMER-LAYOUT-PRECODE-20261016.md for bounded intent review before body. It maps exact21 external startup backing regions plus separate charged startup control (22 startup storage regions), separately charged factory control and turns exactly once, native/debug/query/helper/Go/OS/failure-overlap actors, pure checked geometry versus actual CLI child-local financing/binding and exact still-missing source operands. No Linux casts, schema3-as-whole-profile, new clock, fictional issuer, activation or local execution is selected.
+
+
+### Issue1 selected bounded Windows pure layout source
+After fresh DIFFERENT acf INTENT_GO, candidate_layout_windows.h/.c and candidate_prepare_windows.h/.c implement pure checked role/cost geometry, retained source/exclusion checks and non-dispatched native typed views; per-entry factory control/turns replace hidden static backing with exact21external/22startup/control-separate/turnsonce accounting. C refusal/prebinding fixtures are UNRUN and not automatically run by existing source CI. Complete actual CLI typed acquisition/operation/family/deadline/profile/helper binding remains missing, source-only no activation. Fresh ENTIRE review and complete actual-input admission remain required.
+
+
+### Selected next finite borrowed-deadline pure source
+After f12 ENTIRE81 SOURCE_GO, parent selected the acf-approved finite sequence storage/bind/revalidate part. Exact source pre-code is appended to TUI1-WINDOWS-CONSUMER-LAYOUT-PRECODE-20261016.md: real CLI3519 typed caller/deadline/arena headers and live-range predicate, SAME published origin/expiry, preowned actual-row before/after clock cells, candidate preparation item coupling, no clockread/renewal/dispatch or family authority. Full genuine CLI entry/family/native cuts remain missing; no target execution/admission.
+
+
+### Whole84 selected aggregate source repair
+Fresh fcc whole84 review NO_GO found exact native-call MEMBER/array-slot mapping (including invalid call-kind ARGUMENT_ROOT) and incomplete nestedinitialsource exclusions. Selected complete repair pre-code is in TUI1-WINDOWS-CONSUMER-LAYOUT-PRECODE-20261016.md: exact source role/owner occurrence/member/slot mapping across allsupportedkinds, real shared CLI complete pure exclusion API extracted unchanged, meaningful nestedalias/alignednonmember/wrongmember/foreignowner/slot denials. Both repair together before new ENTIRE review; genuineentry/family/admission and activation remain absent.
+
+
+### Whole84 aggregate source repair ready for review
+Both fcc findings now repair together: exact actual layout-role/owner-occurrence/native MEMBER/slot lookup across allsupported call kinds, invalid ARGUMENT_ROOT kind removed, and actual shared complete CLI2e9 product_source_windows pure exclusion API replacing partial duplication. Native fixture source covers allsupported kinds, nonmember/member/foreignowner/slot/ordinal/once-use, no-write denials and every nested pointee for control+step output spans. All UNRUN; source/header pins and remaining genuineentry/family/MSVC-helper coupling explicit in Windows consumer mapping. NEW DIFFERENT ENTIRE review and complete actual-input admission remain required, no activation.
+
+
+### Whole b44 file-backed stream original repair
+Fresh DIFFERENT whole b44 review repaired prior exact-member/shared-exclusion findings and found one P2: named capture was not joined to the actual stream-handle snapshot. File-backed completion now compares complete dev/ino/size/mtime/ctime/fullbytes snapshots and re-reads BOTH actual original handles independently at final borrower validation, joining retained named rows without replacing first snapshots or transferring/double-closing handles. Independent stderr/destination/held revalidation and exact first/later originals remain. Real successful-child, same-byte different-object replacement and same-object changed-body negatives are source-added, UNRUN locally; native family closure/actual ROOT remain separate. Positive-caller doc line-ending hygiene fixed. NEW full ENTIRE review required before admission; no activation.
+
+### Joint Windows schema3 source-envelope producer pre-code
+Parent selected the next connected finite source-envelope/nativecase producer proposal after aee ENTIRE84 SOURCE_GO. TUI1-WINDOWS-PROFILE-PRODUCER-PRECODE-20261016.md maps actual CLI0864/ef6 types versus proposed closed principal/image/writer semantic arms, source-derived11 schema3 dimensions before native capture, complete pre-effect allocation/header/padding/source exclusions and physical/failure costs, existing366 private assembly/helper boundary, same-occurrence capture/encoder/heldgate and MSVC compile AND link/pair integration. CLI owns genuine source-table/nativecase/prebirth/source/operation/family constructors; TUI owns derivation/check/capture/encoding/wiring. No returned-length financing, JSON/hash issuer, unsupported opaque-token layout, constructor invention, activation or local target execution. The new cross-repository representation requires fresh bounded intent review before body; actual constructors/formulas/first-capture/helper source remain explicit obligations.
+
+### Selected joint Windows profile producer implementation
+Fresh DIFFERENT whole joint7545 proposal/maps/actual contracts received INTENT_GO; parent selected prospective finite11-role semantic derivation/capture/encoder/heldgate/MSVC compile AND link/pair integration. New query_profile_windows.h/.c binds real source-qualified CLI product-source and borrowed principal/held-file types with no nativecase-header cycle. Principal source cases retain exact scenario/slot membership for six process-security/two token slots and endpoint cases, capacityMAX vs complete costSUM; typed source geometry and full body/actor/occurrence snapshots precede pure schema3 encoding. Actual nativecase/source/first-capture finance/family/output custody constructors remain CLI-owned coupled implementation, never issued by pure source or JSON. New source/fixture bodies are UNRUN, activation stays closed; complete bundle needs fresh ENTIRE source review and NEW actual-input admission before target execution.
+
+### Whole608 ACE and PE semantic-source repair
+Fresh DIFFERENT ENTIRE88 SOURCE_NO_GO identified two P2 geometry gaps; parent selected their aggregate repair under joint7545. Typed ACE rows now retain actual mask/SID, optional object GUIDs and callback/resource-attribute relative payload geometry. Header-only, wrong-offset, truncated/nested SID/claim and unknown source forms refuse without silently narrowing the protected public domain; unresolved source/native-policy cases remain obligations. New query_profile_pe_windows.h/.c retains typed SDK semantic projections of actual366 import/delay/TLS/export/forwarder/relocation rules, exact SAME member/file coordinates and ordered terminal coverage, with SECURITY file-offset bounds distinct from image RVA bounds. All typed nested data must be declared source-covered; outputs exclude complete body/actor/occurrence and source descriptors before writes, and accumulated costs commit only after complete success. Per-row simultaneous/failure costs sum, shared image geometry is explicitly SAME across image roles and charged once in IMAGE_MODULES; genuine initial pre-effect allocation/header/padding/native financing remains constructor-owned, never issued by this pure result. Pure SDK malformed/foreign/missing-terminal/alias/no-write regressions are source-added and UNRUN. No executable Go/C bridge, native issuer or production activation is added. Replacement immutable header/source pins require fresh ENTIRE review and NEW actual-input ROOT admission before target execution.
+
+The separate owned production ordering gap remains explicit: schema3 creatorImages describes the final public endpoint-server TUI creator, while current windowsPayloadFirstBuildPlan needs schema3 before Go payload/root generation and public native compilation. No future PE is substituted with a CLI/probe or claimed held. A bounded compile-order/source-envelope proposal is next, including actual compile-time root RVA/image-size dependencies and full retained/failed-stage finance; no alternative architecture is implemented by this repair.
+
+### Whole5105 PE parity repair selected before body
+Whole ENTIRE90 SOURCE_NO_GO has two P2: nonzero source name RVA and complete DOS e_lfanew64..INT32_MAX missing. The active profile-producer precode now maps every actual366 Interpret/RVA/name/import/delay/TLS/export/reloc predicate to exact C counterpart and source fixture, preserving ACE, deep exclusions/costs/once-charge/snapshots. Parent selected coherent systematic parity repair;608→5105 are two PE-family failed iterations, next equivalent gap requires GOV13 strategy reassessment. New helper plus genuine full-derivation range/name/overlap/no-write fixtures remain UNRUN; no local ROOT/native authority. Future-creator proposal remains ignored precode, no architecture body.
+
+### Prospective conditional BUILD geometry and final creator intent
+Fresh DIFFERENT ENTIRE90 a6/tree2428 received SOURCE_GO (reportSHA2563B8EB475EFADEE4A96580AEAF276ACEE2BB664AECF1F0904EB34162BD2ADA56B); source-only and exact bytes, no native/profile/ROOT qualification. Parent selected preparation of TUI1-WINDOWS-CONDITIONAL-CREATOR-BUILD-PRECODE-20261016.md for NEW bounded intent review: actual schema3→Go→root constants→future public creator PE cycle is owned source work. A distinct BUILD-only conditional11 record/direct Go+C source emission, once-compiled code and fixed64 readonly root-data section permit only a conditional build. Complete final held PE/source/namespace/provider correspondence precedes genuine SOURCE11/schema3 derivation BEFORE birth/capture finance; final generated source bytes must equal the already-built inputs with no rebuild/growth/meaning upgrade. Actual native qualification precedes matching-host gate. Concrete proposed source records, private transport/emitter operations, DIRECTORY/fresh-leaf constructor, exact fixed compile AND link/helper recipe, full pre-effect BUILD output/failure bounds, separate product INITIAL first windows/deadlines, all input/header/padding exclusions and last-borrower native family custody are mapped. Constructors are implementation obligations, not fictional existing grants or prerequisites to select intent. Legacy/Core pin/caps/public five/privacy stay unchanged. This is INTENT ONLY; no architecture body, targets or issuer activation before fresh bounded review and later whole-source/NEW actual-input ROOT admission.

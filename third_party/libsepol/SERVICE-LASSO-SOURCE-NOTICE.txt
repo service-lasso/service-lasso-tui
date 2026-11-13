@@ -1,0 +1,29 @@
+Pinned source: SELinuxProject libsepol 3.11, retained upstream tar SHA256
+79F3D2C88F44B7EB5CF54D9792E03232297E17F97A179163F2750099A00F164D.
+The immutable original source inventory is retained in the TUI source audit.
+This repository's modifications are source-only and not runtime qualification.
+
+2026-10-11: src/policydb.c policydb_init records the actual scope symtab return
+and assigns -ENOMEM on global/branch allocation failure before partial cleanup.
+Upstream otherwise leaves rc at a prior success for those failure paths.
+The owned entry must additionally inspect actual allocator failures before any
+policy read. Allocator redirects and diagnostic/cleanup ownership remain an
+unfinished connected source unit; no host library fallback is authorized.
+
+License: LICENSE retains upstream GNU LGPL 2.1 text. Complete corresponding
+source, modification notices and required relinking materials must accompany
+protected publication. The two-member runtime archive alone is not license
+publication completion. No upstream Makefile install/relabel target was run.
+2026-10-11: src/debug.h has a SERVICE_LASSO_OWNED_SEPOL conditional source route to preowned diagnostic occurrences, before global compatibility handle mutation. Default upstream branch remains present; complete fixed owned build and original public output forwarding remain integration obligations.
+
+2026-10-11: hashtab_destroy bucket clears and ebitmap_destroy scalar/node clears have owned-build conditional prewrite typed original occurrences. These are partial source custody connections; remaining destructive and normal resize edges are not qualified.
+
+Source127 extends owned prewrite/returned custody to avtab_destroy bucket/root/nslot/mask writes. Upstream ordinary branch retained. This does not close other parser/destructor traversal or post-exhaustion caller/root obligations; no library execution.
+
+Source146: owned context/MLS inline destructive resets retain typed scalar originals and stop after absorbing nested bitmap cleanup failure. Owned branch avoids subsequent blanket initialization erasing unrecorded roots; ordinary upstream branch retained. This is partial caller custody, not full parser/library qualification.
+
+Source147: owned context record setters preserve typed replacement field originals before overwrite and return on absorbing recording failure. Owned context parser records original delimiter bytes before working-copy NUL splits. Ordinary upstream branches retained; full context/helper/diagnostic closure still unfinished.
+
+Source154 owned-only hashtab private resize/insert: retain old size, node next, bucket/table pointers and count before replacement; propagate absorbing owner failure from resize before insert continues. Ordinary upstream branch preserved. Partial mutation remains retained, no rollback or disposal claimed.
+
+Source155 owned failed-state traversal guards: hash operations stop before reading inconsistent partial resize state and after callbacks/logical-free failure; policydb_destroy/symtabs_destroy stop at entry on failed/absent actual memory episode. Ordinary source branches preserved. This retains failed partial objects; it is not completed cleanup or disposal.

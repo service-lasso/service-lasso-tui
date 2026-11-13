@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { SCOPE, assertScope } from "./scoped-policy.mjs";
 import { verifyNativeArchive } from "./scoped-native-archive.mjs";
+import {assertCoreNativeOwnerAsset} from './native-owner-package.mjs';
 import { verifyHeldNativePublicReceipt } from "./scoped-native-public.mjs";
 export const CORE_COMMIT="2633c07be25512d0a84f9bfa28de6be5edff35e8";
 export const PUBLIC_RECEIPTS=Object.freeze(["binary-digest.json","build-output.json","core-source-binding.json","input-custody.json","native-public-projection.json"]);
@@ -13,8 +14,9 @@ export function assertRun(run){exact(run,["id","attempt","workflowSha"]);if(!Num
 export function assertSource(source){exact(source,["repository","commit","ref"]);if(source.repository!=="service-lasso/service-lasso-tui"||source.ref!=="refs/heads/develop"||!/^[a-f0-9]{40}$/u.test(source.commit))fail();return source;}
 export function nativeArtifactName(platform,run){if(!NATIVE_PLATFORMS.includes(platform))fail();assertRun(run);return `scoped-native-${platform}-${run.id}-${run.attempt}`;}
 export function assertNativeWrapper(value,{source,run,version,platform,bodies}) {
-  exact(value,["schema","scope","source","run","platform","jobId","archive","binary","receipts","outcome"]);
-  if(value.schema!=="service-lasso.tui-native-candidate.v1"||value.outcome!=="success"||value.platform!==platform||!NATIVE_PLATFORMS.includes(platform)||!Number.isSafeInteger(value.jobId)||value.jobId<=0)fail();
+  const pair=value?.schema==='service-lasso.tui-native-candidate.v2';
+  exact(value,["schema","scope","source","run","platform","jobId","archive","binary","receipts","outcome",...(pair?['members']:[])]);
+  if(!["service-lasso.tui-native-candidate.v1","service-lasso.tui-native-candidate.v2"].includes(value.schema)||value.outcome!=="success"||value.platform!==platform||!NATIVE_PLATFORMS.includes(platform)||!Number.isSafeInteger(value.jobId)||value.jobId<=0)fail();
   assertScope(value.scope);assertSource(value.source);assertRun(value.run);
   if(Object.keys(source).some(key=>value.source[key]!==source[key])||Object.keys(run).some(key=>value.run[key]!==run[key])||run.workflowSha!==source.commit)fail();
   byteRef(value.archive);byteRef(value.binary);
@@ -23,9 +25,13 @@ export function assertNativeWrapper(value,{source,run,version,platform,bodies}) 
   if(!bodies||Object.keys(bodies).sort().join("\0")!==[...PUBLIC_RECEIPTS,value.archive.name].sort().join("\0"))fail();
   for(const [index,name] of PUBLIC_RECEIPTS.entries()){const ref=byteRef(value.receipts[index]);if(ref.name!==name||hash(bodies[name])!==ref.sha256||bodies[name].length!==ref.size)fail();}
   const archive=bodies[value.archive.name];if(hash(archive)!==value.archive.sha256||archive.length!==value.archive.size)fail();
-  const binary=verifyNativeArchive(target,archive);if(hash(binary)!==value.binary.sha256||binary.length!==value.binary.size)fail();
+  const binary=pair?assertCoreNativeOwnerAsset({platform:target,name:value.archive.name,sha256:value.archive.sha256,executable:value.binary.name,members:value.members},archive)[0].bytes:verifyNativeArchive(target,archive);
+  if(hash(binary)!==value.binary.sha256||binary.length!==value.binary.size)fail();
   // Parse the same original buffers bound above and later consumed by provider ZIP checks.
   const inner=verifyHeldNativePublicReceipt(Object.fromEntries(PUBLIC_RECEIPTS.map(name=>[name,bodies[name]])));
+  if(inner.build.schemaVersion!==(pair?2:1))fail();
+  if(pair&&(Object.keys(run).some(key=>inner.build.run[key]!==run[key])||
+    inner.build.members.some((member,index)=>['role','sha256','size'].some(key=>member[key]!==value.members[index][key]))))fail();
   if(inner.input.source.tuiCommit!==source.commit||inner.binary.sha256!==hash(binary)||inner.binary.size!==binary.length||inner.core.coreCommit!==CORE_COMMIT||inner.projection.result!=="succeeded"||inner.projection.actionsPassed!==true||inner.projection.ownedRuntimeClosed!==true)fail();
   return value;
 }
@@ -39,6 +45,8 @@ export function assertAggregate(value,{source,run,manifest,wrappers,jobs,artifac
   if(value.schema!=="service-lasso.tui-candidate-qualification.v1"||value.outcome!=="success"||JSON.stringify(value.platforms)!==JSON.stringify(NATIVE_PLATFORMS))fail();
   assertScope(value.scope);assertScope(manifest.scope);assertSource(value.source);assertRun(value.run);assertProviderRun(providerRun,run,source);
   if(Object.keys(source).some(key=>value.source[key]!==source[key])||Object.keys(run).some(key=>value.run[key]!==run[key])||manifest.source.commit!==source.commit||wrappers.length!==2||value.receipts.length!==2)fail();
+  const wrapperSchema=manifest.schemaVersion===4?'service-lasso.tui-native-candidate.v2':manifest.schemaVersion===3?'service-lasso.tui-native-candidate.v1':null;
+  if(!wrapperSchema||wrappers.some(wrapper=>wrapper.schema!==wrapperSchema))fail();
   const scoped=artifacts.filter(artifact=>artifact.name?.startsWith("scoped-native-"));if(scoped.length!==2)fail();
   const selectors=jobs.filter(job=>job.name?.startsWith("native-candidate"));if(selectors.length!==2)fail();
   const ids=new Set();
@@ -49,6 +57,8 @@ export function assertAggregate(value,{source,run,manifest,wrappers,jobs,artifac
     const artifact=scoped.find(item=>item.name===nativeArtifactName(platform,run));if(!artifact||artifact.expired!==false||!Number.isSafeInteger(artifact.id)||artifact.id<=0||artifact.workflow_run?.id!==run.id||artifact.workflow_run?.head_sha!==source.commit)fail();
     assertNativeWrapper(wrapper,{source,run,version:manifest.version,platform,bodies:bodies[index].files});
     const archive=manifest.assets.find(asset=>asset.platform===`${platform}-amd64`);if(!archive||archive.name!==wrapper.archive.name||archive.sha256!==wrapper.archive.sha256)fail();
+    if(manifest.schemaVersion===4&&(!Array.isArray(archive.members)||archive.members.length!==wrapper.members.length||
+      archive.members.some((member,index)=>['path','role','sha256','size'].some(key=>member[key]!==wrapper.members[index][key]))))fail();
   }
   return value;
 }

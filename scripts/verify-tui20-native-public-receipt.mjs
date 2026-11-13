@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import {assertNativeBuildOutput} from './native-pair-build-receipt.mjs';
 
 const root = process.argv[2];
 if (!root) throw new Error("native receipt root is required");
@@ -35,7 +36,7 @@ const assertBinaryDigest = value => {
   if (!exact(value, ["schemaVersion", "kind", "sha256", "size"]) || value.schemaVersion !== 1 || value.kind !== "tui20-native-binary-digest" || !hash(value.sha256) || !size(value.size)) fail("invalid binary digest schema");
 };
 const assertBuildOutput = value => {
-  if (!exact(value, ["schemaVersion", "kind", "tuiCommit", "nativeBinary"]) || value.schemaVersion !== 1 || value.kind !== "tui20-native-build-output" || !commit(value.tuiCommit) || !exact(value.nativeBinary, ["sha256", "size"]) || !hash(value.nativeBinary.sha256) || !size(value.nativeBinary.size)) fail("invalid build output schema");
+  assertNativeBuildOutput(value);
 };
 const assertProjection = value => {
   if (!exact(value, ["schemaVersion", "kind", "sourceCommit", "binarySHA256", "result", "actionsPassed", "ownedRuntimeClosed"]) || value.schemaVersion !== 1 || value.kind !== "tui20-native-public-result" || !commit(value.sourceCommit) || !hash(value.binarySHA256) || !["succeeded", "failed", "unresolved"].includes(value.result) || typeof value.actionsPassed !== "boolean" || typeof value.ownedRuntimeClosed !== "boolean") fail("invalid public projection schema");

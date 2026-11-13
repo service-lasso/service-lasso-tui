@@ -198,8 +198,12 @@ class ObserverStreamContinuity(unittest.TestCase):
                 if failure_mode=="unknown": return {"unknown":"PRIVATE field"}
                 return {"classification":"owner-private","phase":"owner-closed",**owner_receipts[0]}
             observation={}
+            # The file mock belongs only to receipt reads. Constructing argparse
+            # inside it also redirects gettext's binary catalog reads into text.
+            # Parser behavior is outside this actual finalization regression.
+            parser=SimpleNamespace(add_argument=lambda *_args,**_kwargs:None,parse_args=lambda:args)
             with ExitStack() as stack:
-                for target,name,value in ((module.argparse.ArgumentParser,"parse_args",lambda _self:args),(module,"sha256",lambda _path:"b"*64),(module,"start_runtime",start),(module.subprocess,"Popen",lambda *_args,**_kwargs:owner),(module,"process_birth",lambda _pid:birth),(module,"birth_absent",lambda *_args:True),(module.os.path,"exists",lambda _path:True),(module,"write_private",private),(module,"write_public",public)):
+                for target,name,value in ((module.argparse,"ArgumentParser",lambda:parser),(module,"sha256",lambda _path:"b"*64),(module,"start_runtime",start),(module.subprocess,"Popen",lambda *_args,**_kwargs:owner),(module,"process_birth",lambda _pid:birth),(module,"birth_absent",lambda *_args:True),(module.os.path,"exists",lambda _path:True),(module,"write_private",private),(module,"write_public",public)):
                     stack.enter_context(patch.object(target,name,value))
                 stack.enter_context(patch("builtins.open",mock_open(read_data="{}")))
                 stack.enter_context(patch.object(module,"strict_load",side_effect=read))

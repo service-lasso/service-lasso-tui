@@ -195,7 +195,15 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
             'kind":"tui20-native-build-output', 'write_fsync', 'os.fsync',
         ):
             self.assertIn(required, source)
-        uploaded = source[source.index('name: tui20-native-${{ matrix.name }}-lifecycle-${{ env.CI_SOURCE_SHA }}'):]
+        upload_name='name: tui20-native-${{ matrix.name }}-lifecycle-${{ env.CI_SOURCE_SHA }}'
+        blocks=source.split(upload_name)[1:]
+        self.assertEqual(len(blocks),2)
+        uploads=[block[:block.index('if-no-files-found:')] for block in blocks]
+        expected_public=('binary-digest.json','input-custody.json','core-source-binding.json','build-output.json','native-public-projection.json')
+        for upload in uploads:
+            paths=[line.strip() for line in upload.splitlines() if '${{ runner.temp }}' in line]
+            self.assertEqual(paths,['${{ runner.temp }}/tui20-native-${{ matrix.name }}-${{ env.CI_SOURCE_SHA }}/**/'+name for name in expected_public])
+        uploaded='\n'.join(uploads)
         self.assertIn('input-custody.json', uploaded)
         self.assertIn('core-source-binding.json', uploaded)
         self.assertIn('build-output.json', uploaded)
@@ -288,6 +296,7 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
                 def __init__(self,*_):
                     self.exit_reason=None
                     self.child=types.SimpleNamespace(pid=303,tui20_birth=birth,reaped_unowned=False,poll=lambda:None if self.exit_reason is None else 0)
+                    harness["OWNED_TERMINALS"].append(self)
                 def wait(self,*_): pass
                 def close(self): self.exit_reason="terminal_exited_zero"; return self.exit_reason
             argv=["owner","--root",root,"--executable",str(candidate),"--source-commit","a"*40,"--core-commit","b"*40,"--external-runtime","--adverse-controller-crash","--controller-pid","404"]
@@ -295,7 +304,8 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
             def denied_release(command,**_): chflags.append(command); return types.SimpleNamespace(returncode=1)
             try:
                 with patch.object(sys,"argv",argv), patch.object(sys,"stdin",io.StringIO(json.dumps(handoff)+"\n")), patch.object(harness["subprocess"],"run",denied_release), patch.object(harness["urllib"].request,"urlopen",lambda *_args,**_kwargs:io.BytesIO(b"{}")), patch.dict(harness["main"].__globals__,{"Terminal":Terminal,"bound_execution":lambda *_:(recovery,recovery,{"platform":"darwin"}),"detail":lambda *_:None,"controller_failed":lambda *_:True,"request":lambda *_:{},"process_birth":lambda *_:birth}):
-                    harness["main"]()
+                    with self.assertRaisesRegex(RuntimeError,"native owner finalization unavailable"):
+                        harness["main"]()
                 primary=json.loads(pathlib.Path(root,"native-exit-receipt.json").read_text())
                 cleanup=json.loads(pathlib.Path(root,"native-cleanup-receipt.json").read_text())
                 finalization=json.loads(pathlib.Path(root,"external-owner-finalization.json").read_text())
@@ -391,7 +401,15 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
                     owner_argv=["owner","--root",root,"--executable",str(candidate),"--source-commit","a"*40,"--core-commit","b"*40,"--external-runtime","--adverse-controller-crash","--controller-pid","404"]
                     try:
                         with patch.object(sys,"argv",owner_argv), patch.object(sys,"stdin",io.StringIO(json.dumps(handoff)+"\n")), patch.object(builtins,"open",open_receipt), patch.object(os,"fsync",fsync_receipt), patch.object(harness["subprocess"],"run",deny_release), patch.object(harness["urllib"].request,"urlopen",lambda *_args,**_kwargs:io.BytesIO(b"{}")), patch.dict(harness["main"].__globals__,{"Terminal":Terminal,"bound_execution":lambda *_:(execution_fd,recovery,{"platform":cleanup_kind}),"detail":lambda *_:None,"controller_failed":lambda *_:True,"request":lambda *_:{},"process_birth":lambda *_:birth}):
-                            harness["main"]()
+                            observation={}
+                            if boundary=="none":
+                                harness["main"](observation)
+                            else:
+                                with self.assertRaises(harness["CleanupReceiptPersistenceFailure"]) as failed:
+                                    harness["main"](observation)
+                                self.assertIs(failed.exception,observation["finalizationOriginals"][0]["original"])
+                                self.assertIsInstance(failed.exception.__cause__,OSError)
+                                self.assertEqual(failed.exception.cleanup_outcome,expected_cleanup)
                         primary_bytes=pathlib.Path(root,"native-exit-receipt.json").read_bytes()
                         primary=json.loads(primary_bytes)
                         finalization=json.loads(pathlib.Path(root,"external-owner-finalization.json").read_text())
@@ -545,13 +563,21 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
                         self.assertFalse(os.path.lexists(pathlib.Path(root,".tui20-held-original")))
                 foreign=pathlib.Path(root,"foreign-alias")
                 foreign.write_bytes(b"unowned replacement alias must remain")
+                primary=RuntimeError("controlled foreign alias substitution")
                 class ForeignAliasTerminal(ObservedTerminal):
                     def wait(self,need,seconds):
                         os.replace(foreign,pathlib.Path(root,".tui20-held-original"))
-                        raise RuntimeError("controlled foreign alias substitution")
+                        raise primary
+                observations=[]
                 with patch.dict(harness["bound_replacement_probe"].__globals__,{"Terminal":ForeignAliasTerminal}):
-                    with self.assertRaisesRegex(RuntimeError,"original alias identity changed"):
-                        harness["bound_replacement_probe"](sealed,held,str(candidate),inode,identity,"missing",{})
+                    with self.assertRaises(RuntimeError) as failed:
+                        harness["bound_replacement_probe"](sealed,held,str(candidate),inode,identity,"missing",{},observations)
+                self.assertIs(failed.exception,primary)
+                originals=observations[0]["originals"]
+                self.assertIs(originals[0]["original"],primary)
+                restoration=[entry["original"] for entry in originals if entry["stage"]=="original_restoration"]
+                self.assertEqual(len(restoration),1)
+                self.assertEqual(str(restoration[0]),"bound-launch original alias identity changed")
                 self.assertEqual(pathlib.Path(root,".tui20-held-original").read_bytes(),b"unowned replacement alias must remain")
             finally:
                 os.close(sealed); os.close(held)

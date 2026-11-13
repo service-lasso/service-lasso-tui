@@ -8,11 +8,10 @@ package lifetime
 // must complete original custody/disposition before any process exit. This
 // constructor supplies neither a native gate nor a disposal decision.
 func NewNativePayloadCommand(rawArguments []string)(*NativePayloadStartup,*Receiver,error){
- startup,err:=newNativeCandidateStartupRoot()
- if err!=nil{return startup,nil,err}
+ startup,err:=newNativeCandidateStartupRoot(rawArguments)
+ if err!=nil{if startup!=nil{return startup,startup.receiverOriginal,err};return nil,nil,err}
  if startup==nil||startup.receiverOriginal==nil{return startup,nil,errOriginalEnrollment}
  receiver:=startup.receiverOriginal
- startup.RawArguments=rawArguments
  err=receiver.PrepareNativePayloadStartup(startup)
  return startup,receiver,err
 }

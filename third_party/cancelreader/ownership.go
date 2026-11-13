@@ -5,8 +5,10 @@ import("io";"sync")
 // Ownership is the actual partial constructor/resource graph. Attach runs before
 // native effects; returned API projections do not replace this SAME local graph.
 type Ownership struct{Reader io.Reader;Partial,Result CancelReader;Failure error;mutex sync.Mutex;head *OriginalOperation}
-type OriginalOperation struct{Source string;Subject,Input,Output any;Failure error;Attempted,Returned bool;next *OriginalOperation}
-func(o *Ownership)begin(source string,subject,input any)*OriginalOperation{
+// Keep the Go 1.17 module language contract: interface{} retains the same
+// original object references without requiring the Go 1.18 any alias.
+type OriginalOperation struct{Source string;Subject,Input,Output interface{};Failure error;Attempted,Returned bool;next *OriginalOperation}
+func(o *Ownership)begin(source string,subject,input interface{})*OriginalOperation{
  operation:=&OriginalOperation{Source:source,Subject:subject,Input:input,Attempted:true};if o==nil{return operation};o.mutex.Lock();operation.next=o.head;o.head=operation;o.mutex.Unlock();return operation
 }
 // NewReaderOwned is a source-bound constructor entry, never JSON callback input

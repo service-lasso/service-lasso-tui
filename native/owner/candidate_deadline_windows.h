@@ -1,0 +1,81 @@
+#ifndef SERVICE_LASSO_CANDIDATE_DEADLINE_WINDOWS_H
+#define SERVICE_LASSO_CANDIDATE_DEADLINE_WINDOWS_H
+#ifdef _WIN32
+/* Selected build must supply the actual held CLI header and its complete nested
+ * source closure. No copied declarations or ambient checkout include fallback. */
+#ifndef SERVICE_LASSO_PRODUCT_STORAGE_HEADER
+#error exact source-qualified CLI product storage header required
+#endif
+#include SERVICE_LASSO_PRODUCT_STORAGE_HEADER
+#include "candidate_prepare_windows.h"
+enum sl_win_deadline_row_kind {
+ SL_WIN_DEADLINE_STARTUP,SL_WIN_DEADLINE_DEBUG_EVENT,SL_WIN_DEADLINE_MAPPED_ROOT,
+ SL_WIN_DEADLINE_ROOT_WRITE,SL_WIN_DEADLINE_DEBUG_RELEASE,
+ SL_WIN_DEADLINE_READER_CANCEL,SL_WIN_DEADLINE_DUPLEX_COMPLETION,
+ SL_WIN_DEADLINE_DUPLEX_SETTLEMENT,SL_WIN_DEADLINE_MODULE_QUERY,
+ SL_WIN_DEADLINE_SERVICE,SL_WIN_DEADLINE_SEND_TURN,SL_WIN_DEADLINE_ROW_KIND_COUNT
+};
+enum sl_win_deadline_member {
+ SL_WIN_DCALL_ENTRY_PROCESS,SL_WIN_DCALL_STREAM_GET,SL_WIN_DCALL_STREAM_DUPLICATE,
+ SL_WIN_DCALL_CHANNEL_PROCESS,SL_WIN_DCALL_CHANNEL_CREATE,SL_WIN_DCALL_CHANNEL_GATE,
+ SL_WIN_DCALL_DUPLEX_PROCESS,SL_WIN_DCALL_DUPLEX_TOKEN,SL_WIN_DCALL_DUPLEX_USER,
+ SL_WIN_DCALL_DUPLEX_SID_VALID,SL_WIN_DCALL_DUPLEX_SID_LENGTH,SL_WIN_DCALL_DUPLEX_ACL_INIT,
+ SL_WIN_DCALL_DUPLEX_ACL_ADD,SL_WIN_DCALL_DUPLEX_DESCRIPTOR_INIT,SL_WIN_DCALL_DUPLEX_DESCRIPTOR_DACL,
+ SL_WIN_DCALL_DUPLEX_DESCRIPTOR_CONTROL,SL_WIN_DCALL_DUPLEX_PID,SL_WIN_DCALL_DUPLEX_TICK,
+ SL_WIN_DCALL_DUPLEX_SERVER,SL_WIN_DCALL_DUPLEX_EVENT,SL_WIN_DCALL_DUPLEX_CONNECT,
+ SL_WIN_DCALL_DUPLEX_CLIENT,SL_WIN_DCALL_DUPLEX_DUPLICATE,SL_WIN_DCALL_DUPLEX_CANCEL,
+ SL_WIN_DCALL_ARGUMENT_COMMAND,SL_WIN_DCALL_ENDPOINT_SERVER,SL_WIN_DCALL_ENDPOINT_INFO,
+ SL_WIN_DCALL_ENDPOINT_SECURITY,SL_WIN_DCALL_BIRTH_OWNER,SL_WIN_DCALL_BIRTH_SECURITY,
+ SL_WIN_DCALL_BIRTH_TOKEN_OPEN,SL_WIN_DCALL_BIRTH_TOKEN_BEFORE,SL_WIN_DCALL_BIRTH_TOKEN_INFO,
+ SL_WIN_DCALL_BIRTH_TOKEN_AFTER,SL_WIN_DCALL_BIRTH_JOB,SL_WIN_DCALL_BIRTH_LIMITS,
+ SL_WIN_DCALL_BIRTH_ATTRIBUTE_QUERY,SL_WIN_DCALL_BIRTH_ATTRIBUTE_INIT,SL_WIN_DCALL_BIRTH_ATTRIBUTE_JOB,
+ SL_WIN_DCALL_BIRTH_ATTRIBUTE_HANDLES,SL_WIN_DCALL_BIRTH_CREATOR_QUERY,SL_WIN_DCALL_BIRTH_CREATOR_PSEUDO,
+ SL_WIN_DCALL_BIRTH_CREATOR_DUPLICATE,SL_WIN_DCALL_BIRTH_PROCESS,
+ SL_WIN_DCALL_WRITE_THREAD,SL_WIN_DCALL_WRITE_EVENT,SL_WIN_DCALL_WRITE,
+ SL_WIN_DCALL_WRITE_WORKER_QUERY,SL_WIN_DCALL_WRITE_SUSPEND,SL_WIN_DCALL_WRITE_CANCEL_CHECK,
+ SL_WIN_DCALL_WRITE_CANCEL,SL_WIN_DCALL_WORKER_CREATE,SL_WIN_DCALL_WORKER_RESUME,
+ SL_WIN_DCALL_QUERY,SL_WIN_DCALL_WAIT,SL_WIN_DCALL_EXIT,SL_WIN_DCALL_THREAD_QUERY,
+ SL_WIN_DCALL_HELD_THREAD_QUERY,SL_WIN_DCALL_HELD_THREAD_WAIT,SL_WIN_DCALL_REGION,
+ SL_WIN_DCALL_READ,SL_WIN_DCALL_ROOT_WRITE,SL_WIN_DCALL_READBACK_REGION,SL_WIN_DCALL_READBACK_READ,
+ SL_WIN_DCALL_CURRENT_THREAD,SL_WIN_DCALL_CONTINUE,SL_WIN_DCALL_STOP,SL_WIN_DCALL_RESUME_PRIMARY,
+ SL_WIN_DCALL_DISCONNECT,SL_WIN_DCALL_CANCEL,SL_WIN_DCALL_WRITER_PUBLICATION,
+ SL_WIN_DCALL_WRITER_REQUEST,SL_WIN_DCALL_JOIN_WAIT,SL_WIN_DCALL_JOIN_EXIT,
+ SL_WIN_DCALL_MEMBER_COUNT
+};
+typedef struct sl_win_candidate_deadline_row {
+ sl_win_call *native_row_original;
+ const void *owner_original;SIZE_T owner_extent;
+ unsigned kind,member;SIZE_T occurrence,slot,ordinal;
+} sl_win_candidate_deadline_row;
+struct sl_win_candidate_deadline_sequence;
+typedef struct sl_win_candidate_deadline_step {
+ struct sl_win_candidate_deadline_sequence *sequence_original;
+ const sl_win_candidate_deadline_row *source_original;
+ sl_win_candidate_deadline_row source_snapshot;
+ const struct slcli_source_deadline_original *deadline_original;
+ const struct slcli_product_windows_operation_caller *caller_original;
+ struct slcli_native_clock before,after;
+} sl_win_candidate_deadline_step;
+typedef struct sl_win_candidate_deadline_source {
+ const sl_win_candidate_preparation *preparation_original;
+ const struct slcli_product_windows_operation_caller *caller_original;
+ const sl_win_candidate_deadline_row *rows_original;SIZE_T row_count;
+} sl_win_candidate_deadline_source;
+typedef struct sl_win_candidate_deadline_sequence {
+ const sl_win_candidate_deadline_source *source_original,*actual_source;
+ sl_win_candidate_deadline_source source_snapshot;
+ struct slcli_arena *arena_original;
+ struct slcli_memory_owner *memory_original;
+ const struct slcli_product_storage_windows_source *initial_source_original;
+ const struct slcli_source_deadline_original *deadline_original;
+ const struct slcli_native_clock *origin_original;
+ uint64_t origin_tick,expires,origin_raw[2],origin_status[2],origin_args[2];
+ sl_win_candidate_deadline_step *steps_original;SIZE_T capacity;
+ unsigned attempted,returned;int result;
+} sl_win_candidate_deadline_sequence;
+/* Pure retained relation only: no clock read, allocation, dispatch or issuer.
+ * Real CLI child-local entry/family and actual later native cuts remain absent. */
+int sl_win_bind_prepared_candidate_deadline(sl_win_candidate_deadline_sequence *);
+int sl_win_candidate_deadline_matches_original(const sl_win_candidate_deadline_sequence *);
+#endif
+#endif

@@ -6,6 +6,11 @@ import { assertScope } from "./scoped-policy.mjs";
 // Selected packaging B. These paths describe bytes; they confer no native,
 // loaded-image, endpoint, family, runtime-disposition or publication authority.
 const LIMIT = 256 * 1024 * 1024;
+export const NATIVE_OWNER_CORE_ARCHIVE_LIMIT=LIMIT;
+export function assertCoreNativeOwnerArchiveSize(size){
+  if(!Number.isSafeInteger(size)||size<=0||size>NATIVE_OWNER_CORE_ARCHIVE_LIMIT)denied();
+  return size;
+}
 const denied = () => { throw new Error("native owner package denied"); };
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 const exact = (value, keys) => {
@@ -123,6 +128,14 @@ export function assertNativeOwnerAsset(asset, archive) {
         member.size !== members[index].bytes.length || member.sha256 !== digest(members[index].bytes)) denied();
   }
   return members;
+}
+// Intersection with the current Core boundedProviderBody receiving limit.
+// The archive format's existing extra framing allowance is not enlarged or
+// removed; a publishable/receivable pair must ALSO satisfy this actual bound.
+export function assertCoreNativeOwnerAsset(asset,archive){
+  if(!Buffer.isBuffer(archive))denied();
+  assertCoreNativeOwnerArchiveSize(archive.length);
+  return assertNativeOwnerAsset(asset,archive);
 }
 export function assertNativeOwnerManifest(manifest, identity) {
   exact(identity, ["sourceRef", "sourceCommit", "version", "tag"]);

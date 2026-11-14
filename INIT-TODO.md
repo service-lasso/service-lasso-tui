@@ -1557,3 +1557,6 @@ Issue1 overlay module/test gate pre-code mapping: .governance/project/TUI1-OVERL
 Issue1 paired source emitter pre-code mapping: .governance/project/TUI1-PAIRED-SOURCE-EMITTER-20261016.md. Actual held-file caller only; genuine issuer/provider/ROOT/finance/Centry and whole qualification remain required. UNRUN.
 
 Issue1 Clear original lifetime pre-code mapping: .governance/project/TUI1-CLEAR-ORIGINAL-LIFETIME-20261016.md. Independent native read-only owner before delete; once-close delete owner before absence/readback, unchanged exclusion and separate release outcomes. UNRUN.
+
+
+Issue #42 / SPEC005 E2E001–E2E004: automate ordinary-source local real-Core authenticated terminal evidence with private inputs, exact provenance, readiness before keys, separate v2-unavailable/native/platform outcomes and actual child cleanup. Existing acceptance remains unchanged.

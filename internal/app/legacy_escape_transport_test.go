@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +26,7 @@ type legacyEscapeEvent struct {
 	command                     bool
 }
 type legacyEscapeFixture struct {
+	captureLoaded                   bool
 	expectedPreview                 *api.LifecyclePreview
 	expectedAction, expectedService string
 	state                           model
@@ -45,7 +47,105 @@ func (f *legacyEscapeFixture) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if _, ok := msg.(operationMsg); ok {
 		f.events <- legacyEscapeEvent{key: "operation-result", operation: f.state.operation != nil, terminal: strings.Contains(f.state.lastResult, "succeeded.")}
 	}
+	if _, ok := msg.(loadedMsg); ok && f.captureLoaded {
+		f.events <- legacyEscapeEvent{key: "services-loaded", view: f.state.View(), selected: f.state.selectedServiceID, detail: f.state.screen == detailScreen, operation: f.state.operation != nil}
+	}
 	return f, command
+}
+
+func TestLegacyNavigationWaitsForServiceRowBeforeSearchTransport(t *testing.T) {
+	for _, waitForRows := range []bool{false, true} {
+		t.Run(fmt.Sprintf("wait-for-row-%t", waitForRows), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			reader, writer := io.Pipe()
+			defer reader.Close()
+			defer writer.Close()
+			client := &recordingDurableClient{}
+			m := New(client, context.Background()).(model)
+			const fixtureID = "tui20-fixture"
+			row := fmt.Sprintf("> %-24s", fixtureID)
+			initial := m.View()
+			if !strings.Contains(initial, "Runtime identity:") || !strings.Contains(initial, "Connecting to runtime API") || strings.Contains(initial, row) {
+				t.Fatal("initial identity incorrectly established service-row readiness")
+			}
+			fixture := &legacyEscapeFixture{captureLoaded: true, state: m, events: make(chan legacyEscapeEvent, 8)}
+			program := tea.NewProgram(fixture, tea.WithInput(reader), tea.WithOutput(io.Discard), tea.WithoutRenderer(), tea.WithoutSignalHandler(), tea.WithContext(ctx))
+			done := make(chan error, 1)
+			go func() { _, err := program.Run(); done <- err }()
+			receive := func(key string) legacyEscapeEvent {
+				t.Helper()
+				select {
+				case event := <-fixture.events:
+					if event.key != key {
+						t.Fatalf("decoded %q, expected %q", event.key, key)
+					}
+					return event
+				case <-ctx.Done():
+					t.Fatal("navigation input or service load was not acknowledged")
+					return legacyEscapeEvent{}
+				}
+			}
+			loadRows := func() legacyEscapeEvent {
+				program.Send(loadedMsg{services: []api.Service{{ID: fixtureID, Name: fixtureID}}})
+				return receive("services-loaded")
+			}
+			if waitForRows {
+				if event := loadRows(); !strings.Contains(event.view, row) || event.selected != fixtureID || event.detail {
+					t.Fatal("loaded dashboard did not acknowledge its selected padded fixture row")
+				}
+			}
+			if _, err := writer.Write([]byte("/")); err != nil {
+				t.Fatal(err)
+			}
+			if event := receive("/"); !event.searching || !strings.Contains(event.view, "Search:") {
+				t.Fatal("standalone slash did not enter search")
+			}
+			if _, err := writer.Write([]byte(fixtureID + "\r\r")); err != nil {
+				t.Fatal(err)
+			}
+			if event := receive(fixtureID); !event.searching {
+				t.Fatal("query was not decoded in search mode")
+			}
+			if event := receive("enter"); event.searching || event.detail {
+				t.Fatal("first Enter did not leave search")
+			}
+			entered := receive("enter")
+			if waitForRows {
+				if !entered.detail || entered.selected != fixtureID || !strings.Contains(entered.view, "Lifecycle:") {
+					t.Fatal("row-ready transport did not reach the selected service detail")
+				}
+			} else {
+				if entered.detail || entered.selected != "" {
+					t.Fatal("unloaded transport unexpectedly had a selected detail")
+				}
+				if event := loadRows(); event.detail || event.selected != fixtureID || !strings.Contains(event.view, row) {
+					t.Fatal("late service load did not preserve the missed navigation frontier")
+				}
+			}
+			if _, err := writer.Write([]byte("q")); err != nil {
+				t.Fatal(err)
+			}
+			if event := receive("q"); event.pending || event.operation {
+				t.Fatal("read-only navigation created a confirmation or operation")
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-ctx.Done():
+				t.Fatal("navigation fixture did not quit")
+			}
+			_, previews, submits, operations, cancels := client.calls()
+			if previews+submits+operations+cancels != 0 {
+				t.Fatal("navigation reached preview, submission, operation or cancellation")
+			}
+		})
+	}
 }
 
 func TestLegacyEscapeAcknowledgementSeparatesQuitInActualInputDecoder(t *testing.T) {

@@ -17,7 +17,6 @@ jobs:
           node-version: '22.23.2'
       - run: node --test --test-timeout=20000 scripts/local-e2e.test.mjs
   real-core-compatibility:
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -27,7 +26,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           repository: service-lasso/service-lasso
-          ref: ${{ inputs.core_revision }}
+          ref: ${{ inputs.core_revision || '85a94a131f488faee55dc36efcfb04827a267442' }}
           path: core-input
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -44,7 +43,7 @@ jobs:
       - name: Run ordinary real Core compatibility evidence
         working-directory: tui
         env:
-          CORE_REVISION: ${{ inputs.core_revision }}
+          CORE_REVISION: ${{ inputs.core_revision || '85a94a131f488faee55dc36efcfb04827a267442' }}
         run: node scripts/run-local-e2e.mjs --core-dir "$GITHUB_WORKSPACE/core-input" --expected-core-revision "$CORE_REVISION" --suite compat --output-dir "$RUNNER_TEMP/tui-local-e2e"
       - name: Retain closed summary only
         if: always()

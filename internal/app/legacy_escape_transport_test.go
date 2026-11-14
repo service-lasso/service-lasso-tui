@@ -3,7 +3,10 @@ package app
 import (
 	"context"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -12,6 +15,8 @@ import (
 )
 
 type legacyEscapeEvent struct {
+	err                         error
+	view                        string
 	operation, terminal, frozen bool
 	key                         string
 	pending, cancelled          bool
@@ -32,7 +37,10 @@ func (f *legacyEscapeFixture) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, command := f.state.Update(msg)
 	f.state = next.(model)
 	if key, ok := msg.(tea.KeyMsg); ok {
-		f.events <- legacyEscapeEvent{operation: f.state.operation != nil, frozen: f.state.pendingPreview == f.expectedPreview && f.state.pendingAction == f.expectedAction && f.state.pendingServiceID == f.expectedService, key: key.String(), pending: f.state.pendingAction != "", cancelled: strings.Contains(f.state.View(), "Confirmation cancelled."), searching: f.state.searching, detail: f.state.screen == detailScreen, selected: f.state.selectedServiceID, command: command != nil}
+		f.events <- legacyEscapeEvent{err: f.state.err, view: f.state.View(), operation: f.state.operation != nil, frozen: f.state.pendingPreview == f.expectedPreview && f.state.pendingAction == f.expectedAction && f.state.pendingServiceID == f.expectedService, key: key.String(), pending: f.state.pendingAction != "", cancelled: strings.Contains(f.state.View(), "Confirmation cancelled."), searching: f.state.searching, detail: f.state.screen == detailScreen, selected: f.state.selectedServiceID, command: command != nil}
+	}
+	if _, ok := msg.(lifecyclePreparedMsg); ok {
+		f.events <- legacyEscapeEvent{key: "preparation-result", err: f.state.err, view: f.state.View(), pending: f.state.pendingAction != "", operation: f.state.operation != nil, command: command != nil}
 	}
 	if _, ok := msg.(operationMsg); ok {
 		f.events <- legacyEscapeEvent{key: "operation-result", operation: f.state.operation != nil, terminal: strings.Contains(f.state.lastResult, "succeeded.")}
@@ -259,5 +267,148 @@ func TestLegacyStandaloneConfirmationIsDecodedAsOneSubmission(t *testing.T) {
 	_, previews, submits, _, cancels := client.calls()
 	if submits != 1 || previews != 0 || cancels != 0 {
 		t.Fatal("standalone confirmation did not make exactly one controlled submission")
+	}
+}
+
+func TestLegacyFailedHTTPPreparationAcceptsQuitWithoutEscape(t *testing.T) {
+	var reads, mutations atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			mutations.Add(1)
+			http.Error(w, "unexpected mutation", 500)
+			return
+		}
+		if r.URL.Path == "/api/operator/lifecycle/reconciliation-context" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Path != "/api/operator/lifecycle/services/echo/availability" {
+			t.Error("unexpected read route")
+		}
+		reads.Add(1)
+		http.Error(w, "private unavailable response", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	client, err := api.NewClientWithAuth(server.URL, server.Client(), "fixture-token", api.AuthModeOAuthBearer, "service-lasso:read", "service-lasso:lifecycle:write")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	defer writer.Close()
+	m := New(client, context.Background()).(model)
+	m.services = []api.Service{{ID: "echo", Name: "Echo"}}
+	m.selectedServiceID = "echo"
+	m.screen = detailScreen
+	m.loading = false
+	fixture := &legacyEscapeFixture{state: m, events: make(chan legacyEscapeEvent, 8)}
+	program := tea.NewProgram(fixture, tea.WithInput(reader), tea.WithOutput(io.Discard), tea.WithoutRenderer(), tea.WithoutSignalHandler(), tea.WithContext(ctx))
+	done := make(chan error, 1)
+	go func() { _, err := program.Run(); done <- err }()
+	receive := func() legacyEscapeEvent {
+		t.Helper()
+		select {
+		case event := <-fixture.events:
+			return event
+		case <-ctx.Done():
+			t.Fatal("preparation failure was not acknowledged")
+			return legacyEscapeEvent{}
+		}
+	}
+	if _, err := writer.Write([]byte("i")); err != nil {
+		t.Fatal(err)
+	}
+	if event := receive(); event.key != "i" || !event.pending || !event.command {
+		t.Fatal("install did not enter preparation")
+	}
+	if event := receive(); event.key != "preparation-result" || event.pending || event.operation || event.command || event.err == nil || !strings.Contains(event.view, "Runtime API unavailable:") || strings.Contains(event.view, "private unavailable response") {
+		t.Fatal("failed preparation did not clear confirmation safely")
+	}
+	// No Escape can acknowledge a cancellation after the preparation already failed.
+	if _, err := writer.Write([]byte("q")); err != nil {
+		t.Fatal(err)
+	}
+	if event := receive(); event.key != "q" || event.pending {
+		t.Fatal("normal quit was not accepted after preparation failure")
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("failed preparation fixture did not quit")
+	}
+	if reads.Load() != 1 || mutations.Load() != 0 {
+		t.Fatal("failed preparation retried or mutated")
+	}
+}
+
+func TestLegacyReloadUsesSafeRefusalWithoutCommandOrConfirmation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	defer writer.Close()
+	client := &recordingDurableClient{}
+	m := New(client, context.Background()).(model)
+	m.services = []api.Service{{ID: "echo", Name: "Echo"}}
+	m.selectedServiceID = "echo"
+	m.screen = detailScreen
+	m.loading = false
+	m.availabilityService = "echo"
+	m.availability = []api.LifecycleAvailability{{Action: "reload", Reason: "durable_operation_unavailable"}}
+	fixture := &legacyEscapeFixture{state: m, events: make(chan legacyEscapeEvent, 8)}
+	if !strings.Contains(m.View(), "reload: disabled: durable operation unavailable") {
+		t.Fatal("unsupported reload was not advertised as disabled")
+	}
+	program := tea.NewProgram(fixture, tea.WithInput(reader), tea.WithOutput(io.Discard), tea.WithoutRenderer(), tea.WithoutSignalHandler(), tea.WithContext(ctx))
+	done := make(chan error, 1)
+	go func() { _, err := program.Run(); done <- err }()
+	receive := func() legacyEscapeEvent {
+		t.Helper()
+		select {
+		case event := <-fixture.events:
+			return event
+		case <-ctx.Done():
+			t.Fatal("reload refusal was not acknowledged")
+			return legacyEscapeEvent{}
+		}
+	}
+	if _, err := writer.Write([]byte("l")); err != nil {
+		t.Fatal(err)
+	}
+	event := receive()
+	if event.key != "l" || event.pending || event.operation || event.command || event.err == nil || !strings.Contains(event.err.Error(), "reload is unavailable") {
+		t.Fatal("reload did not refuse without a command")
+	}
+	if !strings.Contains(event.view, "Runtime API unavailable: operator stage failed; check connection and retained operation state") || strings.Contains(event.view, "reload is unavailable") || strings.Contains(event.view, "Confirm reload") || strings.Contains(event.view, "z request Core cancellation") {
+		t.Fatal("reload refusal violated its safe presentation")
+	}
+	if _, err := writer.Write([]byte("q")); err != nil {
+		t.Fatal(err)
+	}
+	if event := receive(); event.key != "q" || event.pending {
+		t.Fatal("reload refusal did not allow normal quit")
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("reload fixture did not quit")
+	}
+	availability, previews, submits, operations, cancels := client.calls()
+	if availability+previews+submits+operations+cancels != 0 {
+		t.Fatal("unsupported reload reached a runtime request")
 	}
 }

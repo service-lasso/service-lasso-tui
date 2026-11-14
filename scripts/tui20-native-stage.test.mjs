@@ -41,6 +41,7 @@ assert namespace['DIAGNOSTIC_ORIGINALS']==[first,later]
 terminal=next(node for node in tree.body if isinstance(node,ast.ClassDef) and node.name=='Terminal')
 methods=[node for node in terminal.body if isinstance(node,ast.FunctionDef) and node.name in ('retain_lifecycle_original','request_quit_once','close_master_once','recovery_escape_once','wait_draining_until_observed','close','recover_until_observed')]
 closes=[];events=[]
+namespace['FAILED_PREVIEW_TITLES']=('Runtime authentication denied:','Runtime permission denied:','Core action unavailable:','Operation reconciliation required:','Operation recovery storage unavailable:','Runtime API unavailable:')
 namespace.update({'os':types.SimpleNamespace(close=lambda descriptor:closes.append(descriptor)),
  'time':types.SimpleNamespace(monotonic=lambda:0,sleep=lambda value:None),'terminal_exit_reason':lambda result:'terminal_exited_zero','subprocess':types.SimpleNamespace(TimeoutExpired=TimeoutError),
  'ChildReapedUnowned':type('ChildReapedUnowned',(Exception,),{})})

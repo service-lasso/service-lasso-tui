@@ -43,10 +43,10 @@ CLI39-INITIAL-LAUNCHER-PRODUCER36-FRONTIER.md. No substitute ABI is selected.
 
 ## Verification disposition
 
-Executor source and refusal/custody fixtures are authored, pending distinct review. Bounded source tests were explicitly requested by the current user; their execution does not grant native input or release authority. Linux native testing needs the genuine
+Executor and lifecycle regression source have independent scoped review approval. Bounded source tests were explicitly requested by the current user; their execution does not grant native input or release authority. Linux native testing needs the genuine
 originals and current exact-command admission. Host availability alone grants none.
 
-Host inspection: command -v finds no Go or clang; /usr/local/bin/node resolves to /opt/node-v24.21.0-linux-x64/bin/node, not the required Node 22.23.2. No Go/native build or proof command has run. Static git diff --check passes. Authentic input originals remain unavailable.
+Initial host inspection: command -v found no Go or clang; /usr/local/bin/node resolves to /opt/node-v24.21.0-linux-x64/bin/node, not the required Node 22.23.2. At that initial checkpoint no Go/native build or proof command had run. Static git diff --check passes. Authentic input originals remain unavailable.
 
 Bounded source validation: `node --test scripts/linux-candidate-executor.test.mjs scripts/file-backed-command-completion.test.mjs scripts/candidate-profile-source.test.mjs` passed 18/18, zero skips, on the available Node24 host. This is not Node22.23.2 matching-toolchain or native proof. Independent source review remains required before landing.
 
@@ -182,3 +182,33 @@ controlled submission on standalone y. The native helper snapshots operation
 count and ID set before preview and checks both again after ignored inputs are
 drained, before confirmation; no premature operation can be hidden by cached
 terminal text. Owned runtime URL/token originals remain private explicit inputs.
+
+## Fresh whole-patch recovery review and reload contract
+
+A fresh independent full PR review identified failed API preparation as a distinct
+recovery state: the model clears its pending confirmation on error, so Escape
+cannot produce Confirmation cancelled. For preview-await only, a new captured
+closed safe API error heading after the action offset selects the existing
+once-only q directly. This is input selection, never permission to release;
+actual owned exit remains mandatory and an ignored q retains custody. Confirmed
+previews retain the strict Escape/cancellation-acknowledgement/quit sequence.
+Real PTY tests exclude stale/unknown headings and a production decoder/model
+HTTP503 test proves cleared preparation accepts normal q without Escape.
+
+The local 6f5e89c attempt completed all five per-action readbacks then failed
+the stale raw reload-diagnostic wait. Reload deliberately stores a private
+refusal, while SafeError renders a closed diagnostic. Require its advertised
+disabled capability plus the exact fresh safe diagnostic, unchanged Core
+operations, no confirmation and no actual z request Core cancellation advert.
+A production decoder/model test proves l creates no command/request/operation
+and does not expose the private raw refusal. No rendering change or generic
+error-only acceptance is introduced.
+
+## Current verification checkpoint
+
+Matching Node22.23.2 affected and native-pair refusal suites: 30/30 pass, zero
+skips; Python legacy harness regressions: 19/19 pass. Go1.26.0 full package tests
+pass; targeted decoder/model race tests pass. Fresh independent whole-patch
+review approved the corrected source, including failed-preparation and reload
+paths. Exact-head hosted CI and landing results are tracked on PR39 and issue37.
+No result here qualifies genuine v2 pair acquisition; produceNative stays closed.

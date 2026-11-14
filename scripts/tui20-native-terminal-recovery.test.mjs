@@ -161,3 +161,35 @@ assert not term.recovery_escape_original['acknowledged']
 assert [item['original'] for item in term.lifecycle_originals]==[write_error,read_error]
 print('natural-terminal-recovery-pass')
 `));
+
+test('failed preparation fresh safe error uses normal q without Escape and preserves failed primary',{skip:process.platform!=='linux'},()=>check(setup+String.raw`
+assert set(h['FAILED_PREVIEW_TITLES'])=={'Runtime authentication denied:','Runtime permission denied:','Core action unavailable:','Operation reconciliation required:','Operation recovery storage unavailable:','Runtime API unavailable:'}
+term=terminal();write=term.write;writes=[]
+term.action_phase='preview-await';term.text='old private terminal';term.action_output_offset=len(term.text)
+term.text+=' Runtime API unavailable: fixed-safe-error'
+with tempfile.TemporaryDirectory() as root:
+ outcome={'outcome':'failed','terminals':[]}
+ def request(value):
+  assert json.loads(pathlib.Path(root,'native-exit-receipt.json').read_text())['outcome']=='failed'
+  assert value=='q';writes.append(value);return write(value)
+ term.write=request
+ assert h['retain_primary_and_recover'](root,outcome,term)
+ assert writes==['q'] and not hasattr(term,'recovery_escape_original')
+ assert term.child.returncode==0 and outcome['outcome']=='failed'
+ assert outcome['recoveryObservation']['observed'] and term.master_close_original['completed']
+ assert json.loads(pathlib.Path(root,'native-exit-receipt.json').read_text())['outcome']=='failed'
+print('natural-terminal-recovery-pass')
+`));
+
+test('stale error text and unknown error headings cannot bypass confirmed preview Escape acknowledgement',{skip:process.platform!=='linux'},()=>check(setup+String.raw`
+for phase,text,offset in (('preview-await','Runtime API unavailable: old',len('Runtime API unavailable: old')),('preview-await','Unknown API error: not admitted',0),('confirmation-ready','Runtime API unavailable: new',0)):
+ term=Terminal.__new__(Terminal);term.master=123;term.label='fixture';term.text=text;term.exit_reason=None;term.read_observations=[]
+ term.action_phase=phase;term.action_output_offset=offset
+ polls=[None,0,0];term.child=types.SimpleNamespace(returncode=None,reaped_unowned=False,poll=lambda:polls.pop(0))
+ writes=[];term.write=lambda value:writes.append(value) or 1
+ with patch.object(h['os'],'close',lambda descriptor:None):
+  assert term.recover_until_observed()['observed']
+ assert writes==['\x1b'] and term.recovery_escape_original['exitObserved']
+ assert not term.recovery_escape_original['acknowledged'] and not hasattr(term,'quit_original')
+print('natural-terminal-recovery-pass')
+`));

@@ -5,6 +5,8 @@ ALLOWED_ENV=("HOME","LANG","LC_ALL","PATH","SHELL","TERM","TMPDIR","USER")
 OWNED_TERMINALS=[]
 DIAGNOSTIC_ORIGINALS=[]
 SAFE_CONFIGURATION_DIAGNOSTIC="connection configuration unavailable; check profile settings"
+# Closed presentation classes from api.ErrorTitle; values/bodies stay private.
+FAILED_PREVIEW_TITLES=("Runtime authentication denied:","Runtime permission denied:","Core action unavailable:","Operation reconciliation required:","Operation recovery storage unavailable:","Runtime API unavailable:")
 
 def diagnostic_stage(label):
     """Only source-literal labels reach this non-sensitive progress channel."""
@@ -325,7 +327,13 @@ class Terminal:
         # as quit (for example an active editor may consume it as text).
         try:
             if current_known and current is None:
-                if getattr(self,"action_phase",None) in ("preview-await","confirmation-ready"):
+                phase=getattr(self,"action_phase",None)
+                offset=getattr(self,"action_output_offset",None)
+                failed_prepare=(phase=="preview-await" and isinstance(offset,int) and 0<=offset<=len(self.text) and any(title in self.text[offset:] for title in FAILED_PREVIEW_TITLES))
+                # A fresh fixed preparation error selects only the normal q
+                # input. If pending state actually remains, q is ignored and
+                # ownership stays retained until SAME actual child exit.
+                if phase in ("preview-await","confirmation-ready") and not failed_prepare:
                     escape=self.recovery_escape_once()
                     if escape["acknowledged"] and not escape["exitObserved"]: self.request_quit_once()
                 else: self.request_quit_once()
@@ -692,7 +700,7 @@ def action(term,key,name,url,token):
     before_frozen_ids={record.get("operationId") for record in before_frozen}
     term.action_phase="preview-await"
     diagnostic_stage("action-preview-enter")
-    start=len(term.text); term.write(key); term.wait(("Core preview: "+name,"Confirm "+name),45,start)
+    start=len(term.text); term.action_output_offset=start; term.write(key); term.wait(("Core preview: "+name,"Confirm "+name),45,start)
     term.action_phase="confirmation-ready"
     diagnostic_stage("action-preview-return")
     frozen=term.text
@@ -996,8 +1004,10 @@ def _main_attempt(observation):
             current=operations(url,token); added=[record for record in current if record.get("operationId") not in known_ids]
             if len(added)!=1 or added[0].get("action")!=expected_by_ui[name] or added[0].get("targetIds")!=["tui20-fixture"]: raise RuntimeError("per-action durable readback invalid")
             known_ids.add(added[0]["operationId"]); action_readbacks.append({key:added[0].get(key) for key in ("operationId","action","targetIds","status","outcome","cancellationSupported")})
-        before_reload=operations(url,token); term.write("l"); term.wait(("reload is unavailable",),15)
-        if operations(url,token)!=before_reload or "z cancel" in term.text: raise RuntimeError("reload or cancellation contract changed")
+        if "reload: disabled: durable operation unavailable" not in term.text: raise RuntimeError("Core reload unavailability not observed")
+        before_reload=operations(url,token); reload_start=len(term.text); term.write("l")
+        term.wait(("Runtime API unavailable: operator stage failed; check connection and retained operation state",),15,reload_start)
+        if operations(url,token)!=before_reload or "z cancel" in term.text or "z request Core cancellation" in term.text or "Confirm reload" in term.text[reload_start:]: raise RuntimeError("reload or cancellation contract changed")
         outcome["terminals"].append({"terminal":"allowed","exit":term.close()})
         runtime_pid=runtime.pid if runtime is not None else runtime_handoff["_runtimePID"]; runtime_birth=runtime.tui20_birth if runtime is not None else runtime_handoff["_runtimeBirth"]
         write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"coreRuntimePID":runtime_pid,"runtimeBirth":runtime_birth,"tuiChildPID":term.child.pid,"tuiChildBirth":term.child.tui20_birth,"sourceCommit":identity["sourceCommit"],"binarySHA256":identity["binarySHA256"],"phase":"normal_q_exit","immutableExecutionHeld":True,"ptyHeld":False})

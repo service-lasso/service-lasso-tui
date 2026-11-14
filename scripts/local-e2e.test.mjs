@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,writeFile,chmod,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {spawn} from 'node:child_process';
+import {spawn,spawnSync} from 'node:child_process';
 import {parseOptions,validateConnection,suitePassed,assertSourceReceipt,assertSelectedTools,assertReadyPaths,command} from './run-local-e2e.mjs';
 
 test('all cannot pass compatibility alone or v2 unavailable',()=>{
@@ -79,4 +79,15 @@ test('Core receipts bind actual selected Node and npm path bytes and package ver
  const selected={nodeSHA256:'a'.repeat(64),npmCLI:{path:'/actual/npm/bin/npm-cli.js',sha256:'b'.repeat(64),packageVersion:'11.0.0'}};
  const receipt={tools:structuredClone(selected)};assert.doesNotThrow(()=>assertSelectedTools(receipt,selected));
  for(const mutate of [row=>row.tools.nodeSHA256='c'.repeat(64),row=>row.tools.npmCLI.path='/foreign/npm-cli.js',row=>row.tools.npmCLI.sha256='d'.repeat(64),row=>row.tools.npmCLI.packageVersion='10.0.0']){const changed=structuredClone(receipt);mutate(changed);assert.throws(()=>assertSelectedTools(changed,selected));}
+});
+
+test('checkout-scoped canonical LF bytes stay clean with isolated Git config',async()=>{
+ // Synthetic scratch Git history only; never an authored project commit.
+ const root=await mkdtemp(path.join(tmpdir(),'tui-e2e-checkout-bytes-'));try{
+  const env={...process.env,GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:process.platform==='win32'?'NUL':'/dev/null'};
+  const git=(autocrlf,...args)=>{const row=spawnSync('git',['-c',`core.autocrlf=${autocrlf}`,'-c','commit.gpgsign=false',...args],{cwd:root,env,encoding:'utf8',timeout:5000,maxBuffer:65536});assert.equal(row.status,0,row.stderr);return row.stdout;};
+  git('false','init','--initial-branch=develop','--quiet');await writeFile(path.join(root,'file.txt'),'line\n');git('false','add','file.txt');git('false','-c','user.name=source-fixture','-c','user.email=fixture@example.invalid','commit','--quiet','-m','synthetic LF original');
+  await writeFile(path.join(root,'file.txt'),'changed\n');git('true','reset','--hard','HEAD');assert.equal(await readFile(path.join(root,'file.txt'),'utf8'),'line\r\n');assert.equal(git('true','status','--porcelain'),'');assert.match(git('false','status','--porcelain'),/ M file.txt/);
+  await writeFile(path.join(root,'file.txt'),'changed\n');git('false','reset','--hard','HEAD');assert.equal(await readFile(path.join(root,'file.txt'),'utf8'),'line\n');assert.equal(git('false','status','--porcelain'),'');
+ }finally{await rm(root,{recursive:true});}
 });

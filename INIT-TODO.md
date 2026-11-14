@@ -1560,3 +1560,6 @@ Issue1 Clear original lifetime pre-code mapping: .governance/project/TUI1-CLEAR-
 
 
 Issue #42 / SPEC005 E2E001–E2E004: automate ordinary-source local real-Core authenticated terminal evidence with private inputs, exact provenance, readiness before keys, separate v2-unavailable/native/platform outcomes and actual child cleanup. Existing acceptance remains unchanged.
+
+
+Issue #44 / SPEC006 PLATFORM001–003: ordinary matching-host Windows ConPTY with shared verified DACL/tool bootstrap and separately scoped exploratory macOS POSIX evidence. Preserve Linux behavior and all existing full operator/native acceptance gates.

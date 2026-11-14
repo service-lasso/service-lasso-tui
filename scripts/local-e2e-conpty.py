@@ -118,7 +118,7 @@ def run_probe(binary, connection, output, mode, observations, raw_handle,
                 status = observed_exit(process)
                 reaped, reaped_at = True, clock()
                 return
-            readable, _, _ = select_fn([process], [], [], min(.05, max(0, deadline - clock())))
+            readable, _, _ = select_fn([process.fileobj], [], [], min(.05, max(0, deadline - clock())))
             if not readable:
                 continue
             try:

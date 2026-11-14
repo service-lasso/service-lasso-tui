@@ -226,19 +226,25 @@ class Terminal:
             if not raw: time.sleep(.02)
     def close(self,expected=0):
         diagnostic_stage("terminal-normal-close-enter")
-        current=self.child.poll()
-        if current is None and not self.child.reaped_unowned:
-            quit_original=self.request_quit_once()
-            if quit_original["original"] is not None: raise quit_original["original"]
-        if not hasattr(self,"close_expires"): self.close_expires=time.monotonic()+10
-        try: result=self.wait_draining_until_observed(self.close_expires)
-        except ChildReapedUnowned:
-            self.exit_reason="terminal_unknown"; self.recovery_state="child_reaped_unowned"
-            raise TerminalUnresolved(self,"owned terminal was reaped without an observable exit status")
-        except subprocess.TimeoutExpired:
-            # Failed normal quit retains SAME child, PTY and execution object.
-            self.exit_reason="terminal_unknown"; self.recovery_state="live_child_unresolved"
-            raise TerminalUnresolved(self,"owned terminal exit unresolved")
+        if hasattr(self,"normal_close_result"):
+            result=self.normal_close_result
+        else:
+            current=self.child.poll()
+            if current is None and not self.child.reaped_unowned:
+                quit_original=self.request_quit_once()
+                if quit_original["original"] is not None: raise quit_original["original"]
+            if not hasattr(self,"close_expires"): self.close_expires=time.monotonic()+10
+            try: result=self.wait_draining_until_observed(self.close_expires)
+            except ChildReapedUnowned:
+                self.exit_reason="terminal_unknown"; self.recovery_state="child_reaped_unowned"
+                raise TerminalUnresolved(self,"owned terminal was reaped without an observable exit status")
+            except subprocess.TimeoutExpired:
+                # Failed normal quit retains SAME child, PTY and execution object.
+                self.exit_reason="terminal_unknown"; self.recovery_state="live_child_unresolved"
+                raise TerminalUnresolved(self,"owned terminal exit unresolved")
+            # Replay only this SAME already observed result; a late first exit
+            # still cannot turn the original expired normal close into success.
+            self.normal_close_result=result
         closed=self.close_master_once()
         reason=terminal_exit_reason(result); self.exit_reason=reason
         if closed["original"] is not None: raise closed["original"]

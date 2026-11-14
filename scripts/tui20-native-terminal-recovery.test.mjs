@@ -12,6 +12,7 @@ function check(source){
 }
 const setup=String.raw`
 import json,os,pathlib,pty,runpy,sys,tempfile,tty,types
+from unittest.mock import patch
 h=runpy.run_path(sys.argv[1]);Terminal=h['Terminal'];BoundProcess=h['BoundProcess']
 def terminal():
  master,slave=pty.openpty();tty.setraw(slave);pid=os.fork()
@@ -34,7 +35,10 @@ assert term.close()=='terminal_exited_zero'
 assert term.child.returncode==0 and len(term.text)>65536
 assert writes==['q'] and term.quit_original['returned']==1
 assert term.master_close_original['completed']
-assert term.close()=='terminal_exited_zero'
+with patch.object(h['time'],'monotonic',lambda:term.close_expires+100):
+ assert term.close()=='terminal_exited_zero'
+try:term.close(2);raise AssertionError('cached exit bypassed expected status')
+except RuntimeError:pass
 assert writes==['q']
 try:os.fstat(term.master);raise AssertionError('PTY retained after observed close')
 except OSError:pass

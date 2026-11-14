@@ -896,7 +896,10 @@ def _main_attempt(observation):
             os.kill(os.getpid(),signal.SIGKILL)
         before=unrelated(url,token); adverse=[]
         outcome["adverseAudit"]=adverse
-        for profile,label,expected,audit_expected in (("missing","missing-credential",2,0),("invalid","invalid-credential",0,0),("denied","scope-denied",0,5)):
+        # Current TUI20 legacy flow performs two fresh availability GETs:
+        # detail read plus action preparation, each auditing five denied actions.
+        # Retain the whole case window; this is not a TUI28 receipt change.
+        for profile,label,expected,audit_expected in (("missing","missing-credential",2,0),("invalid","invalid-credential",0,0),("denied","scope-denied",0,10)):
             count=len(operations(url,token)); audit=audit_count(url,token)
             if profile=="missing":
                 diagnostic_stage("bound-replacement-probe-enter")

@@ -9,7 +9,7 @@ import ast,sys
 source=ast.parse(open(sys.argv[1],encoding='utf-8').read())
 loop=next(node for node in ast.walk(source) if isinstance(node,ast.For) and isinstance(node.target,ast.Tuple) and [item.id for item in node.target.elts if isinstance(item,ast.Name)]==['profile','label','expected','audit_expected'])
 original=ast.literal_eval(loop.iter)
-assert original==(('missing','missing-credential',2,0),('invalid','invalid-credential',0,0),('denied','scope-denied',0,5))
+assert original==(('missing','missing-credential',2,0),('invalid','invalid-credential',0,0),('denied','scope-denied',0,10))
 # Execute only the actual invalid-case source control flow against recorders.
 # These recorders are not a runtime, credential issuer or native-positive proof.
 loop.iter=ast.Tuple(elts=[loop.iter.elts[1]],ctx=ast.Load())

@@ -123,3 +123,19 @@ five-audit assertion until actual evidence supplies a different observed count.
 Root the partial adverse observation list in private outcome before the loop,
 so completed original audit/count facts survive a later assertion failure;
 failed primary/public projection never become successful from this retention.
+
+## Observed exact audit correspondence for this legacy CI journey
+
+The df89de5 full-SHA local attempt observed all three adverse terminals close
+naturally, zero operations for all cases, and audit deltas exactly 0/0/10.
+Its primary remains FAILED because the previous five-event assertion rejected
+ten. Pinned Core records five action denials per availability request; the
+actual model issues one request entering detail and one fresh request during
+action preparation. A real HTTP client/model regression proves exactly those
+two GETs and no preview/submission/confirmation or other mutation request.
+Require EXACTLY ten for this current TUI20 POSIX legacy CI journey, rejecting
+five, nine, eleven or any other count. Keep the original whole-case before/after
+window; do not hide events by rebasing it. No-operation and terminal-zero stay
+mandatory. Separate closed TUI28/native-producer routes retain historical
+contracts and remain unqualified; this correction neither opens nor qualifies
+them. The earlier failed attempt and its original measured counts stay retained.

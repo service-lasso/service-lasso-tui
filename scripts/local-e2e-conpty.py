@@ -216,6 +216,22 @@ def run_probe(binary, connection, output, mode, observations, raw_handle,
                 process.close(force=False)
             except Exception:
                 failure = failure or 'TerminalCloseError'
+        reader_cancel = {'attempted': False, 'outcome': 'not-needed'}
+        # The application has already exited and its actual wait was consumed.
+        # Cancel only SAME owned PTY reading IO, never a live target or PID.
+        if reaped:
+            try:
+                if process._thread.is_alive():
+                    reader_cancel['attempted'] = True
+                    returned = process.pty.cancel_io()
+                    reader_cancel['outcome'] = 'requested' if returned is True else 'not-confirmed'
+            except Exception as original:
+                # Already-completed/no-pending IO can race this request. Preserve
+                # the closed observation; only actual join/socket checks settle it.
+                reader_cancel['outcome'] = 'raised'
+                reader_cancel['errorType'] = type(original).__name__
+        else:
+            reader_cancel['outcome'] = 'not-attempted-without-owned-exit'
         sockets_closed = True
         for socket_name in ['fileobj', '_server']:
             try:
@@ -237,7 +253,7 @@ def run_probe(binary, connection, output, mode, observations, raw_handle,
               'reason': failure or ('operator-v2-functional-journeys-not-qualified' if mode == 'v2' else None),
               'apiUnavailable': b'404 Not Found' in data, 'readyBeforeKeys': ready,
               'helpStateObserved': help_state, 'dashboardRestored': dashboard_returned,
-              'actualOwnedWait': reaped, 'socketCleanup': sockets_closed, 'readerJoined': reader_joined, 'exitCode': status, 'forcedCleanup': forced,
+              'actualOwnedWait': reaped, 'readerCancellation': reader_cancel, 'socketCleanup': sockets_closed, 'readerJoined': reader_joined, 'exitCode': status, 'forcedCleanup': forced,
               'interruptedForCleanup': interrupted, 'tokenLeaked': leaked,
               'captureOverflow': overflow, 'events': events,
               'helper': None if factory is not None else {'pythonVersion': platform.python_version(),

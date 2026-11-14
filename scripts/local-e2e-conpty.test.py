@@ -42,13 +42,28 @@ class Reader:
         return self.stuck
 
 
+class NativeIO:
+    def __init__(self, terminal, raises=False):
+        self.terminal, self.raises = terminal, raises
+        self.calls = 0
+    def cancel_io(self):
+        if self.terminal.isalive() or self.terminal.wait_count != 1:
+            raise AssertionError('reading cancellation preceded actual owned process wait')
+        self.calls += 1
+        self.terminal._thread.stuck = False
+        if self.raises:
+            raise OSError('controlled already-completed IO')
+        return True
+
+
 class Terminal:
-    def __init__(self, clock, observations, fail_quit=False, leak=False, stuck_reader=False, missing_cleanup=False):
+    def __init__(self, clock, observations, fail_quit=False, leak=False, stuck_reader=False, missing_cleanup=False, pending_reader=False, cancel_race=False):
         self.clock, self.observations = clock, observations
         self.fail_quit = fail_quit
         self.fileobj = Socket(self)
         self._server = Socket(self)
-        self._thread = Reader(stuck_reader)
+        self._thread = Reader(stuck_reader or pending_reader)
+        self.pty = NativeIO(self, raises=cancel_race) if pending_reader else None
         if missing_cleanup:
             del self._server
         self.chunks = [b'Runtime: ok (API up)\nServices\n' + (b'private-token-only' if leak else b'')]
@@ -145,6 +160,21 @@ class Tests(unittest.TestCase):
         result, _ = self.run_probe(stuck_reader=True)
         self.assertEqual(result['status'], 'failed')
         self.assertFalse(result['readerJoined'])
+
+    def test_pending_original_reader_cancels_only_after_real_wait_then_joins(self):
+        result, terminal = self.run_probe(pending_reader=True)
+        self.assertEqual(result['status'], 'passed')
+        self.assertEqual(terminal.pty.calls, 1)
+        self.assertEqual(result['readerCancellation'], {'attempted': True, 'outcome': 'requested'})
+        self.assertTrue(result['readerJoined'])
+        self.assertFalse(result['forcedCleanup'])
+
+    def test_cancel_race_alone_cannot_settle_cleanup_but_actual_join_can(self):
+        result, terminal = self.run_probe(pending_reader=True, cancel_race=True)
+        self.assertEqual(result['status'], 'passed')
+        self.assertEqual(terminal.pty.calls, 1)
+        self.assertEqual(result['readerCancellation']['outcome'], 'raised')
+        self.assertTrue(result['readerJoined'])
 
     def test_missing_cleanup_field_still_writes_failed_closed_result(self):
         result, _ = self.run_probe(missing_cleanup=True)

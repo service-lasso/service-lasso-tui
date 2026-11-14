@@ -1,4 +1,5 @@
 import ast
+import io
 import os
 import pathlib
 import runpy
@@ -320,7 +321,7 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
                 os.fstat(recovery["leafFD"]); os.fstat(recovery["directoryFD"])
                 # Consume the real owner's receipt through the actual observer
                 # aggregate path. Child handles are explicit controlled fixtures.
-                owner=types.SimpleNamespace(pid=os.getpid(),stdin=io.StringIO(),stdout=io.StringIO(),stderr=io.StringIO(),wait=lambda:0)
+                owner=types.SimpleNamespace(pid=os.getpid(),stdin=io.StringIO(),stdout=io.StringIO(),stderr=io.TextIOWrapper(io.BytesIO()),wait=lambda:0)
                 runtime=types.SimpleNamespace(pid=202,tui20_birth=birth)
                 closed={"runtimeChildExit":"terminal_exited_zero","shutdownRequested":True,"actualExitObserved":True,"runtimeBirthAbsentObserved":True,"runtimeChildStillLiveAfterClose":False,"runtimeStdoutClosed":True,"runtimeStderrClosed":True}
                 def start(_args,retain): retain(runtime); return runtime,dict(handoff)
@@ -432,7 +433,7 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
                         # receipt to the real observer; exercise its real runtime
                         # close/write/wait/stream-closure path with owned fixtures.
                         owner_waits=[]; runtime_waits=[]; shutdown=[]
-                        owner=types.SimpleNamespace(pid=os.getpid(),stdin=io.StringIO(),stdout=io.StringIO(),stderr=io.StringIO(),wait=lambda:owner_waits.append("wait") or 0)
+                        owner=types.SimpleNamespace(pid=os.getpid(),stdin=io.StringIO(),stdout=io.StringIO(),stderr=io.TextIOWrapper(io.BytesIO()),wait=lambda:owner_waits.append("wait") or 0)
                         class RuntimeInput(io.StringIO):
                             def write(self,value): shutdown.append(value); return super().write(value)
                         runtime=types.SimpleNamespace(pid=202,tui20_birth=birth,stdin=RuntimeInput(),stdout=io.StringIO(),stderr=io.StringIO(),returncode=None)

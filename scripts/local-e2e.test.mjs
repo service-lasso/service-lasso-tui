@@ -18,9 +18,9 @@ test('explicit source revision and supported suites are mandatory',()=>{
 });
 test('private connection rejects broad permissions and remote token destinations',async()=>{
  const root=await mkdtemp(path.join(tmpdir(),'tui-e2e-input-'));try{
-  const file=path.join(root,'connection.json');await writeFile(file,JSON.stringify({url:'http://127.0.0.1:12345',token:'x'.repeat(32)}),{mode:0o600});assert.equal((await validateConnection(file)).token.length,32);
-  if(process.platform!=='win32'){await chmod(file,0o644);await assert.rejects(validateConnection(file));await chmod(file,0o600);}
-  await writeFile(file,JSON.stringify({url:'http://remote.invalid',token:'x'.repeat(32)}));await assert.rejects(validateConnection(file));
+  const file=path.join(root,'connection.json');await writeFile(file,JSON.stringify({url:'http://127.0.0.1:12345',token:'x'.repeat(32)}),{mode:0o600});assert.equal((await validateConnection(file,async()=>({verified:true}))).token.length,32);
+  if(process.platform!=='win32'){await chmod(file,0o644);await assert.rejects(validateConnection(file,async()=>({verified:true})));await chmod(file,0o600);}
+  await writeFile(file,JSON.stringify({url:'http://remote.invalid',token:'x'.repeat(32)}));await assert.rejects(validateConnection(file,async()=>({verified:true})));
  }finally{await rm(root,{recursive:true});}
 });
 test('actual synthetic terminal waits readiness and reaps after stream EOF before exit',{skip:process.platform==='win32'},async()=>{
@@ -40,7 +40,7 @@ while True:
 `,{mode:0o700});
   const connection=path.join(root,'connection.json');await writeFile(connection,JSON.stringify({url:'http://127.0.0.1:12345',token:'synthetic-terminal-fixture-only'}),{mode:0o600});
   const output=path.join(root,'proof');const driver=path.resolve('scripts/local-e2e-pty.py');
-  const exit=await new Promise((resolve,reject)=>{const child=spawn('python3',[driver,'--binary',executable,'--connection-file',connection,'--output',output,'--mode','v2'],{stdio:['ignore','pipe','pipe']});child.on('error',reject);child.on('close',resolve);});
+  const exit=await new Promise((resolve,reject)=>{const child=spawn(process.env.TUI_E2E_TEST_PYTHON??(process.platform==='win32'?'python':'python3'),['-B',driver,'--binary',executable,'--connection-file',connection,'--output',output,'--mode','v2'],{stdio:['ignore','pipe','pipe']});child.on('error',reject);child.on('close',resolve);});
   assert.equal(exit,2);const result=JSON.parse(await readFile(path.join(output,'result.json')));
   assert.equal(result.status,'blocked');assert.equal(result.exitCode,0);assert.equal(result.actualWaitpid,true);assert.equal(result.interruptedForCleanup,false);
   assert.equal(result.readyBeforeKeys,true);assert.equal(result.tokenLeaked,false);assert.ok(result.qToReapSeconds>=.2);assert.ok(result.qToReapSeconds<2);
@@ -49,9 +49,9 @@ while True:
 });
 
 test('stale or unqualified Core receipts fail before private connection use',()=>{
- const receipt={schemaVersion:1,coreRevision:'a'.repeat(40),coreTree:'b'.repeat(40),classification:'source-built-ordinary-smoke',cleanSource:true,coreArtifactSHA256:'c'.repeat(64),sourceInputSHA256:'d'.repeat(64),artifactInventorySHA256:'e'.repeat(64),initializationAPI:true,build:{command:['npm','run','build'],exitCode:0,signal:null},tools:{node:'v22.23.2',npm:'10',typescript:'5',compilerSHA256:'f'.repeat(64)},installedDependencies:{dependency:{}}};
+ const receipt={schemaVersion:1,coreRevision:'a'.repeat(40),coreTree:'b'.repeat(40),classification:'source-built-ordinary-smoke',cleanSource:true,coreArtifactSHA256:'c'.repeat(64),sourceInputSHA256:'d'.repeat(64),artifactInventorySHA256:'e'.repeat(64),initializationAPI:true,privacy:{verified:true,policy:process.platform==='win32'?'current-owner-and-system':'current-owner-mode',protected:true},build:{command:[process.execPath,'/tools/npm-cli.js','run','build'],exitCode:0,signal:null},tools:{node:'v22.23.2',nodeSHA256:'1'.repeat(64),npmCLI:{path:'/tools/npm-cli.js',sha256:'2'.repeat(64),packageVersion:'10'},npm:'10',typescript:'5',compilerSHA256:'f'.repeat(64)},installedDependencies:{dependency:{}}};
  assert.doesNotThrow(()=>assertSourceReceipt(receipt,'a'.repeat(40)));
- for(const mutation of [row=>row.classification='unqualified-artifact',row=>row.cleanSource=false,row=>row.initializationAPI=false,row=>row.build.exitCode=1,row=>delete row.artifactInventorySHA256,row=>delete row.tools.compilerSHA256]){const changed=structuredClone(receipt);mutation(changed);assert.throws(()=>assertSourceReceipt(changed,'a'.repeat(40)));}
+ for(const mutation of [row=>row.classification='unqualified-artifact',row=>row.cleanSource=false,row=>row.initializationAPI=false,row=>row.build.exitCode=1,row=>delete row.artifactInventorySHA256,row=>delete row.tools.compilerSHA256,row=>row.privacy.verified=false,row=>delete row.tools.nodeSHA256,row=>delete row.tools.npmCLI.sha256]){const changed=structuredClone(receipt);mutation(changed);assert.throws(()=>assertSourceReceipt(changed,'a'.repeat(40)));}
 });
 test('foreign ready paths deny before any private credential read',async()=>{
  const root=await mkdtemp(path.join(tmpdir(),'tui-e2e-path-'));try{

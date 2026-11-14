@@ -1,3 +1,7 @@
+## Issue 37 Linux acquisition
+
+Intent: .governance/project/TUI37-LINUX-ACQUISITION.md. Bounded executor source; authentic native inputs/entry remain unresolved. Windows deferred; current Linux session owns normal develop integration; release owner-only.
+
 ## Issue1 delivery continuation, 2026-10-16
 
 Current owner/mapping/actual CI source repairs and remaining whole delivery gates:

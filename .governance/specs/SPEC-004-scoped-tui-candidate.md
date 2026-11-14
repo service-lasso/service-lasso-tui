@@ -1,3 +1,7 @@
+## Issue 37 bounded Linux executor
+
+Source intent and acceptance: ../project/TUI37-LINUX-ACQUISITION.md. Implements TUI28-NATIVE/DENIALS/CLOSURE executor source only, with no acquisition activation, native success or release authority.
+
 ## Current OPV2-1 selected whole delivery (8 October 2026)
 
 Issue1/PR33 is the active complete source unit, governed by

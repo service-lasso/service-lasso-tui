@@ -1,3 +1,7 @@
+## Issue 37 bounded Linux executor
+
+Source intent and acceptance: ../project/TUI37-LINUX-ACQUISITION.md. Maps TUI28-NATIVE/DENIALS/CLOSURE executor source and bounded legacy CI repairs. No genuine v2 acquisition activation, full native qualification or release authority follows.
+
 ## Current OPV2-1 selected whole delivery (8 October 2026)
 
 Issue1/PR33 is the active complete source unit, governed by

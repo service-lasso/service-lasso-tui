@@ -1,6 +1,7 @@
 // Real Core/JWKS process. It is a child of the external POSIX owner, never
 // of the volatile acceptance controller.
 import { createServer } from "node:http";
+import { closeSync, fstatSync } from "node:fs";
 import { once } from "node:events";
 import { pathToFileURL } from "node:url";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
@@ -31,14 +32,25 @@ await writeFile(path.join(root, "connections.json"), JSON.stringify(profiles), {
 const [instanceRegistry, portRegistry, runtimeInstance] = await Promise.all([readFile(instanceRegistryPath, "utf8"), readFile(hostPortRegistryPath, "utf8"), readFile(path.join(workspaceRoot, ".service-lasso", "runtime-instance.json"), "utf8")]);
 if (!JSON.parse(runtimeInstance).instance?.instanceId || !JSON.parse(instanceRegistry).instances?.length || !JSON.parse(portRegistry).allocations?.length) throw new Error("Core runtime-path readback unavailable"); await Promise.all([stat(workspaceRoot), stat(instanceRegistryPath), stat(hostPortRegistryPath)]);
 await writeFile(path.join(root, "ready.json"), JSON.stringify({ coreCommit, runtimePathReceipt: invalidReadyReceipt ? { coreReadback: false } : { coreReadback: true, uniqueOwnedPaths: ["workspaceRoot", "instanceRegistryPath", "hostPortRegistryPath"], runtimeInstanceBound: true } }), { encoding: "utf8", mode: 0o600 });
+if (shutdownPipeFailure) {
+  // This process owns the original control read end. Special process.stdin
+  // destroy() does not close fd0. Close it once BEFORE handing off readiness,
+  // then require the actual EBADF observation without touching a reused fd0.
+  closeSync(0);
+  try {
+    fstatSync(0);
+    throw new Error("runtime control read end remained open");
+  } catch (original) {
+    if (original?.code !== "EBADF") throw original;
+  }
+}
 if (readyMode === "normal") process.stdout.write(JSON.stringify({ event: "ready", url: server.url, token, deniedToken, jwksPort: address.port }) + "\n");
 if (readyMode === "eof") process.stdout.end();
 if (shutdownPipeFailure) {
-  // This remains the actual Core/JWKS runtime.  Its control pipe is closed and
-  // it exits naturally after its own bounded teardown, so the owner must not
-  // substitute a signal or an unobserved exit claim.
-  process.stdin.destroy();
-  setTimeout(async () => { await server.stop(); await new Promise(resolve => jwks.close(resolve)); process.exit(0); }, 250).unref();
+  // Keep the same natural 250ms teardown. No stream getter/read/delayed close
+  // may act on fd0 after its original close, because the number may be reused.
+  await new Promise(resolve => setTimeout(resolve, 250));
+} else {
+  process.stdin.setEncoding("utf8"); await new Promise(resolve => { process.stdin.once("data", resolve); process.stdin.once("end", resolve); });
 }
-process.stdin.setEncoding("utf8"); await new Promise(resolve => { process.stdin.once("data", resolve); process.stdin.once("end", resolve); });
 await server.stop(); await new Promise(resolve => jwks.close(resolve));

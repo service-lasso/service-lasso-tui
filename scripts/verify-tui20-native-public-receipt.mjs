@@ -5,7 +5,7 @@ import {assertNativeBuildOutput} from './native-pair-build-receipt.mjs';
 const root = process.argv[2];
 if (!root) throw new Error("native receipt root is required");
 const names = new Set(["binary-digest.json", "input-custody.json", "core-source-binding.json", "build-output.json", "native-public-projection.json"]);
-const publicKinds = new Set(["tui20-native-binary-digest", "tui20-native-input-custody", "tui20-native-core-source-binding", "tui20-native-build-output", "tui20-native-public-result"]);
+const nativePublicKind = value => typeof value?.kind === "string" && value.kind.startsWith("tui20-native-");
 const receiptFiles = readdirSync(root, { recursive: true }).filter(file => file.endsWith(".json"));
 const exact = (value, keys) => value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).sort().join(",") === [...keys].sort().join(",");
 const hash = value => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
@@ -21,7 +21,10 @@ const inspect = value => {
   if (value && typeof value === "object") for (const [key, child] of Object.entries(value)) { if (forbiddenKey.test(key)) fail(`forbidden public key: ${key}`); inspect(child); }
   else if (typeof value === "string" && forbiddenText.test(value)) fail("private or host-specific text in public receipt");
 };
-const read = file => { const value = JSON.parse(readFileSync(file, "utf8")); inspect(value); return value; };
+const parseExpected = bytes => {
+  try { return JSON.parse(bytes); }
+  catch { fail("invalid native public receipt JSON"); }
+};
 const assertInputCustody = value => {
   if (!exact(value, ["schemaVersion", "kind", "source", "core", "ownership", "verification"]) || value.schemaVersion !== 1 || value.kind !== "tui20-native-input-custody") fail("invalid input custody schema");
   if (!exact(value.source, ["tuiCommit", "tuiTree", "tuiDirtyHash", "tuiInventoryHash"]) || !commit(value.source.tuiCommit) || !gitObject(value.source.tuiTree) || !hash(value.source.tuiDirtyHash) || !hash(value.source.tuiInventoryHash)) fail("invalid input custody source");
@@ -46,15 +49,21 @@ const phases = new Map();
 for (const relative of receiptFiles) {
   const file = path.join(root, relative);
   const name = path.basename(relative);
-  const value = JSON.parse(readFileSync(file, "utf8"));
+  const bytes = readFileSync(file, "utf8");
   if (!names.has(name)) {
-    if (value && typeof value === "object" && publicKinds.has(value.kind)) fail(`foreign native public receipt: ${relative}`);
+    // Dependency trees can contain JSONC and deliberately invalid JSON fixtures.
+    // They are not public receipts; parsed native-kind records still fail closed.
+    let unrelated;
+    try { unrelated = JSON.parse(bytes); } catch { continue; }
+    if (nativePublicKind(unrelated)) fail(`foreign native public receipt: ${relative}`);
     continue;
   }
+  const value = parseExpected(bytes);
+  inspect(value);
   const phase = path.dirname(relative);
   const records = phases.get(phase) ?? new Map();
   if (records.has(name)) fail(`duplicate native public receipt: ${relative}`);
-  records.set(name, { file, value: read(file) });
+  records.set(name, { file, value });
   phases.set(phase, records);
 }
 if (!phases.size) fail("native public receipt set is incomplete");

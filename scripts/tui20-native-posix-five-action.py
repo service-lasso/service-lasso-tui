@@ -1,9 +1,19 @@
 """Native Linux/macOS PTY evidence for Issue 20; credentials remain process-memory only."""
-import argparse, ctypes, fcntl, hashlib, json, os, pty, select, signal, stat, subprocess, sys, time, urllib.request
+import argparse, ctypes, fcntl, hashlib, json, os, pty, select, signal, stat, subprocess, sys, termios, time, urllib.request
 
 ALLOWED_ENV=("HOME","LANG","LC_ALL","PATH","SHELL","TERM","TMPDIR","USER")
 OWNED_TERMINALS=[]
+DIAGNOSTIC_ORIGINALS=[]
 SAFE_CONFIGURATION_DIAGNOSTIC="connection configuration unavailable; check profile settings"
+# Closed presentation classes from api.ErrorTitle; values/bodies stay private.
+FAILED_PREVIEW_TITLES=("Runtime authentication denied:","Runtime permission denied:","Core action unavailable:","Operation reconciliation required:","Operation recovery storage unavailable:","Runtime API unavailable:")
+
+def diagnostic_stage(label):
+    """Only source-literal labels reach this non-sensitive progress channel."""
+    try: sys.stderr.write("tui20-native-owner-stage "+label+"\n")
+    except (OSError,ValueError) as original: DIAGNOSTIC_ORIGINALS.append(original)
+    try: sys.stderr.flush()
+    except (OSError,ValueError) as original: DIAGNOSTIC_ORIGINALS.append(original)
 def assert_safe_missing_credential(text,env):
     """Inspect captured bytes in memory; never include private values in failures."""
     if SAFE_CONFIGURATION_DIAGNOSTIC not in text: raise RuntimeError("safe configuration diagnostic unavailable")
@@ -95,7 +105,14 @@ def fexecve_child(fd,argv,env,master,slave,terminal=None):
         else: os.close(slave)
         return child
     try:
-        os.close(master); os.dup2(slave,0); os.dup2(slave,1); os.dup2(slave,2)
+        os.close(master)
+        # The Linux held-executable child owns this PTY as its controlling
+        # terminal, not merely three descriptors referring to a slave. Kernel
+        # last-master closure can then deliver the real terminal hangup.
+        os.setsid()
+        fcntl.ioctl(slave,termios.TIOCSCTTY,0)
+        os.tcsetpgrp(slave,os.getpgrp())
+        os.dup2(slave,0); os.dup2(slave,1); os.dup2(slave,2)
         if slave>2: os.close(slave)
         values=[value.encode() for value in argv]; argp=(ctypes.c_char_p*(len(values)+1))(*values,None)
         entries=[(key+"="+value).encode() for key,value in env.items()]; envp=(ctypes.c_char_p*(len(entries)+1))(*entries,None)
@@ -145,9 +162,9 @@ class Terminal:
         # Registration precedes every fallible post-fork observation. Unknown
         # birth stays owned and cannot be used as proof of process absence.
         if sys_platform()!="linux": self.child.tui20_birth=process_birth(self.child.pid)
-    def write(self,value): os.write(self.master,value.encode())
-    def read(self):
-        ready,_,_=select.select([self.master],[],[],.1)
+    def write(self,value): return os.write(self.master,value.encode())
+    def read(self,seconds=.1):
+        ready,_,_=select.select([self.master],[],[],seconds)
         if ready:
             observation={"descriptor":self.master,"raw":None,"original":None,"emptyRaw":False}
             self.read_observations.append(observation)
@@ -164,6 +181,7 @@ class Terminal:
             # Terminal bytes are required in memory for the bounded interaction
             # assertions, but are never written to a receipt, artifact, or log.
             self.text+=chunk
+            return observation["raw"]
     def wait(self,need,seconds,start=0):
         until=time.monotonic()+seconds
         while time.monotonic()<until:
@@ -174,28 +192,108 @@ class Terminal:
                 self.exit_reason="terminal_unknown"; self.recovery_state="child_reaped_unowned"
                 raise TerminalUnresolved(self,"owned terminal was reaped without an observable exit status")
         raise RuntimeError("missing terminal state")
+    def retain_lifecycle_original(self,stage,original):
+        if not hasattr(self,"lifecycle_originals"): self.lifecycle_originals=[]
+        self.lifecycle_originals.append({"stage":stage,"original":original})
+    def request_quit_once(self):
+        if not hasattr(self,"quit_original"):
+            self.quit_original={"attempted":True,"returned":None,"original":None}
+            try:
+                self.quit_original["returned"]=self.write("q")
+                if self.quit_original["returned"]!=1: raise OSError("normal quit write incomplete")
+            except BaseException as original:
+                self.quit_original["original"]=original
+                self.retain_lifecycle_original("quit_write",original)
+        return self.quit_original
+    def close_master_once(self):
+        if not hasattr(self,"master_close_original"):
+            self.master_close_original={"attempted":True,"completed":False,"original":None}
+            try: os.close(self.master); self.master_close_original["completed"]=True
+            except BaseException as original:
+                self.master_close_original["original"]=original
+                self.retain_lifecycle_original("master_close",original)
+        return self.master_close_original
+    def recovery_escape_once(self):
+        if not hasattr(self,"recovery_escape_original"):
+            self.recovery_escape_original={"attempted":True,"returned":None,"original":None,"acknowledged":False,"exitObserved":False}
+            try:
+                self.recovery_escape_original["returned"]=self.write("\x1b")
+                if self.recovery_escape_original["returned"]!=1: raise OSError("normal Escape write incomplete")
+            except BaseException as original:
+                self.recovery_escape_original["original"]=original
+                self.retain_lifecycle_original("recovery_escape",original)
+            self.recovery_escape_original["textOffset"]=len(self.text)
+        row=self.recovery_escape_original
+        while not row["acknowledged"] and not row["exitObserved"]:
+            try: result=self.child.poll()
+            except BaseException as original:
+                self.retain_lifecycle_original("escape_poll",original); result=None
+            if result is not None: row["exitObserved"]=True; return row
+            if self.child.reaped_unowned: raise ChildReapedUnowned("owned child was reaped outside BoundProcess")
+            fresh=self.text[row["textOffset"]:]
+            if row["original"] is None and "Confirmation cancelled." in fresh:
+                row["acknowledged"]=True; return row
+            # A write return, elapsed time, EOF or read failure is no UI ack and
+            # no child exit. Retain SAME failed owner and drain until observed.
+            try: raw=self.read(.1)
+            except BaseException as original:
+                self.retain_lifecycle_original("escape_drain",original); raw=None
+            if not raw: time.sleep(.02)
+        return row
+    def wait_draining_until_observed(self,expires=None):
+        while True:
+            # This is the SAME initial normal-close deadline, never renewed by
+            # a read, retry, recovery transition or a later child observation.
+            if expires is not None and time.monotonic()>=expires:
+                raise subprocess.TimeoutExpired("held executable",10)
+            try: result=self.child.poll()
+            except BaseException as original:
+                self.retain_lifecycle_original("exit_poll",original)
+                if expires is not None: raise
+                result=None
+            if result is not None: return result
+            if self.child.reaped_unowned: raise ChildReapedUnowned("owned child was reaped outside BoundProcess")
+            seconds=.1 if expires is None else max(0,min(.1,expires-time.monotonic()))
+            try: raw=self.read(seconds)
+            except BaseException as original:
+                self.retain_lifecycle_original("exit_drain",original); raw=None
+            # EOF, EIO and any read failure never supply a child exit. Keep
+            # actual ownership/polling without a busy loop on a closed PTY.
+            if not raw: time.sleep(.02)
     def close(self,expected=0):
-        current=self.child.poll()
-        if current is None and not self.child.reaped_unowned: self.write("q")
-        try: result=self.child.wait(timeout=10)
-        except ChildReapedUnowned:
-            self.exit_reason="terminal_unknown"; self.recovery_state="child_reaped_unowned"
-            raise TerminalUnresolved(self,"owned terminal was reaped without an observable exit status")
-        except subprocess.TimeoutExpired:
-            # The helper stays alive as the recovery owner; do not close its
-            # PTY or execution object while an owned terminal remains live.
-            self.exit_reason="terminal_unknown"
-            self.recovery_state="live_child_unresolved"
-            raise TerminalUnresolved(self,"owned terminal exit unresolved")
-        os.close(self.master)
-        reason=terminal_exit_reason(result)
-        self.exit_reason=reason
+        diagnostic_stage("terminal-normal-close-enter")
+        if hasattr(self,"normal_close_result"):
+            result=self.normal_close_result
+        else:
+            current=self.child.poll()
+            if current is None and not self.child.reaped_unowned:
+                quit_original=self.request_quit_once()
+                if quit_original["original"] is not None: raise quit_original["original"]
+            if not hasattr(self,"close_expires"): self.close_expires=time.monotonic()+10
+            try: result=self.wait_draining_until_observed(self.close_expires)
+            except ChildReapedUnowned:
+                self.exit_reason="terminal_unknown"; self.recovery_state="child_reaped_unowned"
+                raise TerminalUnresolved(self,"owned terminal was reaped without an observable exit status")
+            except subprocess.TimeoutExpired:
+                # Failed normal quit retains SAME child, PTY and execution object.
+                self.exit_reason="terminal_unknown"; self.recovery_state="live_child_unresolved"
+                raise TerminalUnresolved(self,"owned terminal exit unresolved")
+            # Replay only this SAME already observed result; a late first exit
+            # still cannot turn the original expired normal close into success.
+            self.normal_close_result=result
+        closed=self.close_master_once()
+        reason=terminal_exit_reason(result); self.exit_reason=reason
+        if closed["original"] is not None: raise closed["original"]
         if result!=expected: raise RuntimeError("unexpected terminal exit")
+        diagnostic_stage("terminal-normal-close-return")
         return reason
     def recover_raw_pid_until_observed(self):
+        diagnostic_stage("terminal-raw-pid-recovery-enter")
         owner=self.acquisition
         observations=owner.setdefault("waitObservations",[])
         while True:
+            try: self.read()
+            except BaseException as original: self.retain_lifecycle_original("raw_pid_drain",original)
             item={"pid":owner["pid"],"returned":None,"original":None}
             observations.append(item)
             try: item["returned"]=os.waitpid(owner["pid"],os.WNOHANG)
@@ -222,18 +320,39 @@ class Terminal:
                 return {"terminal":self.label,"outcome":self.exit_reason,"recovery":"owned_exit_observed","observed":True}
             time.sleep(.02)
     def recover_until_observed(self):
-        """Keep this helper, its PTY, and its held launch object alive until exit."""
+        """Request normal quit once, drain and retain ownership until real exit."""
+        diagnostic_stage("terminal-recovery-enter")
+        current=None; current_known=True
+        try: current=self.child.poll()
+        except BaseException as original:
+            current_known=False; self.retain_lifecycle_original("recovery_poll",original)
         if self.child.reaped_unowned:
-            os.close(self.master)
+            self.close_master_once()
             return {"terminal":self.label,"outcome":"terminal_unknown","recovery":"child_reaped_unowned","observed":False}
-        try: result=self.child.wait_until_observed()
+        # The original failed result has already been persisted by our caller.
+        # Sending q is only a normal keyboard request, never proof it was read
+        # as quit (for example an active editor may consume it as text).
+        try:
+            if current_known and current is None:
+                phase=getattr(self,"action_phase",None)
+                offset=getattr(self,"action_output_offset",None)
+                failed_prepare=(phase=="preview-await" and isinstance(offset,int) and 0<=offset<=len(self.text) and any(title in self.text[offset:] for title in FAILED_PREVIEW_TITLES))
+                # A fresh fixed preparation error selects only the normal q
+                # input. If pending state actually remains, q is ignored and
+                # ownership stays retained until SAME actual child exit.
+                if phase in ("preview-await","confirmation-ready") and not failed_prepare:
+                    escape=self.recovery_escape_once()
+                    if escape["acknowledged"] and not escape["exitObserved"]: self.request_quit_once()
+                else: self.request_quit_once()
+            result=self.wait_draining_until_observed()
         except ChildReapedUnowned:
             self.exit_reason="terminal_unknown"; self.recovery_state="child_reaped_unowned"
-            os.close(self.master)
+            self.close_master_once()
             return {"terminal":self.label,"outcome":"terminal_unknown","recovery":"child_reaped_unowned","observed":False}
-        os.close(self.master)
+        self.close_master_once()
         self.exit_reason=terminal_exit_reason(result)
         return {"terminal":self.label,"outcome":self.exit_reason,"recovery":"owned_exit_observed","observed":True}
+
 def sys_platform(): return sys.platform
 def sha256_fd(fd):
     digest=hashlib.sha256(); os.lseek(fd,0,os.SEEK_SET)
@@ -577,16 +696,47 @@ def bound_replacement_probe(launch_fd,held,executable,inode_identity,digest_iden
             else:
                 os.replace(original,executable)
     return results
-def detail(term): term.write("/tui20-fixture\r"); term.wait(("tui20-fixture",),20); term.write("\r"); term.wait(("Lifecycle:","tui20-fixture"),20)
-def action(term,key,name):
-    start=len(term.text); term.write(key); term.wait(("Core preview: "+name,"Confirm "+name),45,start); frozen=term.text; term.write("rj?q"); time.sleep(.3)
+def detail(term):
+    # BubbleTea may batch contiguous printable runes into one message. Enter
+    # search with its standalone key before sending the query and control keys.
+    start=len(term.text); term.write("/"); term.wait(("Search:",),20,start)
+    start=len(term.text); term.write("tui20-fixture\r"); term.write("\r")
+    term.wait(("Lifecycle:","tui20-fixture"),20,start)
+def action(term,key,name,url,token):
+    before_frozen=operations(url,token)
+    before_frozen_ids={record.get("operationId") for record in before_frozen}
+    term.action_phase="preview-await"
+    diagnostic_stage("action-preview-enter")
+    start=len(term.text); term.action_output_offset=start; term.write(key); term.wait(("Core preview: "+name,"Confirm "+name),45,start)
+    term.action_phase="confirmation-ready"
+    diagnostic_stage("action-preview-return")
+    frozen=term.text
+    # Control separators prevent printable keys from coalescing with the later
+    # standalone confirmation. Pending-state Enter is an ignored keyboard event.
+    term.write("r\rj\r?\rq\r"); time.sleep(.3); term.read()
+    after_frozen=operations(url,token)
+    if len(after_frozen)!=len(before_frozen) or {record.get("operationId") for record in after_frozen}!=before_frozen_ids:
+        raise RuntimeError("unconfirmed preview created an operation")
     if "Confirm "+name not in term.text or "Core preview: "+name not in term.text: raise RuntimeError("confirmation changed")
-    term.write("yr"); deadline=time.monotonic()+90
+    # This cut precedes the first possible confirmation byte. Failed writes
+    # never authorize Escape/cancel or replay of an uncertain submitted action.
+    term.action_phase="submission-attempted"
+    diagnostic_stage("action-submit-enter")
+    # Preview redraws may repeat earlier errors/results. Only bytes observed
+    # after this confirmation cut can justify readback success or read retry.
+    readback_output_start=len(term.text)
+    term.write("y"); deadline=time.monotonic()+90
+    term.action_phase="readback-await"
+    diagnostic_stage("action-readback-enter")
     while time.monotonic()<deadline:
-        if "Core operation" in term.text[start:] and "succeeded." in term.text[start:]: return
-        if "Runtime API unavailable:" in term.text[start:]: term.write("r")
+        if "Core operation" in term.text[readback_output_start:] and "succeeded." in term.text[readback_output_start:]:
+            term.action_phase="readback-complete"
+            diagnostic_stage("action-readback-return")
+            return
+        if "Runtime API unavailable:" in term.text[readback_output_start:]: term.write("r")
         term.read()
     raise RuntimeError("retained operation readback unavailable")
+
 def recovery_self_test(root):
     """Legacy owner-only process probe retained for source-level reaped-child coverage."""
     os.makedirs(root,exist_ok=True)
@@ -737,7 +887,9 @@ def retain_primary_and_recover(root,outcome,terminal):
     terminal.exit_reason=terminal.exit_reason or "terminal_unknown"
     if not any(item.get("terminal")==terminal.label and item.get("exit")==terminal.exit_reason for item in outcome["terminals"]): outcome["terminals"].append({"terminal":terminal.label,"exit":terminal.exit_reason})
     outcome["failureReason"]="native_harness_assertion_failed"
+    diagnostic_stage("primary-recovery-persist-enter")
     persist_primary_outcome(root,outcome)
+    diagnostic_stage("primary-recovery-persist-return")
     outcome["recoveryObservation"]=terminal.recover_until_observed()
     return True
 def main(observation=None):
@@ -821,31 +973,61 @@ def _main_attempt(observation):
             # no child is force-closed and no terminal status is fabricated.
             os.kill(os.getpid(),signal.SIGKILL)
         before=unrelated(url,token); adverse=[]
-        for profile,label,expected,audit_expected in (("missing","missing-credential",2,0),("invalid","invalid-credential",0,0),("denied","scope-denied",0,5)):
+        outcome["adverseAudit"]=adverse
+        # Current TUI20 legacy flow performs two fresh availability GETs:
+        # detail read plus action preparation, each auditing five denied actions.
+        # Retain the whole case window; this is not a TUI28 receipt change.
+        for profile,label,expected,audit_expected in (("missing","missing-credential",2,0),("invalid","invalid-credential",0,0),("denied","scope-denied",0,10)):
             count=len(operations(url,token)); audit=audit_count(url,token)
             if profile=="missing":
+                diagnostic_stage("bound-replacement-probe-enter")
                 outcome["heldExecutableBinding"]["replacementProbe"]=bound_replacement_probe(launch_fd,held,args.executable,held_inode,identity,profile,env,observation.setdefault("replacementProbe",[]))
+                diagnostic_stage("bound-replacement-probe-return")
+                diagnostic_stage("missing-credential-enter")
                 term=Terminal(launch_fd,args.executable,profile,env); term.wait((SAFE_CONFIGURATION_DIAGNOSTIC,),30)
+            elif profile=="invalid":
+                diagnostic_stage("invalid-credential-enter")
+                # Pinned Core permits loopback service reads; its guarded
+                # lifecycle preflight still rejects this invalid bearer token.
+                term=Terminal(launch_fd,args.executable,profile,env)
+                term.wait(("Runtime identity:",),30); detail(term); term.write("i")
+                term.wait(("Runtime authentication denied:",),30)
             else:
-                term=Terminal(launch_fd,args.executable,profile,env); term.wait(("Runtime identity:",),30); detail(term); term.write("i"); term.wait(("Runtime API unavailable:",),30)
+                diagnostic_stage("denied-credential-enter")
+                term=Terminal(launch_fd,args.executable,profile,env); term.wait(("Runtime identity:",),30); detail(term); term.write("i"); term.wait(("Core action unavailable:",),30)
             outcome["terminals"].append({"terminal":label,"exit":term.close(expected)})
-            if profile=="missing": assert_safe_missing_credential(term.text,env)
+            if profile=="missing":
+                assert_safe_missing_credential(term.text,env)
+                diagnostic_stage("missing-credential-return")
+            elif profile=="invalid": diagnostic_stage("invalid-credential-return")
+            else: diagnostic_stage("denied-credential-return")
             after=len(operations(url,token)); audit_after=audit_count(url,token); adverse.append({"case":label,"beforeOperationCount":count,"afterOperationCount":after,"noOperation":after==count,"coreDeniedAuditBefore":audit,"coreDeniedAuditAfter":audit_after,"coreDeniedAuditDelta":audit_after-audit})
             if after!=count or audit_after-audit!=audit_expected: raise RuntimeError("adverse lifecycle receipt invalid")
-        term=Terminal(launch_fd,args.executable,"native",env); term.wait(("Runtime identity:",),30); detail(term)
+        diagnostic_stage("allowed-five-actions-enter")
+        term=Terminal(launch_fd,args.executable,"native",env); term.wait(("Runtime identity:",),30)
+        detail_start=len(term.text); detail(term)
+        term.wait(("reload: disabled: durable operation unavailable",),20,detail_start)
+        if "reload: disabled: durable operation unavailable" not in term.text: raise RuntimeError("Core reload unavailability not observed")
+        before_reload=operations(url,token); reload_start=len(term.text); term.write("l")
+        term.wait(("Runtime API unavailable: operator stage failed; check connection and retained operation state",),15,reload_start)
+        if operations(url,token)!=before_reload or "z cancel" in term.text or "z request Core cancellation" in term.text or "Confirm reload" in term.text[reload_start:]: raise RuntimeError("reload or cancellation contract changed")
         action_readbacks=[]; known_ids={record.get("operationId") for record in operations(url,token)}
         expected_by_ui={"install":"service_install","config":"service_configure","start":"service_start","stop":"service_stop","restart":"service_restart"}
         for key,name in (("i","install"),("c","config"),("s","start"),("x","stop"),("R","restart")):
-            action(term,key,name)
+            diagnostic_stage("allowed-action-enter")
+            action(term,key,name,url,token)
+            diagnostic_stage("allowed-action-return")
             current=operations(url,token); added=[record for record in current if record.get("operationId") not in known_ids]
             if len(added)!=1 or added[0].get("action")!=expected_by_ui[name] or added[0].get("targetIds")!=["tui20-fixture"]: raise RuntimeError("per-action durable readback invalid")
             known_ids.add(added[0]["operationId"]); action_readbacks.append({key:added[0].get(key) for key in ("operationId","action","targetIds","status","outcome","cancellationSupported")})
-        before_reload=operations(url,token); term.write("l"); term.wait(("reload is unavailable",),15)
-        if operations(url,token)!=before_reload or "z cancel" in term.text: raise RuntimeError("reload or cancellation contract changed")
+        if "z cancel" in term.text or "z request Core cancellation" in term.text: raise RuntimeError("cancellation advertised during actions")
         outcome["terminals"].append({"terminal":"allowed","exit":term.close()})
         runtime_pid=runtime.pid if runtime is not None else runtime_handoff["_runtimePID"]; runtime_birth=runtime.tui20_birth if runtime is not None else runtime_handoff["_runtimeBirth"]
         write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"coreRuntimePID":runtime_pid,"runtimeBirth":runtime_birth,"tuiChildPID":term.child.pid,"tuiChildBirth":term.child.tui20_birth,"sourceCommit":identity["sourceCommit"],"binarySHA256":identity["binarySHA256"],"phase":"normal_q_exit","immutableExecutionHeld":True,"ptyHeld":False})
+        diagnostic_stage("allowed-five-actions-return")
+        diagnostic_stage("reconnect-enter")
         term=Terminal(launch_fd,args.executable,"native",env); term.wait(("Runtime identity:",),30); detail(term); outcome["terminals"].append({"terminal":"reconnect","exit":term.close()})
+        diagnostic_stage("reconnect-return")
         records=[{key:record.get(key) for key in ("operationId","action","targetIds","status","outcome","cancellationSupported")} for record in operations(url,token) if record.get("targetIds")==["tui20-fixture"]]
         expected=["service_restart","service_stop","service_start","service_configure","service_install"]
         operation_ids=[item["operationId"] for item in records]

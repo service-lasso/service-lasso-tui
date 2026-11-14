@@ -141,6 +141,46 @@ test("actual controller observer external-owner finalization retains failure and
   assert.equal(projection.ownedRuntimeClosed,true);
   assert.equal(await readFile(path.join(root,"workspace/actual-stop.json"),"utf8"),"closed");
   for (const pid of [proof.ownerPID,proof.runtimePID,proof.observerPID]) assert.throws(()=>process.kill(pid,0),{code:"ESRCH"},"actual production children must be absent after parent wait");
+  // Recorder helpers test the actual observer's expected-negative protocol,
+  // never native actions or an issuer. Every public result remains failed.
+  for (const [name,status,primary,reason,flag,live] of [
+    ["expected-finalization",1,"succeeded","injected_cleanup_failure",true,false],
+    ["wrong-zero",0,"succeeded","injected_cleanup_failure",true,false],
+    ["wrong-status",2,"succeeded","injected_cleanup_failure",true,false],
+    ["wrong-signal",null,"succeeded","injected_cleanup_failure",true,false],
+    ["failed-primary",1,"failed","injected_cleanup_failure",true,false],
+    ["missing-injection",1,"succeeded","injected_cleanup_failure",false,false],
+    ["other-finalization",1,"succeeded","finalization_failure",true,false],
+    ["incomplete-owner",1,"succeeded","injected_cleanup_failure",true,true],
+  ]) {
+    const phase=path.join(root,name); await mkdir(phase);
+    await cp(path.join(root,"core-source"),path.join(phase,"core-source"),{recursive:true});
+    const helper=path.join(phase,"finalization-recorder.py");
+    await writeFile(helper,`import hashlib,json,os,runpy,signal,sys
+root=sys.argv[sys.argv.index('--root')+1]
+executable=sys.argv[sys.argv.index('--executable')+1]
+source=sys.argv[sys.argv.index('--source-commit')+1]
+handoff=json.loads(sys.stdin.readline())
+observer=runpy.run_path(${JSON.stringify(path.join(scripts,"tui20-native-owner-observer.py"))})
+record={'externalOwnerPID':os.getpid(),'ownerBirth':observer['process_birth'](os.getpid()),'runtimePID':handoff['_runtimePID'],'runtimeBirth':handoff['_runtimeBirth'],'sourceCommit':source,'binarySHA256':hashlib.sha256(open(executable,'rb').read()).hexdigest(),'finalizationFailure':${JSON.stringify(reason)},'liveTuiChildRetained':${live?"True":"False"},'primaryOutcome':${JSON.stringify(primary)}}
+with open(os.path.join(root,'external-owner-finalization.json'),'w') as stream:json.dump(record,stream)
+${status===null?"os.kill(os.getpid(),signal.SIGTERM)":"sys.exit("+status+")"}
+`);
+    const controlled=spawn(process.execPath,[path.join(scripts,"tui20-native-core.mjs"),"--root",phase,"--executable",binary,"--source-commit","a".repeat(40),"--core-commit","b".repeat(40),"--python","python3","--helper",helper,...(flag?["--inject-finalization-cleanup-failure","true"]:[])],{stdio:["ignore","pipe","pipe"],env:{...process.env,PYTHONDONTWRITEBYTECODE:"1"}});
+    controlled.stdout.resume();controlled.stderr.resume();
+    const [code,signal]=await new Promise((resolve,reject)=>{controlled.once("exit",(...values)=>resolve(values));controlled.once("error",reject);});
+    assert.equal(signal,null,name);assert.equal(code,name==="expected-finalization"?0:1,name);
+    const readControlled=async file=>JSON.parse(await readFile(path.join(phase,file),"utf8"));
+    const publicResult=await readControlled("native-public-projection.json");
+    assert.notEqual(publicResult.result,"succeeded",name);
+    assert.equal(publicResult.actionsPassed,false,name);assert.equal(publicResult.ownedRuntimeClosed,true,name);
+    const actualOwner=await readControlled("owner-private-owner-closed.json"),actualRuntime=await readControlled("owner-private-closed.json");
+    assert.equal(actualOwner.actualWaitObserved,true,name);
+    assert.equal(actualOwner.recoveryOwnerActualExit,status,name);
+    assert.equal(actualRuntime.actualExitObserved,true,name);assert.equal(actualRuntime.runtimeChildExit,"terminal_exited_zero",name);
+    if(name==="expected-finalization")assert.equal(publicResult.result,"failed");
+    for(const pid of [actualOwner.recoveryOwnerPID,actualRuntime.runtimePID])assert.throws(()=>process.kill(pid,0),{code:"ESRCH"},name);
+  }
   // Negative owner fixtures exercise the actual controller/observer/runtime
   // edge. They never substitute for the actual-owner positive path above.
   for (const [name,body,consume=true] of [["missing","sys.exit(0)"],["malformed","json.dump({},open(os.path.join(root,'external-owner-finalization.json'),'w')); sys.exit(0)"],["crashed","os.kill(os.getpid(),signal.SIGKILL)"],["exit-before-read","os.close(0); sys.exit(0)",false],["crash-before-read","os.close(0); os.kill(os.getpid(),signal.SIGKILL)",false],["witness-write-failure","sys.stdin.readline(); sys.exit(0)",false]]) {
@@ -200,4 +240,79 @@ test("actual controller observer external-owner finalization retains failure and
       assert.throws(()=>process.kill(ownerClosure.recoveryOwnerPID,0),{code:"ESRCH"},name);
     }
   }
+});
+
+test("actual runtime closes its original fault control pipe before readiness and exits naturally", { skip: !["linux", "darwin"].includes(process.platform) }, async t => {
+  for (const fault of [false, true]) await t.test(fault ? "closed read end produces actual EPIPE while runtime lives" : "normal control pipe still accepts shutdown", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "tui20-real-control-pipe-"));
+    const put = async (relative, contents) => {
+      const target = path.join(root, "core-source", relative);
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, contents);
+    };
+    let child, exited;
+    try {
+      // Explicit Core/Jose imports are fixtures. The runtime entry point,
+      // original parent/child pipe, close, EPIPE and natural exit are real.
+      await put("package.json", '{"type":"module"}');
+      await put("node_modules/jose/package.json", '{"type":"module"}');
+      await put("node_modules/jose/dist/webapi/index.js", `
+        export const generateKeyPair=async()=>({privateKey:{},publicKey:{}});
+        export const exportJWK=async()=>({});
+        export class SignJWT { setProtectedHeader(){return this;}setIssuer(){return this;}setAudience(){return this;}setSubject(){return this;}setIssuedAt(){return this;}setExpirationTime(){return this;}async sign(){return "fixture";} }
+      `);
+      await put("dist/server/index.js", `
+        import {mkdir,writeFile} from "node:fs/promises";
+        import path from "node:path";
+        export const startApiServer=async({workspaceRoot})=>{
+          await mkdir(workspaceRoot+"/.service-lasso",{recursive:true});
+          await mkdir(path.dirname(process.env.SERVICE_LASSO_INSTANCE_REGISTRY_PATH),{recursive:true});
+          await writeFile(process.env.SERVICE_LASSO_INSTANCE_REGISTRY_PATH,JSON.stringify({instances:[{}]}));
+          await writeFile(process.env.SERVICE_LASSO_HOST_PORT_REGISTRY_PATH,JSON.stringify({allocations:[{}]}));
+          await writeFile(workspaceRoot+"/.service-lasso/runtime-instance.json",JSON.stringify({instance:{instanceId:"fixture"}}));
+          return {url:"http://127.0.0.1:1",stop:async()=>{await writeFile(workspaceRoot+"/actual-stop.json","closed");}};
+        };
+      `);
+      await put("tests/test-helpers.js", 'export const writeExecutableFixtureService=async()=>{};');
+      child = spawn(process.execPath, [path.join(scripts, "tui20-native-runtime.mjs"), "--root", root, "--core-commit", "a".repeat(40), ...(fault ? ["--shutdown-pipe-failure"] : [])], { stdio: ["pipe", "pipe", "pipe"] });
+      exited = new Promise((resolve, reject) => { child.once("error", reject); child.once("exit", (code, signal) => resolve({code, signal})); });
+      let stdout = "", stderr = "";
+      child.stdout.on("data", chunk => { stdout += chunk; });
+      child.stderr.on("data", chunk => { stderr += chunk; });
+      child.stdin.on("error", () => {}); // The same actual error is asserted from write's callback.
+      const ready = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("controlled runtime readiness unavailable")), 3000);
+        child.stdout.on("data", () => {
+          if (!stdout.includes("\n")) return;
+          clearTimeout(timer);
+          try { resolve(JSON.parse(stdout.slice(0, stdout.indexOf("\n")))); } catch (error) { reject(error); }
+        });
+        child.once("exit", () => { clearTimeout(timer); reject(new Error("controlled runtime exited before readiness")); });
+      });
+      assert.equal(ready.event, "ready");
+      assert.equal(child.exitCode, null);
+      const error = await new Promise(resolve => child.stdin.write("close\n", resolve));
+      if (fault) {
+        assert.equal(error?.code, "EPIPE");
+        // A response after the failed original write proves this SAME runtime
+        // still served its genuine JWKS listener before natural teardown.
+        const response = await fetch(`http://127.0.0.1:${ready.jwksPort}/jwks`);
+        assert.equal(response.status, 200);
+        await response.arrayBuffer();
+        assert.equal(child.exitCode, null);
+      } else {
+        assert.equal(error, null);
+        // The actual observer writes, flushes and then closes its original
+        // writer. Supply that same EOF instead of retaining an idle read ref.
+        child.stdin.end();
+      }
+      assert.deepEqual(await exited, {code: 0, signal: null});
+      assert.equal(await readFile(path.join(root, "workspace", "actual-stop.json"), "utf8"), "closed");
+      assert.equal(stderr, "");
+    } finally {
+      if (child && child.exitCode === null) child.stdin.end();
+      if (exited) await exited;
+      await rm(root, {recursive: true});
+    }
+  });
 });

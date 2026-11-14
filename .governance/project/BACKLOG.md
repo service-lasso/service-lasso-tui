@@ -1,3 +1,7 @@
+## Issue 37 Linux acquisition
+
+Intent: .governance/project/TUI37-LINUX-ACQUISITION.md. Bounded executor source; authentic native inputs/entry remain unresolved. Windows deferred; current Linux session owns normal develop integration; release owner-only.
+
 ## OPV2-D2-30 complete selected runtime disposition amendment (2026-10-10)
 
 The ENTIRE operative D2 selection/candidate/terminal review31 and coverage are

@@ -1,3 +1,7 @@
+## Issue 37 Linux acquisition
+
+Bounded source intent: [TUI37-LINUX-ACQUISITION.md](TUI37-LINUX-ACQUISITION.md). Linux executor and legacy lifecycle repairs implemented; exact-head CI/landing are tracked by PR39. Genuine input/native entry gates remain unresolved. Windows deferred; normal develop integration owned here; release owner-only.
+
 ## Issue1 delivery continuation, 2026-10-16
 
 Current owner/mapping/actual CI source repairs and remaining whole delivery gates:

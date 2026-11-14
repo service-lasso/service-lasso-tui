@@ -1,0 +1,226 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+const helper=fileURLToPath(new URL('./tui20-native-posix-five-action.py',import.meta.url));
+function check(source){
+ const result=spawnSync('python3',['-c',source,helper],{encoding:'utf8',env:{...process.env,PYTHONDONTWRITEBYTECODE:'1'}});
+ assert.equal(result.status,0,result.stderr);
+ // Fixed stage lines only; private terminal bytes and original failures stay private.
+ assert.ok(result.stderr.split('\n').filter(Boolean).every(line=>line.startsWith('tui20-native-owner-stage ')));
+ assert.equal(result.stdout.trim(),'natural-terminal-recovery-pass');
+}
+const setup=String.raw`
+import json,os,pathlib,pty,runpy,sys,tempfile,tty,types
+from unittest.mock import patch
+h=runpy.run_path(sys.argv[1]);Terminal=h['Terminal'];BoundProcess=h['BoundProcess']
+def terminal():
+ master,slave=pty.openpty();tty.setraw(slave);pid=os.fork()
+ if pid==0:
+  os.close(master)
+  while os.read(slave,1)!=b'q': pass
+  body=b'private-terminal-body-'*65536
+  while body:
+   written=os.write(slave,body);body=body[written:]
+  os.close(slave);os._exit(0)
+ os.close(slave)
+ term=Terminal.__new__(Terminal);term.master=master;term.child=BoundProcess(pid)
+ term.text='';term.label='fixture';term.exit_reason=None;term.read_observations=[]
+ return term
+`;
+test('Linux held executable owns the controlling foreground PTY and receives kernel hangup only after last master closes',{skip:process.platform!=='linux'},()=>check(setup+String.raw`
+import signal,time
+master,slave=pty.openpty();tty.setraw(slave)
+extra_master=os.dup(master)
+os.set_inheritable(extra_master,False)
+held=os.open(sys.executable,os.O_RDONLY)
+term=Terminal.__new__(Terminal);term.master=master;term.slave=slave
+term.text='';term.label='fixture';term.exit_reason=None;term.child=None;term.read_observations=[]
+term.acquisition={'pid':None,'originals':[],'descriptors':{'master':{'descriptor':master,'attempted':False,'completed':False,'original':None},'slave':{'descriptor':slave,'attempted':False,'completed':False,'original':None}}}
+program="import json,os,signal;signal.signal(signal.SIGHUP,signal.SIG_DFL);print(json.dumps({'sessionLeader':os.getsid(0)==os.getpid(),'groupLeader':os.getpgrp()==os.getpid(),'foreground':os.tcgetpgrp(0)==os.getpgrp(),'tty':os.isatty(0)}),flush=True);signal.pause()"
+try:
+ term.child=h['fexecve_child'](held,[sys.executable,'-c',program],dict(os.environ),master,slave,term)
+ deadline=time.monotonic()+3
+ while '\n' not in term.text and time.monotonic()<deadline:
+  term.read()
+ assert '\n' in term.text,'held executable did not report terminal ownership'
+ assert json.loads(term.text.splitlines()[0])=={'sessionLeader':True,'groupLeader':True,'foreground':True,'tty':True}
+ term.close_master_once()
+ assert term.master_close_original['completed']
+ # A separately held master keeps the actual child alive; no process signal
+ # or timeout supplies the later hangup or observable wait status.
+ time.sleep(.05);assert term.child.poll() is None
+ os.close(extra_master);extra_master=None
+ assert term.child.wait(3)==-signal.SIGHUP
+ assert term.child.returncode==-signal.SIGHUP
+finally:
+ if extra_master is not None:os.close(extra_master)
+ term.close_master_once()
+ os.close(held)
+print('natural-terminal-recovery-pass')
+`));
+test('normal q drains a real PTY beyond kernel capacity and observes actual child exit with once-only q/close',{skip:process.platform!=='linux'},()=>check(setup+String.raw`
+term=terminal();writes=[];write=term.write
+term.write=lambda value:writes.append(value) or write(value)
+assert term.close()=='terminal_exited_zero'
+assert term.child.returncode==0 and len(term.text)>65536
+assert writes==['q'] and term.quit_original['returned']==1
+assert term.master_close_original['completed']
+with patch.object(h['time'],'monotonic',lambda:term.close_expires+100):
+ assert term.close()=='terminal_exited_zero'
+try:term.close(2);raise AssertionError('cached exit bypassed expected status')
+except RuntimeError:pass
+assert writes==['q']
+try:os.fstat(term.master);raise AssertionError('PTY retained after observed close')
+except OSError:pass
+print('natural-terminal-recovery-pass')
+`));
+test('failed assertion persists before normal q and remains failed after real pressure/drain/natural reaping',{skip:process.platform!=='linux'},()=>check(setup+String.raw`
+term=terminal();write=term.write;writes=[]
+with tempfile.TemporaryDirectory() as root:
+ outcome={'outcome':'failed','terminals':[]}
+ def request(value):
+  persisted=json.loads(pathlib.Path(root,'native-exit-receipt.json').read_text())
+  assert persisted['outcome']=='failed' and persisted['failureReason']=='native_harness_assertion_failed'
+  writes.append(value);return write(value)
+ term.write=request
+ original=RuntimeError('private-first-assertion');observation={'bodyPrimaryPresent':True,'bodyPrimary':original}
+ assert h['retain_primary_and_recover'](root,outcome,term)
+ assert observation['bodyPrimary'] is original
+ assert outcome['outcome']=='failed' and outcome['recoveryObservation']['observed']
+ assert json.loads(pathlib.Path(root,'native-exit-receipt.json').read_text())['outcome']=='failed'
+ assert term.child.returncode==0 and len(term.text)>65536 and writes==['q']
+ assert term.master_close_original['completed']
+print('natural-terminal-recovery-pass')
+`));
+test('same normal close expiry is never renewed and later quit/read/close errors do not replace failed primary',{skip:process.platform!=='linux'},()=>check(setup+String.raw`
+from unittest.mock import patch
+term=Terminal.__new__(Terminal);term.master=123;term.label='fixture';term.exit_reason=None;term.read_observations=[]
+term.child=types.SimpleNamespace(returncode=None,reaped_unowned=False,poll=lambda:None)
+writes=[];term.write=lambda value:writes.append(value) or 1
+clock=iter([0,11,12])
+with patch.object(h['time'],'monotonic',lambda:next(clock)):
+ for unused in range(2):
+  try:term.close();raise AssertionError('unobserved child accepted')
+  except h['TerminalUnresolved']:pass
+assert writes==['q'] and term.close_expires==10
+assert not hasattr(term,'master_close_original') and term.child.returncode is None
+first=OSError('private-quit');later=OSError('private-read');last=OSError('private-close');original=RuntimeError('private-primary')
+term=Terminal.__new__(Terminal);term.master=124;term.label='fixture';term.exit_reason=None;term.read_observations=[]
+count=[0]
+def poll():
+ count[0]+=1
+ return 0 if count[0]>2 else None
+term.child=types.SimpleNamespace(returncode=None,reaped_unowned=False,poll=poll)
+def failed_write(value):raise first
+def failed_read(seconds):raise later
+def failed_close(descriptor):raise last
+term.write=failed_write;term.read=failed_read
+with tempfile.TemporaryDirectory() as root,patch.object(h['os'],'close',failed_close):
+ outcome={'outcome':'failed','terminals':[]};observation={'bodyPrimary':original}
+ assert h['retain_primary_and_recover'](root,outcome,term)
+ assert observation['bodyPrimary'] is original and outcome['outcome']=='failed'
+ assert [item['original'] for item in term.lifecycle_originals]==[first,later,last]
+ assert term.quit_original['attempted'] and not term.master_close_original['completed']
+ term.close_master_once();assert len(term.lifecycle_originals)==3
+print('natural-terminal-recovery-pass')
+`));
+
+test('failed preview recovery waits for a fresh processed Escape acknowledgement before separate normal q',{skip:process.platform!=='linux'},()=>check(setup+String.raw`
+master,slave=pty.openpty();tty.setraw(slave);pid=os.fork()
+if pid==0:
+ os.close(master)
+ while os.read(slave,1)!=b'\x1b':pass
+ import select
+ os.write(slave,b'Runtime identity: fresh redraw\n')
+ ready,_,_=select.select([slave],[],[],.1)
+ if ready:os._exit(5)
+ os.write(slave,b'Confirmation cancelled.\n')
+ if os.read(slave,1)!=b'q':os._exit(4)
+ body=b'private-after-cancellation-'*65536
+ while body:
+  written=os.write(slave,body);body=body[written:]
+ os.close(slave);os._exit(0)
+os.close(slave)
+term=Terminal.__new__(Terminal);term.master=master;term.child=BoundProcess(pid)
+term.text='old Confirmation cancelled. old Runtime identity:';term.label='fixture';term.exit_reason=None;term.read_observations=[]
+term.action_phase='confirmation-ready';writes=[];write=term.write
+with tempfile.TemporaryDirectory() as root:
+ outcome={'outcome':'failed','terminals':[]}
+ def request(value):
+  assert json.loads(pathlib.Path(root,'native-exit-receipt.json').read_text())['outcome']=='failed'
+  if value=='q':
+   assert term.recovery_escape_original['acknowledged']
+   assert 'Confirmation cancelled.' in term.text[term.recovery_escape_original['textOffset']:]
+  writes.append(value);return write(value)
+ term.write=request
+ assert h['retain_primary_and_recover'](root,outcome,term)
+ assert writes==['\x1b','q'] and term.child.returncode==0
+ assert term.recovery_escape_original['acknowledged'] and term.master_close_original['completed']
+ assert outcome['outcome']=='failed' and outcome['recoveryObservation']['observed']
+ assert json.loads(pathlib.Path(root,'native-exit-receipt.json').read_text())['outcome']=='failed'
+ term.recover_until_observed();assert writes==['\x1b','q']
+print('natural-terminal-recovery-pass')
+`));
+
+test('post-submission recovery never sends Escape and an actual exit needs no acknowledgement or q',{skip:process.platform!=='linux'},()=>check(setup+String.raw`
+for phase in ('submission-attempted','readback-await','readback-complete'):
+ term=Terminal.__new__(Terminal);term.master=123;term.label='fixture';term.text='';term.exit_reason=None;term.read_observations=[];term.action_phase=phase
+ polls=[None,0];term.child=types.SimpleNamespace(returncode=None,reaped_unowned=False,poll=lambda:polls.pop(0))
+ writes=[];term.write=lambda value:writes.append(value) or 1
+ with patch.object(h['os'],'close',lambda descriptor:None):
+  assert term.recover_until_observed()['observed']
+ assert writes==['q'] and not hasattr(term,'recovery_escape_original')
+term=Terminal.__new__(Terminal);term.master=124;term.label='fixture';term.text='';term.exit_reason=None;term.read_observations=[];term.action_phase='preview-await'
+polls=[None,0,0];term.child=types.SimpleNamespace(returncode=None,reaped_unowned=False,poll=lambda:polls.pop(0))
+writes=[];term.write=lambda value:writes.append(value) or 1
+with patch.object(h['os'],'close',lambda descriptor:None):
+ assert term.recover_until_observed()['observed']
+assert writes==['\x1b'] and term.recovery_escape_original['exitObserved']
+assert not term.recovery_escape_original['acknowledged'] and not hasattr(term,'quit_original')
+term=Terminal.__new__(Terminal);term.master=125;term.label='fixture';term.text='old Confirmation cancelled.';term.exit_reason=None;term.read_observations=[];term.action_phase='confirmation-ready'
+polls=[None,None,0,0];term.child=types.SimpleNamespace(returncode=None,reaped_unowned=False,poll=lambda:polls.pop(0))
+write_error=OSError('private-escape');read_error=OSError('private-drain');writes=[]
+def failed_escape(value):
+ assert term.recovery_escape_original['attempted'];writes.append(value);raise write_error
+def failed_drain(seconds):raise read_error
+term.write=failed_escape;term.read=failed_drain
+with patch.object(h['os'],'close',lambda descriptor:None):
+ assert term.recover_until_observed()['observed']
+assert writes==['\x1b'] and not hasattr(term,'quit_original')
+assert not term.recovery_escape_original['acknowledged']
+assert [item['original'] for item in term.lifecycle_originals]==[write_error,read_error]
+print('natural-terminal-recovery-pass')
+`));
+
+test('failed preparation fresh safe error uses normal q without Escape and preserves failed primary',{skip:process.platform!=='linux'},()=>check(setup+String.raw`
+assert set(h['FAILED_PREVIEW_TITLES'])=={'Runtime authentication denied:','Runtime permission denied:','Core action unavailable:','Operation reconciliation required:','Operation recovery storage unavailable:','Runtime API unavailable:'}
+term=terminal();write=term.write;writes=[]
+term.action_phase='preview-await';term.text='old private terminal';term.action_output_offset=len(term.text)
+term.text+=' Runtime API unavailable: fixed-safe-error'
+with tempfile.TemporaryDirectory() as root:
+ outcome={'outcome':'failed','terminals':[]}
+ def request(value):
+  assert json.loads(pathlib.Path(root,'native-exit-receipt.json').read_text())['outcome']=='failed'
+  assert value=='q';writes.append(value);return write(value)
+ term.write=request
+ assert h['retain_primary_and_recover'](root,outcome,term)
+ assert writes==['q'] and not hasattr(term,'recovery_escape_original')
+ assert term.child.returncode==0 and outcome['outcome']=='failed'
+ assert outcome['recoveryObservation']['observed'] and term.master_close_original['completed']
+ assert json.loads(pathlib.Path(root,'native-exit-receipt.json').read_text())['outcome']=='failed'
+print('natural-terminal-recovery-pass')
+`));
+
+test('stale error text and unknown error headings cannot bypass confirmed preview Escape acknowledgement',{skip:process.platform!=='linux'},()=>check(setup+String.raw`
+for phase,text,offset in (('preview-await','Runtime API unavailable: old',len('Runtime API unavailable: old')),('preview-await','Unknown API error: not admitted',0),('confirmation-ready','Runtime API unavailable: new',0)):
+ term=Terminal.__new__(Terminal);term.master=123;term.label='fixture';term.text=text;term.exit_reason=None;term.read_observations=[]
+ term.action_phase=phase;term.action_output_offset=offset
+ polls=[None,0,0];term.child=types.SimpleNamespace(returncode=None,reaped_unowned=False,poll=lambda:polls.pop(0))
+ writes=[];term.write=lambda value:writes.append(value) or 1
+ with patch.object(h['os'],'close',lambda descriptor:None):
+  assert term.recover_until_observed()['observed']
+ assert writes==['\x1b'] and term.recovery_escape_original['exitObserved']
+ assert not term.recovery_escape_original['acknowledged'] and not hasattr(term,'quit_original')
+print('natural-terminal-recovery-pass')
+`));

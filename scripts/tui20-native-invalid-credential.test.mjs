@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
-test('invalid credential observes exact authentication denial without selecting services or requesting a mutation',()=>{
+test('invalid credential uses public service navigation then admits only exact authentication denial without a mutation',()=>{
  const result=spawnSync(process.platform==='win32'?'python':'python3',['-c',String.raw`
 import ast,sys
 source=ast.parse(open(sys.argv[1],encoding='utf-8').read())
@@ -18,23 +18,35 @@ class Terminal:
  def __init__(self,*args):
   assert args[2]=='invalid';events.append('open')
  def wait(self,need,seconds):
-  assert need==('Runtime authentication denied:',) and seconds==30
+  assert seconds==30
+  if need==('Runtime identity:',): events.append('runtime-identity');return
+  assert need==('Runtime authentication denied:',) and observed==need[0]
   events.append('authentication-denied')
- def write(self,value):raise AssertionError('invalid credential attempted keyboard mutation')
+ def write(self,value):
+  assert value=='i';events.append('preflight-i')
  def close(self,expected):
   assert expected==0;events.append('close');return 'terminal_exited_zero'
-def detail(term):raise AssertionError('invalid credential attempted unavailable service detail')
+def detail(term):events.append('public-service-detail')
 def operations(url,token):operation_reads.append((url,token));return []
 def audit_count(url,token):audit_reads.append((url,token));return 0
 class Args:executable='unused-source-fixture'
+observed='Runtime authentication denied:'
 namespace={'Terminal':Terminal,'detail':detail,'operations':operations,'audit_count':audit_count,
  'diagnostic_stage':lambda label:events.append(label),'outcome':{'terminals':[]},'adverse':[],
  'url':'fixture','token':'fixture','launch_fd':None,'args':Args(),'env':{'SERVICE_LASSO_INVALID_TOKEN':'PRIVATE_SENTINEL'}}
 exec(compile(ast.fix_missing_locations(ast.Module(body=[loop],type_ignores=[])),'<invalid-case-source>','exec'),namespace)
-assert events==['invalid-credential-enter','open','authentication-denied','close','invalid-credential-return']
+assert events==['invalid-credential-enter','open','runtime-identity','public-service-detail','preflight-i','authentication-denied','close','invalid-credential-return']
 assert len(operation_reads)==2 and len(audit_reads)==2
 assert namespace['outcome']['terminals']==[{'terminal':'invalid-credential','exit':'terminal_exited_zero'}]
 assert namespace['adverse']==[{'case':'invalid-credential','beforeOperationCount':0,'afterOperationCount':0,'noOperation':True,'coreDeniedAuditBefore':0,'coreDeniedAuditAfter':0,'coreDeniedAuditDelta':0}]
+for observed in ('Runtime permission denied:','Runtime API unavailable:'):
+ events.clear();namespace['outcome']={'terminals':[]};namespace['adverse']=[]
+ try:
+  exec(compile(ast.fix_missing_locations(ast.Module(body=[loop],type_ignores=[])),'<wrong-denial-source>','exec'),namespace)
+  raise RuntimeError('wrong error class accepted')
+ except AssertionError:pass
+ assert events==['invalid-credential-enter','open','runtime-identity','public-service-detail','preflight-i']
+ assert namespace['outcome']['terminals']==[] and namespace['adverse']==[]
 print('invalid-credential-control-flow-pass')
 `,fileURLToPath(new URL('./tui20-native-posix-five-action.py',import.meta.url))],{encoding:'utf8',env:{...process.env,PYTHONDONTWRITEBYTECODE:'1'}});
  assert.equal(result.status,0,result.stderr);

@@ -36,3 +36,41 @@ for (const [record, field] of [["input-custody.json", "tuiDirtyHash"], ["input-c
 test("native public receipt rejects a missing sibling record", async () => { const root = await mkdtemp(path.join(tmpdir(), "tui20-public-")); try { const phase = await writeReceipt(root); await rm(path.join(phase, "build-output.json")); const result = verify(root); assert.notEqual(result.status, 0); assert.match(result.stderr.toString(), /set is incomplete/); } finally { await rm(root, { recursive: true, force: true }); } });
 test("native public receipt rejects a duplicate record in a separate sibling directory", async () => { const root = await mkdtemp(path.join(tmpdir(), "tui20-public-")); try { await writeReceipt(root); await mkdir(path.join(root, "duplicate")); await writeFile(path.join(root, "duplicate", "binary-digest.json"), JSON.stringify(records()["binary-digest.json"])); const result = verify(root); assert.notEqual(result.status, 0); assert.match(result.stderr.toString(), /set is incomplete/); } finally { await rm(root, { recursive: true, force: true }); } });
 test("native public receipt rejects a foreign public receipt record", async () => { const root = await mkdtemp(path.join(tmpdir(), "tui20-public-")); try { const phase = await writeReceipt(root); await writeFile(path.join(phase, "foreign.json"), JSON.stringify(records()["binary-digest.json"])); const result = verify(root); assert.notEqual(result.status, 0); assert.match(result.stderr.toString(), /foreign native public receipt/); } finally { await rm(root, { recursive: true, force: true }); } });
+
+
+test("native public receipt ignores unrelated dependency JSONC and invalid JSON fixtures", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "tui20-public-"));
+  try {
+    await writeReceipt(root);
+    const dependency = path.join(root, "core", "node_modules", "fixture-package");
+    await mkdir(dependency, { recursive: true });
+    await writeFile(path.join(dependency, "tsconfig.json"), '{// JSONC comment\n"compilerOptions": {}}');
+    await writeFile(path.join(dependency, "invalid.json"), '{deliberately invalid fixture');
+    const result = verify(root);
+    assert.equal(result.status, 0, result.stderr.toString());
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("native public receipt rejects malformed expected JSON without exposing its contents", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "tui20-public-"));
+  const sentinel = "PRIVATE_RECEIPT_SENTINEL_8362";
+  try {
+    const phase = await writeReceipt(root);
+    await writeFile(path.join(phase, "build-output.json"), '{"privatePath":"' + sentinel + '",BROKEN}');
+    const result = verify(root);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr.toString(), /invalid native public receipt JSON/);
+    assert.ok(!Buffer.concat([result.stdout, result.stderr]).toString().includes(sentinel));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("native public receipt rejects unknown native public kinds under foreign filenames", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "tui20-public-"));
+  try {
+    const phase = await writeReceipt(root);
+    await writeFile(path.join(phase, "foreign.json"), JSON.stringify({ kind: "tui20-native-unknown-result" }));
+    const result = verify(root);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr.toString(), /foreign native public receipt/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

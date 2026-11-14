@@ -85,16 +85,30 @@ source; it is failed diagnostic preparation, not proof.
 The local legacy probe at bb4bf4645b94af329c0125066333165488b95df2 built
 from clean source and pinned Core, passed replacement/missing-credential stages,
 then failed at invalid-credential and recovered via observed natural exit.
-It returned failure without the former indefinite stall. Correct the invalid
-credential journey to observe the exact safe 401 authentication-denied dashboard
-state; an unauthorized connection cannot navigate service detail. Retain actual
-zero-operation, zero-audit and terminal-zero expectations. Do not replace these
-with generic error acceptance. Permission-denied assertions remain separately
-verified against actual scoped Core behavior.
+It returned failure without the former indefinite stall. The first correction tried the exact 401 heading on the dashboard, but the
+011df21 local run still failed before terminal close. Exact pinned Core source
+shows legacy service reads are public on loopback, while lifecycle routes are
+authenticated. Preserve Runtime identity -> selected service detail -> install
+preparation, then require the exact safe authentication-denied heading. Retain
+zero-operation, zero-audit and terminal-zero expectations; no generic error
+acceptance. Permission-denied assertions remain separately verified against
+actual scoped Core behavior.
 
 Go1.26 VCS discovery recognizes .git directories, not managed worktree .git
 files. The detached validation worktree therefore produced no VCS stamp and
 failed the required metadata grep. A clean issue-branch-only validation clone
 with a .git directory passed metadata verification; no stamp guard was bypassed.
 
-Regression evidence includes actual HTTP service-read responses for 401, 403 and 503, exact distinct safe titles, no returned services, no raw response body presentation, and exactly one GET. The invalid-terminal fixture must issue no detail/install interaction and retain zero-operation/audit and actual terminal-exit assertions.
+Regression evidence includes actual HTTP service-read responses for 401, 403 and 503, exact distinct safe titles, no returned services, no raw response body presentation, and exactly one GET. The invalid-terminal fixture preserves original detail/install preparation but requires the exact safe 401 heading; zero-operation/audit and actual terminal-exit assertions remain.
+
+## Receipt discovery boundary correction
+
+The always-run receipt validator currently parses unrelated recursive JSON before
+checking receipt basenames. The owned Core/dependency tree contains JSONC/fixtures
+which are not native receipts. Strict-parse/inspect/validate the SAME held value
+for all five expected names, with redacted parser failure. For other names,
+ignore unrelated syntax-invalid JSON but reject any valid tui20-native-* kind,
+including unknown kinds. Preserve all sibling/schema/private-field/source/byte
+joins; never use a basename-only shortcut to admit a foreign public receipt.
+Regressions cover unrelated JSONC, malformed sensitive expected receipt, unknown
+foreign kind, private fields and incomplete phases. No publication activation.

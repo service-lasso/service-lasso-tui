@@ -905,9 +905,10 @@ def _main_attempt(observation):
                 term=Terminal(launch_fd,args.executable,profile,env); term.wait((SAFE_CONFIGURATION_DIAGNOSTIC,),30)
             elif profile=="invalid":
                 diagnostic_stage("invalid-credential-enter")
-                # Authentication denial prevents service-list acquisition; no
-                # unavailable service is selected or used to request a mutation.
+                # Pinned Core permits loopback service reads; its guarded
+                # lifecycle preflight still rejects this invalid bearer token.
                 term=Terminal(launch_fd,args.executable,profile,env)
+                term.wait(("Runtime identity:",),30); detail(term); term.write("i")
                 term.wait(("Runtime authentication denied:",),30)
             else:
                 diagnostic_stage("denied-credential-enter")

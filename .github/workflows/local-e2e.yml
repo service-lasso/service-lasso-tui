@@ -8,7 +8,7 @@ on:
         description: Exact reviewed Core develop revision
         required: true
 env:
-  CORE_REVISION: ${{ inputs.core_revision || '85a94a131f488faee55dc36efcfb04827a267442' }}
+  CORE_REVISION: ${{ inputs.core_revision || 'f32270731ff42f2a2f6dbcbc02f188b3fdd8813b' }}
 jobs:
   source-contracts:
     runs-on: ubuntu-latest
@@ -40,6 +40,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           path: tui
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Require an exact Core source revision
         run: |
           if ($env:CORE_REVISION -notmatch '^[a-f0-9]{40}$') { throw 'Exact Core revision required' }

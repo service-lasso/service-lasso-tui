@@ -112,3 +112,14 @@ including unknown kinds. Preserve all sibling/schema/private-field/source/byte
 joins; never use a basename-only shortcut to admit a foreign public receipt.
 Regressions cover unrelated JSONC, malformed sensitive expected receipt, unknown
 foreign kind, private fields and incomplete phases. No publication activation.
+
+## Observed scope-denial fixture mismatch
+
+The local 906bced probe passes invalid authentication and reaches scope denial,
+then fails its stale generic heading assertion. Current prepareLifecycle turns
+unavailable action into the fixed permission-stage heading Core action unavailable.
+Require that precise heading, retaining no-operation, exit-zero and the existing
+five-audit assertion until actual evidence supplies a different observed count.
+Root the partial adverse observation list in private outcome before the loop,
+so completed original audit/count facts survive a later assertion failure;
+failed primary/public projection never become successful from this retention.

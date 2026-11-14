@@ -895,6 +895,7 @@ def _main_attempt(observation):
             # no child is force-closed and no terminal status is fabricated.
             os.kill(os.getpid(),signal.SIGKILL)
         before=unrelated(url,token); adverse=[]
+        outcome["adverseAudit"]=adverse
         for profile,label,expected,audit_expected in (("missing","missing-credential",2,0),("invalid","invalid-credential",0,0),("denied","scope-denied",0,5)):
             count=len(operations(url,token)); audit=audit_count(url,token)
             if profile=="missing":
@@ -912,7 +913,7 @@ def _main_attempt(observation):
                 term.wait(("Runtime authentication denied:",),30)
             else:
                 diagnostic_stage("denied-credential-enter")
-                term=Terminal(launch_fd,args.executable,profile,env); term.wait(("Runtime identity:",),30); detail(term); term.write("i"); term.wait(("Runtime API unavailable:",),30)
+                term=Terminal(launch_fd,args.executable,profile,env); term.wait(("Runtime identity:",),30); detail(term); term.write("i"); term.wait(("Core action unavailable:",),30)
             outcome["terminals"].append({"terminal":label,"exit":term.close(expected)})
             if profile=="missing":
                 assert_safe_missing_credential(term.text,env)

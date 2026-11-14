@@ -2,9 +2,10 @@
 // Ordinary source/backend E2E. Never a native profile or publication receipt.
 import {spawn} from 'node:child_process';
 import {createHash, randomBytes} from 'node:crypto';
-import {mkdtemp, mkdir, readFile, writeFile, stat, rm} from 'node:fs/promises';
+import {mkdtemp, mkdir, readFile, writeFile, stat, lstat, realpath} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
+import net from 'node:net';
 import {fileURLToPath} from 'node:url';
 import {createInterface} from 'node:readline';
 
@@ -24,19 +25,34 @@ export async function validateConnection(file) {
 }
 export function suitePassed(suite,results){return (suite==='compat'?['compat']:suite==='v2'?['v2']:['compat','v2']).every(mode=>results.some(row=>row.mode===mode&&row.status==='passed'));}
 function digest(bytes){return createHash('sha256').update(bytes).digest('hex');}
-async function command(argv,{cwd,env,log}){
-  return await new Promise((resolve,reject)=>{
-    const child=spawn(argv[0],argv.slice(1),{cwd,env,stdio:['ignore','pipe','pipe']});const chunks=[];let error;
-    child.stdout.on('data',x=>chunks.push(x));child.stderr.on('data',x=>chunks.push(x));child.on('error',x=>{error=x;});
-    child.on('close',async(code,signal)=>{try{await writeFile(log,Buffer.concat(chunks),{mode:0o600});if(error||signal||code!==0)reject(new Error('E2E command failed'));else resolve(Buffer.concat(chunks).toString());}catch{reject(new Error('E2E command capture failed'));}});
-  });
+export function assertSourceReceipt(receipt,revision){
+ const hex=x=>/^[a-f0-9]{64}$/.test(x??'');
+ if(receipt.schemaVersion!==1||receipt.coreRevision!==revision||receipt.classification!=='source-built-ordinary-smoke'||receipt.cleanSource!==true||!/^[a-f0-9]{40}$/.test(receipt.coreTree??'')||!hex(receipt.coreArtifactSHA256)||!hex(receipt.sourceInputSHA256)||!hex(receipt.artifactInventorySHA256)||receipt.initializationAPI!==true||receipt.build?.exitCode!==0||receipt.build?.signal!==null||JSON.stringify(receipt.build?.command)!==JSON.stringify(['npm','run','build'])||!receipt.tools?.node||!receipt.tools?.npm||!receipt.tools?.typescript||!hex(receipt.tools?.compilerSHA256)||!Object.keys(receipt.installedDependencies??{}).length)throw new Error('source-qualified backend receipt required');
 }
+export async function assertReadyPaths(ready,backendRoot){
+ const root=await realpath(backendRoot);if((await lstat(backendRoot)).isSymbolicLink())throw new Error('backend root link');
+ for(const [key,name] of [['connectionFile','connection.json'],['receiptFile','receipt.json']]){const expected=path.join(root,name);if(path.resolve(ready[key]??'')!==expected||(await lstat(expected)).isSymbolicLink()||await realpath(expected)!==expected)throw new Error('ready path escaped owned backend');}
+}
+function waitBound(promise,ms){return new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('deadline')),ms);promise.then(x=>{clearTimeout(timer);resolve(x);},e=>{clearTimeout(timer);reject(e);});});}
+async function stopBound(child,closed){
+ try{return await waitBound(closed,20000);}catch{}
+ for(const signal of ['SIGINT','SIGTERM','SIGKILL']){child.kill(signal);try{return {...await waitBound(closed,10000),forced:true};}catch{}}
+ throw new Error('owned process cleanup unresolved');
+}
+export async function command(argv,{cwd,env,log,timeout=120000}){
+ const child=spawn(argv[0],argv.slice(1),{cwd,env,stdio:['ignore','pipe','pipe']});const chunks=[];let size=0,error,overflow=false;
+ const capture=x=>{size+=x.length;if(size<=8*1024*1024)chunks.push(x);else overflow=true;};child.stdout.on('data',capture);child.stderr.on('data',capture);child.on('error',x=>{error=x;});
+ const closed=new Promise(resolve=>child.on('close',(code,signal)=>resolve({code,signal})));let outcome,timedOut=false;
+ try{outcome=await waitBound(closed,timeout);}catch{timedOut=true;child.kill('SIGINT');outcome=await stopBound(child,closed);}
+ await writeFile(log,Buffer.concat(chunks),{mode:0o600});if(error||overflow||timedOut||outcome.forced||outcome.signal||outcome.code!==0)throw new Error('E2E command failed');return Buffer.concat(chunks).toString();
+}
+async function portClosed(url){return await new Promise(resolve=>{const socket=net.connect({host:'127.0.0.1',port:Number(new URL(url).port)});socket.once('connect',()=>{socket.destroy();resolve(false);});socket.once('error',error=>resolve(error.code==='ECONNREFUSED'));socket.setTimeout(1000,()=>{socket.destroy();resolve(false);});});}
 export async function run(options){
   const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
   const output=options['output-dir']?path.resolve(options['output-dir']):await mkdtemp(path.join(tmpdir(),'tui-local-e2e-'));
   if(options['output-dir'])await mkdir(output,{mode:0o700});
   const env={...process.env,GOWORK:'off',GOFLAGS:'',GOTOOLCHAIN:'local'};
-  const go=options.go??'go';const stages=[];let backend,connectionFile,connection,stopPromise,coreReceipt;
+  const go=options.go??'go';const stages=[];let backend,connectionFile,connection,stopPromise,coreReceipt;let stderr=[];
   const summary={schemaVersion:1,suite:options.suite,scope:'ordinary-source-real-backend',status:'failed',stages,platform:process.platform,nativeQualified:false};
   try{
     if(process.platform==='win32'){summary.status='blocked';summary.reason='matching-host ConPTY adapter required';return summary;}
@@ -49,9 +65,9 @@ export async function run(options){
     const helper=path.resolve(options['core-fixture-helper']??path.join(options['core-dir'],'scripts/operator-e2e-fixture.mjs'));
     const backendOutput=path.join(output,'backend');
     backend=spawn(process.execPath,[helper,'--core-dir',path.resolve(options['core-dir']),'--expected-core-revision',options['expected-core-revision'],'--output-dir',backendOutput,'--build-core'],{stdio:['pipe','pipe','pipe']});
-    const stderr=[];backend.stderr.on('data',x=>stderr.push(x));let backendError;
+    stderr=[];let stderrSize=0,stderrOverflow=false;backend.stderr.on('data',x=>{stderrSize+=x.length;if(stderrSize<=8*1024*1024)stderr.push(x);else stderrOverflow=true;});let backendError;
     backend.on('error',e=>{backendError=e;});backend.stdin.on('error',e=>{backendError=e;});
-    stopPromise=new Promise(resolve=>backend.on('close',async(code,signal)=>{await writeFile(path.join(output,'backend-stderr.private.log'),Buffer.concat(stderr),{mode:0o600});resolve({code,signal,error:Boolean(backendError)});}));
+    stopPromise=new Promise(resolve=>backend.on('close',(code,signal)=>resolve({code,signal,error:Boolean(backendError)||stderrOverflow})));
     const lines=createInterface({input:backend.stdout});
     const ready=await new Promise((resolve,reject)=>{
       const timer=setTimeout(()=>reject(new Error('backend readiness deadline')),180000);
@@ -59,20 +75,25 @@ export async function run(options){
       backend.on('close',()=>{clearTimeout(timer);reject(new Error('backend closed before ready'));});
       backend.on('error',()=>{clearTimeout(timer);reject(new Error('backend spawn failed'));});
     });
-    connectionFile=ready.connectionFile;connection=await validateConnection(connectionFile);coreReceipt=ready.receiptFile;
-    const receipt=JSON.parse(await readFile(coreReceipt,'utf8'));if(receipt.schemaVersion!==1||receipt.coreRevision!==options['expected-core-revision']||!/^[a-f0-9]{64}$/.test(receipt.coreArtifactSHA256??''))throw new Error('backend provenance mismatch');
+    await assertReadyPaths(ready,backendOutput);coreReceipt=ready.receiptFile;
+    const receipt=JSON.parse(await readFile(coreReceipt,'utf8'));assertSourceReceipt(receipt,options['expected-core-revision']);
+    for(const [file,field] of [['source-inputs.json','sourceInputSHA256'],['artifact-inventory.json','artifactInventorySHA256']]){const bytes=await readFile(path.join(backendOutput,file),'utf8');if(digest(JSON.stringify(JSON.parse(bytes)))!==receipt[field])throw new Error('backend inventory correspondence failed');}
+    connectionFile=ready.connectionFile;connection=await validateConnection(connectionFile);if(receipt.url!==connection.url)throw new Error('backend connection mismatch');
     summary.coreRevision=receipt.coreRevision;summary.coreArtifactSHA256=receipt.coreArtifactSHA256;
-    const denied=await fetch(new URL('/api/services',connection.url),{headers:{'x-service-lasso-admin-token':randomBytes(32).toString('hex')},signal:AbortSignal.timeout(5000)});await denied.body?.cancel();
-    stages.push({stage:'negative-authentication',status:[401,403].includes(denied.status)?'passed':'failed',httpStatus:denied.status});if(![401,403].includes(denied.status))throw new Error('Core accepted invalid credential');
+    const identities=[];
+    for(const token of [connection.token,randomBytes(32).toString('hex')]){const response=await fetch(new URL('/api/runtime/security',connection.url),{headers:{'x-service-lasso-admin-token':token},signal:AbortSignal.timeout(5000)});const value=await response.json();identities.push({status:response.status,kind:value.auth?.actor?.kind,authenticated:value.auth?.actor?.authenticated,configured:value.auth?.policy?.localTokenConfigured});}
+    if(identities[0].status!==200||identities[0].kind!=='local-token'||identities[0].authenticated!==true||identities[0].configured!==true||identities[1].kind==='local-token')throw new Error('token identity expectation failed');
+    stages.push({stage:'token-identity',status:'passed',validKind:identities[0].kind,invalidKind:identities[1].kind??'denied'});
+    stages.push({stage:'permission-denial',status:'blocked',reason:'guarded OAuth lifecycle fixture required; loopback local-root fallback is not access denial'});
     const modes=options.suite==='all'?['compat','v2']:[options.suite];
     for(const mode of modes){
-      try{await command(['python3',path.join(repo,'scripts/local-e2e-pty.py'),'--binary',binary,'--connection-file',connectionFile,'--output',path.join(output,mode),'--mode',mode],{cwd:repo,env,log:path.join(output,`${mode}.private.log`)});}catch{/* Read the closed stage result; no raw output enters public summary. */}
+      try{await command(['python3',path.join(repo,'scripts/local-e2e-pty.py'),'--binary',binary,'--connection-file',connectionFile,'--output',path.join(output,mode),'--mode',mode,'--observations',path.join(backendOutput,'request-observations.json')],{cwd:repo,env,timeout:60000,log:path.join(output,`${mode}.private.log`)});}catch{/* Read the closed stage result; no raw output enters public summary. */}
       const result=JSON.parse(await readFile(path.join(output,mode,'result.json'),'utf8'));stages.push(result);
     }
     summary.status=suitePassed(options.suite,stages)?'passed':'blocked';
   }catch{summary.status='failed';summary.reason='stage-failed-see-private-evidence';}
   finally{
-    if(backend){backend.stdin.end('stop\n');const outcome=await stopPromise;stages.push({stage:'backend-stop',status:outcome.code===0&&!outcome.signal&&!outcome.error?'passed':'failed'});if(stages.at(-1).status!=='passed')summary.status='failed';}
+    if(backend){backend.stdin.end('stop\n');try{const outcome=await stopBound(backend,stopPromise);await writeFile(path.join(output,'backend-stderr.private.log'),Buffer.concat(stderr),{mode:0o600});const closed=JSON.parse(await readFile(coreReceipt??path.join(output,'backend','receipt.json'),'utf8'));const cleanup=closed.cleanup;const verified=outcome.code===0&&!outcome.signal&&!outcome.error&&!outcome.forced&&closed.status==='passed'&&closed.stage==='closed'&&cleanup?.status==='complete'&&cleanup.serverClosed===true&&cleanup.portClosed===true&&cleanup.parentPortClosed===true&&cleanup.credentialRemoved===true&&cleanup.forcedTermination===false&&(!connection||await portClosed(connection.url));stages.push({stage:'backend-stop',status:verified?'passed':'failed'});if(!verified)summary.status='failed';}catch{stages.push({stage:'backend-stop',status:'failed'});summary.status='failed';}}
     if(connectionFile){try{await stat(connectionFile);summary.credentialRemoved=false;summary.status='failed';}catch(e){summary.credentialRemoved=e.code==='ENOENT';if(!summary.credentialRemoved)summary.status='failed';}}
     // Defend against accidental token inclusion in any public projection.
     if(connection&&JSON.stringify(summary).includes(connection.token))throw new Error('private token entered summary');

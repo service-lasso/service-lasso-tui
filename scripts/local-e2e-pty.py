@@ -3,7 +3,7 @@
 import argparse, errno, fcntl, json, os, pathlib, pty, select, signal, struct, termios, time
 
 
-def probe(binary, connection, output, mode):
+def probe(binary, connection, output, mode, observations=None):
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
     config = output / 'config'
     config.mkdir(mode=0o700)
@@ -18,9 +18,10 @@ def probe(binary, connection, output, mode):
             'SERVICE_LASSO_API_TOKEN': connection['token']})
     data, events = bytearray(), []
     stream_closed, reaped, status, reaped_at = False, False, None, None
+    overflow = False
 
     def collect(deadline):
-        nonlocal stream_closed, reaped, status, reaped_at
+        nonlocal stream_closed, reaped, status, reaped_at, overflow
         while time.monotonic() < deadline and not reaped:
             observed, observed_status = os.waitpid(pid, os.WNOHANG)
             if observed:
@@ -43,7 +44,10 @@ def probe(binary, connection, output, mode):
                 stream_closed = True
                 events.append({'streamClosedAtSeconds': time.monotonic() - started})
             else:
-                data.extend(chunk)
+                if len(data) + len(chunk) > 8 * 1024 * 1024:
+                    overflow = True
+                else:
+                    data.extend(chunk)
 
     def wait_for(predicate, seconds):
         deadline = time.monotonic() + seconds
@@ -88,9 +92,21 @@ def probe(binary, connection, output, mode):
             for value in [b'n', b'n', b'j', b'k']:
                 key(value)
                 collect(time.monotonic() + .15)
-            before = len(data)
+            def counts():
+                if observations is None:
+                    raise RuntimeError('actual Core request observations required for reconnect')
+                try:
+                    rows = json.loads(observations.read_text())
+                except (OSError, ValueError):
+                    return None
+                return tuple(sum(1 for row in rows if row.get('method') == 'GET' and row.get('pathname') == route and row.get('statusCode') == 200) for route in ['/api/health', '/api/services'])
+            wait_for(lambda: counts() is not None and all(value > 0 for value in counts()), 3)
+            prior = counts()
+            if prior is None:
+                raise RuntimeError('request snapshot changed before reconnect')
             key(b'r')
-            wait_for(lambda: b'Runtime: ok (API up)' in data[before:], 8)
+            wait_for(lambda: counts() is not None and all(after > before for after, before in zip(counts(), prior)), 8)
+            events.append({'reconnectReadCountsBefore': prior, 'reconnectReadCountsAfter': counts()})
         resize(80, 24)
         collect(time.monotonic() + .2)
         q_at = time.monotonic()
@@ -106,11 +122,13 @@ def probe(binary, connection, output, mode):
             interrupted = True
             os.kill(pid, signal.SIGINT)
             collect(time.monotonic() + 8)
-        if not reaped:
-            # Retain this owner instead of calling an unobserved child closed.
-            print(json.dumps({'stage': 'terminal', 'status': 'cleanup-unresolved'}), flush=True)
-            while not reaped:
-                collect(time.monotonic() + 1)
+        forced = False
+        for cleanup_signal in [signal.SIGTERM, signal.SIGKILL]:
+            if reaped:
+                break
+            forced = True
+            os.kill(pid, cleanup_signal)
+            collect(time.monotonic() + 3)
         os.close(master)
         raw = output / 'terminal.private.ansi'
         raw.write_bytes(data)
@@ -118,13 +136,13 @@ def probe(binary, connection, output, mode):
     leaked = connection['token'].encode() in data
     unavailable = b'404 Not Found' in data
     result = {'schemaVersion': 1, 'stage': 'terminal', 'mode': mode,
-        'status': 'failed' if failure or leaked or os.waitstatus_to_exitcode(status) != 0 else ('blocked' if mode == 'v2' else 'passed'),
-        'reason': failure or ('operator-v2-functional-journeys-not-qualified' if mode == 'v2' else None),
+        'status': 'failed' if failure or overflow or leaked or (not reaped or os.waitstatus_to_exitcode(status) != 0) else ('blocked' if mode == 'v2' else 'passed'),
+        'captureOverflow': overflow, 'reason': failure or ('operator-v2-functional-journeys-not-qualified' if mode == 'v2' else None),
         'apiUnavailable': unavailable, 'readyBeforeKeys': ready,
         'helpStateObserved': help_state, 'dashboardRestored': dashboard_returned,
-        'exitCode': os.waitstatus_to_exitcode(status), 'interruptedForCleanup': interrupted,
-        'actualWaitpid': True, 'tokenLeaked': leaked, 'events': events,
-        'qToReapSeconds': reaped_at - q_at if q_at is not None else None}
+        'exitCode': os.waitstatus_to_exitcode(status) if reaped else None, 'interruptedForCleanup': interrupted,
+        'actualWaitpid': reaped, 'forcedCleanup': forced, 'unresolvedPID': None if reaped else pid, 'tokenLeaked': leaked, 'events': events,
+        'qToReapSeconds': reaped_at - q_at if reaped and q_at is not None else None}
     (output / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
     return result
 
@@ -135,9 +153,10 @@ def main():
     parser.add_argument('--connection-file', required=True, type=pathlib.Path)
     parser.add_argument('--output', required=True, type=pathlib.Path)
     parser.add_argument('--mode', choices=['compat', 'v2'], required=True)
+    parser.add_argument('--observations', type=pathlib.Path)
     args = parser.parse_args()
     connection = json.loads(args.connection_file.read_text())
-    result = probe(args.binary.resolve(), connection, args.output.resolve(), args.mode)
+    result = probe(args.binary.resolve(), connection, args.output.resolve(), args.mode, args.observations)
     print(json.dumps(result))
     return 0 if result['status'] == 'passed' else 2
 

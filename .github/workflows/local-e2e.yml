@@ -36,6 +36,11 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
           go-version-file: tui/go.mod
+      - name: Install Core dependencies without lifecycle scripts
+        working-directory: core-input
+        env:
+          npm_config_cache: ${{ runner.temp }}/core-e2e-npm-cache
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Run ordinary real Core compatibility evidence
         working-directory: tui
         env:

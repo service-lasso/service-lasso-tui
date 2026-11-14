@@ -212,3 +212,20 @@ pass; targeted decoder/model race tests pass. Fresh independent whole-patch
 review approved the corrected source, including failed-preparation and reload
 paths. Exact-head hosted CI and landing results are tracked on PR39 and issue37.
 No result here qualifies genuine v2 pair acquisition; produceNative stays closed.
+
+The fe274f9 local runtime attempt completed all five durable readbacks but
+failed reload observation: an operation-triggered background refresh can hide
+and clear the refusal before rendering. Check the identical refusal in initial
+detail, after fresh selected-detail and disabled-availability acknowledgement,
+before submitting any action. Retain the exact fresh safe diagnostic, unchanged
+operation snapshot, no confirmation, all five subsequent durable readbacks and
+the post-action cancellation-advertisement rejection. The source model/decoder
+test proves the stable detail refusal; helper regressions reject stale initial
+availability and verify ordering. This changes probe timing, not product state.
+
+Distinct review identified that the reload diagnostic persists into preview.
+Capture a new output boundary immediately before standalone confirmation y;
+recognize readback success and retryable errors only after that boundary. A
+preview diagnostic must never trigger adjacent yr input, and historical success
+must never satisfy a new action. Regressions retain fresh post-submit retries
+and require a read before retry when only a preview error exists.

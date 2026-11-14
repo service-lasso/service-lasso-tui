@@ -715,15 +715,18 @@ def action(term,key,name,url,token):
     # never authorize Escape/cancel or replay of an uncertain submitted action.
     term.action_phase="submission-attempted"
     diagnostic_stage("action-submit-enter")
+    # Preview redraws may repeat earlier errors/results. Only bytes observed
+    # after this confirmation cut can justify readback success or read retry.
+    readback_output_start=len(term.text)
     term.write("y"); deadline=time.monotonic()+90
     term.action_phase="readback-await"
     diagnostic_stage("action-readback-enter")
     while time.monotonic()<deadline:
-        if "Core operation" in term.text[start:] and "succeeded." in term.text[start:]:
+        if "Core operation" in term.text[readback_output_start:] and "succeeded." in term.text[readback_output_start:]:
             term.action_phase="readback-complete"
             diagnostic_stage("action-readback-return")
             return
-        if "Runtime API unavailable:" in term.text[start:]: term.write("r")
+        if "Runtime API unavailable:" in term.text[readback_output_start:]: term.write("r")
         term.read()
     raise RuntimeError("retained operation readback unavailable")
 
@@ -994,7 +997,13 @@ def _main_attempt(observation):
             after=len(operations(url,token)); audit_after=audit_count(url,token); adverse.append({"case":label,"beforeOperationCount":count,"afterOperationCount":after,"noOperation":after==count,"coreDeniedAuditBefore":audit,"coreDeniedAuditAfter":audit_after,"coreDeniedAuditDelta":audit_after-audit})
             if after!=count or audit_after-audit!=audit_expected: raise RuntimeError("adverse lifecycle receipt invalid")
         diagnostic_stage("allowed-five-actions-enter")
-        term=Terminal(launch_fd,args.executable,"native",env); term.wait(("Runtime identity:",),30); detail(term)
+        term=Terminal(launch_fd,args.executable,"native",env); term.wait(("Runtime identity:",),30)
+        detail_start=len(term.text); detail(term)
+        term.wait(("reload: disabled: durable operation unavailable",),20,detail_start)
+        if "reload: disabled: durable operation unavailable" not in term.text: raise RuntimeError("Core reload unavailability not observed")
+        before_reload=operations(url,token); reload_start=len(term.text); term.write("l")
+        term.wait(("Runtime API unavailable: operator stage failed; check connection and retained operation state",),15,reload_start)
+        if operations(url,token)!=before_reload or "z cancel" in term.text or "z request Core cancellation" in term.text or "Confirm reload" in term.text[reload_start:]: raise RuntimeError("reload or cancellation contract changed")
         action_readbacks=[]; known_ids={record.get("operationId") for record in operations(url,token)}
         expected_by_ui={"install":"service_install","config":"service_configure","start":"service_start","stop":"service_stop","restart":"service_restart"}
         for key,name in (("i","install"),("c","config"),("s","start"),("x","stop"),("R","restart")):
@@ -1004,10 +1013,7 @@ def _main_attempt(observation):
             current=operations(url,token); added=[record for record in current if record.get("operationId") not in known_ids]
             if len(added)!=1 or added[0].get("action")!=expected_by_ui[name] or added[0].get("targetIds")!=["tui20-fixture"]: raise RuntimeError("per-action durable readback invalid")
             known_ids.add(added[0]["operationId"]); action_readbacks.append({key:added[0].get(key) for key in ("operationId","action","targetIds","status","outcome","cancellationSupported")})
-        if "reload: disabled: durable operation unavailable" not in term.text: raise RuntimeError("Core reload unavailability not observed")
-        before_reload=operations(url,token); reload_start=len(term.text); term.write("l")
-        term.wait(("Runtime API unavailable: operator stage failed; check connection and retained operation state",),15,reload_start)
-        if operations(url,token)!=before_reload or "z cancel" in term.text or "z request Core cancellation" in term.text or "Confirm reload" in term.text[reload_start:]: raise RuntimeError("reload or cancellation contract changed")
+        if "z cancel" in term.text or "z request Core cancellation" in term.text: raise RuntimeError("cancellation advertised during actions")
         outcome["terminals"].append({"terminal":"allowed","exit":term.close()})
         runtime_pid=runtime.pid if runtime is not None else runtime_handoff["_runtimePID"]; runtime_birth=runtime.tui20_birth if runtime is not None else runtime_handoff["_runtimeBirth"]
         write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"coreRuntimePID":runtime_pid,"runtimeBirth":runtime_birth,"tuiChildPID":term.child.pid,"tuiChildBirth":term.child.tui20_birth,"sourceCommit":identity["sourceCommit"],"binarySHA256":identity["binarySHA256"],"phase":"normal_q_exit","immutableExecutionHeld":True,"ptyHeld":False})

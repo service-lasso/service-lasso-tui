@@ -52,6 +52,26 @@ assert len(operation_reads)==2
 assert term.phase_at_write==['preview-await','confirmation-ready','submission-attempted']
 assert stages==['action-preview-enter','action-preview-return','action-submit-enter','action-readback-enter','action-readback-return']
 assert term.action_phase=='readback-complete'
+# A preview redraw can repeat an old error and an old operation result. Neither
+# is a post-confirmation event: the first iteration must read, not retry/return.
+namespace['operations']=operations
+class HistoricalPreview(Action):
+ def write(self,value):
+  super().write(value)
+  if value=='i':self.text+='Runtime API unavailable: old Core operation old succeeded.'
+term=HistoricalPreview();namespace['action'](term,'i','install','actual-owner-url','actual-owner-token')
+assert term.writes==['i','r\rj\r?\rq\r','y'] and term.reads==2
+class FreshReadError(Action):
+ def write(self,value):
+  if value=='r':
+   assert self.action_phase=='readback-await';self.writes.append(value);return
+  super().write(value)
+ def read(self):
+  self.reads+=1
+  if self.action_phase=='readback-await':
+   self.text+='Runtime API unavailable: fresh' if self.reads==2 else 'Core operation fresh succeeded.'
+term=FreshReadError();namespace['action'](term,'i','install','actual-owner-url','actual-owner-token')
+assert term.writes==['i','r\rj\r?\rq\r','y','r'] and term.reads==3
 # A pre-submit preview failure is identified before any confirmation byte.
 class RefusedPreview(Action):
  def wait(self,*args):raise RuntimeError('controlled preview refusal')

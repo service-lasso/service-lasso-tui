@@ -52,7 +52,7 @@ export async function run(options){
   const output=options['output-dir']?path.resolve(options['output-dir']):await mkdtemp(path.join(tmpdir(),'tui-local-e2e-'));
   if(options['output-dir'])await mkdir(output,{mode:0o700});
   const privateHome=path.join(output,'home'),privateTmp=path.join(output,'tmp');await mkdir(privateHome,{mode:0o700});await mkdir(privateTmp,{mode:0o700});
-  const env={PATH:process.env.PATH,LANG:'C.UTF-8',...(process.env.SystemRoot?{SystemRoot:process.env.SystemRoot}:{}),HOME:privateHome,USERPROFILE:privateHome,XDG_CONFIG_HOME:path.join(privateHome,'config'),XDG_CACHE_HOME:path.join(privateHome,'cache'),GOCACHE:path.join(output,'go-cache'),GOMODCACHE:path.join(output,'go-mod'),GOPATH:path.join(output,'go'),TMPDIR:privateTmp,TEMP:privateTmp,TMP:privateTmp,GOWORK:'off',GOFLAGS:'',GOTOOLCHAIN:'local'};
+  const env={PATH:[path.dirname(process.execPath),process.env.PATH??''].join(path.delimiter),LANG:'C.UTF-8',...(process.env.SystemRoot?{SystemRoot:process.env.SystemRoot}:{}),HOME:privateHome,USERPROFILE:privateHome,XDG_CONFIG_HOME:path.join(privateHome,'config'),XDG_CACHE_HOME:path.join(privateHome,'cache'),GOCACHE:path.join(output,'go-cache'),GOMODCACHE:path.join(output,'go-mod'),GOPATH:path.join(output,'go'),TMPDIR:privateTmp,TEMP:privateTmp,TMP:privateTmp,GOWORK:'off',GOFLAGS:'',GOTOOLCHAIN:'local'};
   const go=options.go??'go';const stages=[];let backend,connectionFile,connection,stopPromise,coreReceipt,readyReceipt;let stderr=[];
   const summary={schemaVersion:1,suite:options.suite,scope:'ordinary-source-real-backend',status:'failed',stages,platform:process.platform,nativeQualified:false};
   try{

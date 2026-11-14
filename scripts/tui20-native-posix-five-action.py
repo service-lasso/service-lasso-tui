@@ -204,6 +204,33 @@ class Terminal:
                 self.master_close_original["original"]=original
                 self.retain_lifecycle_original("master_close",original)
         return self.master_close_original
+    def recovery_escape_once(self):
+        if not hasattr(self,"recovery_escape_original"):
+            self.recovery_escape_original={"attempted":True,"returned":None,"original":None,"acknowledged":False,"exitObserved":False}
+            try:
+                self.recovery_escape_original["returned"]=self.write("\x1b")
+                if self.recovery_escape_original["returned"]!=1: raise OSError("normal Escape write incomplete")
+            except BaseException as original:
+                self.recovery_escape_original["original"]=original
+                self.retain_lifecycle_original("recovery_escape",original)
+            self.recovery_escape_original["textOffset"]=len(self.text)
+        row=self.recovery_escape_original
+        while not row["acknowledged"] and not row["exitObserved"]:
+            try: result=self.child.poll()
+            except BaseException as original:
+                self.retain_lifecycle_original("escape_poll",original); result=None
+            if result is not None: row["exitObserved"]=True; return row
+            if self.child.reaped_unowned: raise ChildReapedUnowned("owned child was reaped outside BoundProcess")
+            fresh=self.text[row["textOffset"]:]
+            if row["original"] is None and "Confirmation cancelled." in fresh:
+                row["acknowledged"]=True; return row
+            # A write return, elapsed time, EOF or read failure is no UI ack and
+            # no child exit. Retain SAME failed owner and drain until observed.
+            try: raw=self.read(.1)
+            except BaseException as original:
+                self.retain_lifecycle_original("escape_drain",original); raw=None
+            if not raw: time.sleep(.02)
+        return row
     def wait_draining_until_observed(self,expires=None):
         while True:
             # This is the SAME initial normal-close deadline, never renewed by
@@ -296,8 +323,13 @@ class Terminal:
         # The original failed result has already been persisted by our caller.
         # Sending q is only a normal keyboard request, never proof it was read
         # as quit (for example an active editor may consume it as text).
-        if current_known and current is None: self.request_quit_once()
-        try: result=self.wait_draining_until_observed()
+        try:
+            if current_known and current is None:
+                if getattr(self,"action_phase",None) in ("preview-await","confirmation-ready"):
+                    escape=self.recovery_escape_once()
+                    if escape["acknowledged"] and not escape["exitObserved"]: self.request_quit_once()
+                else: self.request_quit_once()
+            result=self.wait_draining_until_observed()
         except ChildReapedUnowned:
             self.exit_reason="terminal_unknown"; self.recovery_state="child_reaped_unowned"
             self.close_master_once()
@@ -649,16 +681,44 @@ def bound_replacement_probe(launch_fd,held,executable,inode_identity,digest_iden
             else:
                 os.replace(original,executable)
     return results
-def detail(term): term.write("/tui20-fixture\r"); term.wait(("tui20-fixture",),20); term.write("\r"); term.wait(("Lifecycle:","tui20-fixture"),20)
-def action(term,key,name):
-    start=len(term.text); term.write(key); term.wait(("Core preview: "+name,"Confirm "+name),45,start); frozen=term.text; term.write("rj?q"); time.sleep(.3)
+def detail(term):
+    # BubbleTea may batch contiguous printable runes into one message. Enter
+    # search with its standalone key before sending the query and control keys.
+    start=len(term.text); term.write("/"); term.wait(("Search:",),20,start)
+    start=len(term.text); term.write("tui20-fixture\r"); term.write("\r")
+    term.wait(("Lifecycle:","tui20-fixture"),20,start)
+def action(term,key,name,url,token):
+    before_frozen=operations(url,token)
+    before_frozen_ids={record.get("operationId") for record in before_frozen}
+    term.action_phase="preview-await"
+    diagnostic_stage("action-preview-enter")
+    start=len(term.text); term.write(key); term.wait(("Core preview: "+name,"Confirm "+name),45,start)
+    term.action_phase="confirmation-ready"
+    diagnostic_stage("action-preview-return")
+    frozen=term.text
+    # Control separators prevent printable keys from coalescing with the later
+    # standalone confirmation. Pending-state Enter is an ignored keyboard event.
+    term.write("r\rj\r?\rq\r"); time.sleep(.3); term.read()
+    after_frozen=operations(url,token)
+    if len(after_frozen)!=len(before_frozen) or {record.get("operationId") for record in after_frozen}!=before_frozen_ids:
+        raise RuntimeError("unconfirmed preview created an operation")
     if "Confirm "+name not in term.text or "Core preview: "+name not in term.text: raise RuntimeError("confirmation changed")
-    term.write("yr"); deadline=time.monotonic()+90
+    # This cut precedes the first possible confirmation byte. Failed writes
+    # never authorize Escape/cancel or replay of an uncertain submitted action.
+    term.action_phase="submission-attempted"
+    diagnostic_stage("action-submit-enter")
+    term.write("y"); deadline=time.monotonic()+90
+    term.action_phase="readback-await"
+    diagnostic_stage("action-readback-enter")
     while time.monotonic()<deadline:
-        if "Core operation" in term.text[start:] and "succeeded." in term.text[start:]: return
+        if "Core operation" in term.text[start:] and "succeeded." in term.text[start:]:
+            term.action_phase="readback-complete"
+            diagnostic_stage("action-readback-return")
+            return
         if "Runtime API unavailable:" in term.text[start:]: term.write("r")
         term.read()
     raise RuntimeError("retained operation readback unavailable")
+
 def recovery_self_test(root):
     """Legacy owner-only process probe retained for source-level reaped-child coverage."""
     os.makedirs(root,exist_ok=True)
@@ -931,7 +991,7 @@ def _main_attempt(observation):
         expected_by_ui={"install":"service_install","config":"service_configure","start":"service_start","stop":"service_stop","restart":"service_restart"}
         for key,name in (("i","install"),("c","config"),("s","start"),("x","stop"),("R","restart")):
             diagnostic_stage("allowed-action-enter")
-            action(term,key,name)
+            action(term,key,name,url,token)
             diagnostic_stage("allowed-action-return")
             current=operations(url,token); added=[record for record in current if record.get("operationId") not in known_ids]
             if len(added)!=1 or added[0].get("action")!=expected_by_ui[name] or added[0].get("targetIds")!=["tui20-fixture"]: raise RuntimeError("per-action durable readback invalid")

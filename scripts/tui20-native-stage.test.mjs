@@ -10,7 +10,7 @@ test('native progress diagnostics contain only fixed source labels and flush eve
 import ast,sys,types
 source=open(sys.argv[1],encoding='utf-8').read()
 tree=ast.parse(source)
-expected={'terminal-normal-close-enter','terminal-normal-close-return','terminal-raw-pid-recovery-enter','terminal-recovery-enter','bound-replacement-probe-enter','bound-replacement-probe-return','missing-credential-enter','missing-credential-return','invalid-credential-enter','invalid-credential-return','denied-credential-enter','denied-credential-return','allowed-five-actions-enter','allowed-five-actions-return','allowed-action-enter','allowed-action-return','reconnect-enter','reconnect-return','primary-recovery-persist-enter','primary-recovery-persist-return'}
+expected={'terminal-normal-close-enter','terminal-normal-close-return','terminal-raw-pid-recovery-enter','terminal-recovery-enter','bound-replacement-probe-enter','bound-replacement-probe-return','missing-credential-enter','missing-credential-return','invalid-credential-enter','invalid-credential-return','denied-credential-enter','denied-credential-return','allowed-five-actions-enter','allowed-five-actions-return','allowed-action-enter','allowed-action-return','reconnect-enter','reconnect-return','primary-recovery-persist-enter','primary-recovery-persist-return','action-preview-enter','action-preview-return','action-submit-enter','action-readback-enter','action-readback-return'}
 calls=[node for node in ast.walk(tree) if isinstance(node,ast.Call) and isinstance(node.func,ast.Name) and node.func.id=='diagnostic_stage']
 assert calls
 labels=[]
@@ -39,7 +39,7 @@ namespace['diagnostic_stage']('terminal-normal-close-enter')
 assert namespace['DIAGNOSTIC_ORIGINALS']==[first,later]
 # A broken diagnostic stream cannot suppress the real close/recovery methods.
 terminal=next(node for node in tree.body if isinstance(node,ast.ClassDef) and node.name=='Terminal')
-methods=[node for node in terminal.body if isinstance(node,ast.FunctionDef) and node.name in ('retain_lifecycle_original','request_quit_once','close_master_once','wait_draining_until_observed','close','recover_until_observed')]
+methods=[node for node in terminal.body if isinstance(node,ast.FunctionDef) and node.name in ('retain_lifecycle_original','request_quit_once','close_master_once','recovery_escape_once','wait_draining_until_observed','close','recover_until_observed')]
 closes=[];events=[]
 namespace.update({'os':types.SimpleNamespace(close=lambda descriptor:closes.append(descriptor)),
  'time':types.SimpleNamespace(monotonic=lambda:0,sleep=lambda value:None),'terminal_exit_reason':lambda result:'terminal_exited_zero','subprocess':types.SimpleNamespace(TimeoutExpired=TimeoutError),

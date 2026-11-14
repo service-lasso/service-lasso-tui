@@ -94,3 +94,70 @@ with tempfile.TemporaryDirectory() as root,patch.object(h['os'],'close',failed_c
  term.close_master_once();assert len(term.lifecycle_originals)==3
 print('natural-terminal-recovery-pass')
 `));
+
+test('failed preview recovery waits for a fresh processed Escape acknowledgement before separate normal q',{skip:process.platform!=='linux'},()=>check(setup+String.raw`
+master,slave=pty.openpty();tty.setraw(slave);pid=os.fork()
+if pid==0:
+ os.close(master)
+ while os.read(slave,1)!=b'\x1b':pass
+ import select
+ os.write(slave,b'Runtime identity: fresh redraw\n')
+ ready,_,_=select.select([slave],[],[],.1)
+ if ready:os._exit(5)
+ os.write(slave,b'Confirmation cancelled.\n')
+ if os.read(slave,1)!=b'q':os._exit(4)
+ body=b'private-after-cancellation-'*65536
+ while body:
+  written=os.write(slave,body);body=body[written:]
+ os.close(slave);os._exit(0)
+os.close(slave)
+term=Terminal.__new__(Terminal);term.master=master;term.child=BoundProcess(pid)
+term.text='old Confirmation cancelled. old Runtime identity:';term.label='fixture';term.exit_reason=None;term.read_observations=[]
+term.action_phase='confirmation-ready';writes=[];write=term.write
+with tempfile.TemporaryDirectory() as root:
+ outcome={'outcome':'failed','terminals':[]}
+ def request(value):
+  assert json.loads(pathlib.Path(root,'native-exit-receipt.json').read_text())['outcome']=='failed'
+  if value=='q':
+   assert term.recovery_escape_original['acknowledged']
+   assert 'Confirmation cancelled.' in term.text[term.recovery_escape_original['textOffset']:]
+  writes.append(value);return write(value)
+ term.write=request
+ assert h['retain_primary_and_recover'](root,outcome,term)
+ assert writes==['\x1b','q'] and term.child.returncode==0
+ assert term.recovery_escape_original['acknowledged'] and term.master_close_original['completed']
+ assert outcome['outcome']=='failed' and outcome['recoveryObservation']['observed']
+ assert json.loads(pathlib.Path(root,'native-exit-receipt.json').read_text())['outcome']=='failed'
+ term.recover_until_observed();assert writes==['\x1b','q']
+print('natural-terminal-recovery-pass')
+`));
+
+test('post-submission recovery never sends Escape and an actual exit needs no acknowledgement or q',{skip:process.platform!=='linux'},()=>check(setup+String.raw`
+for phase in ('submission-attempted','readback-await','readback-complete'):
+ term=Terminal.__new__(Terminal);term.master=123;term.label='fixture';term.text='';term.exit_reason=None;term.read_observations=[];term.action_phase=phase
+ polls=[None,0];term.child=types.SimpleNamespace(returncode=None,reaped_unowned=False,poll=lambda:polls.pop(0))
+ writes=[];term.write=lambda value:writes.append(value) or 1
+ with patch.object(h['os'],'close',lambda descriptor:None):
+  assert term.recover_until_observed()['observed']
+ assert writes==['q'] and not hasattr(term,'recovery_escape_original')
+term=Terminal.__new__(Terminal);term.master=124;term.label='fixture';term.text='';term.exit_reason=None;term.read_observations=[];term.action_phase='preview-await'
+polls=[None,0,0];term.child=types.SimpleNamespace(returncode=None,reaped_unowned=False,poll=lambda:polls.pop(0))
+writes=[];term.write=lambda value:writes.append(value) or 1
+with patch.object(h['os'],'close',lambda descriptor:None):
+ assert term.recover_until_observed()['observed']
+assert writes==['\x1b'] and term.recovery_escape_original['exitObserved']
+assert not term.recovery_escape_original['acknowledged'] and not hasattr(term,'quit_original')
+term=Terminal.__new__(Terminal);term.master=125;term.label='fixture';term.text='old Confirmation cancelled.';term.exit_reason=None;term.read_observations=[];term.action_phase='confirmation-ready'
+polls=[None,None,0,0];term.child=types.SimpleNamespace(returncode=None,reaped_unowned=False,poll=lambda:polls.pop(0))
+write_error=OSError('private-escape');read_error=OSError('private-drain');writes=[]
+def failed_escape(value):
+ assert term.recovery_escape_original['attempted'];writes.append(value);raise write_error
+def failed_drain(seconds):raise read_error
+term.write=failed_escape;term.read=failed_drain
+with patch.object(h['os'],'close',lambda descriptor:None):
+ assert term.recover_until_observed()['observed']
+assert writes==['\x1b'] and not hasattr(term,'quit_original')
+assert not term.recovery_escape_original['acknowledged']
+assert [item['original'] for item in term.lifecycle_originals]==[write_error,read_error]
+print('natural-terminal-recovery-pass')
+`));

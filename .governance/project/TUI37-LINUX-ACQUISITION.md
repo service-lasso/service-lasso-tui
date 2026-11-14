@@ -139,3 +139,46 @@ window; do not hide events by rebasing it. No-operation and terminal-zero stay
 mandatory. Separate closed TUI28/native-producer routes retain historical
 contracts and remain unqualified; this correction neither opens nor qualifies
 them. The earlier failed attempt and its original measured counts stay retained.
+
+## Unclaimed confirmation recovery and action frontier
+
+The 08a742c local attempt passed adverse cases then failed in its first allowed
+action while confirmation ignored q. Its private failed primary remained live.
+That failed diagnostic was manually interrupted with SIGINT after verifying
+its exact executable digest and identity; it remains ABORTED/FAILED, never PASS.
+
+For source-owned pre-submit preview/confirmation phases only, failed recovery
+may request normal Escape once, then drain until a fresh cancellation/dashboard
+acknowledgement after the write before the existing once-only quit request.
+Never combine Escape+q bytes (Alt+q ambiguity), reuse an old acknowledgement,
+or send Escape after submission attempt. No acknowledgement/exit means continued
+custody. Preserve actual exit observation, original expiry and primary failure.
+Five additional closed action-phase markers locate preview/submit/readback
+frontiers without raw terminal/error/value projection.
+
+An actual Bubble Tea input decoder plus production model regression proves q is
+ignored during confirmation, a separate Escape clears the unclaimed preview,
+and only q after acknowledgement quits without creating an operation. The
+fixture-owned pipe is retired after the final decoded key. Complementary real
+PTY tests cover acknowledgement-before-quit and failed-primary preservation.
+
+## Keyboard transport boundary correction
+
+The actual Bubble Tea decoder/model test proves adjacent printable yr is one
+rune message, which cannot satisfy the exact y confirmation key. Likewise a
+batched slash+query does not enter search. The legacy helper must send y alone,
+retain existing authoritative polling, and issue read-retry r only after its
+existing actual error condition. Search begins with standalone slash plus fresh
+Search acknowledgement, then query and individually delimited Enter controls;
+a fresh final Lifecycle/service-detail acknowledgement validates end state.
+Actual decoder/model tests cover batched negative cases, separate keys, ordered
+search/Enter transitions, no mutation during navigation and Escape-before-quit.
+All original confirmation, operation, audit and same-source gates remain.
+
+The ignored-key exercise also uses normal Enter controls to delimit r/j/?/q
+(and trailing Enter before y). Actual decoder/model tests verify all eight keys
+leave the same confirmation and issue no command, followed by exactly one
+controlled submission on standalone y. The native helper snapshots operation
+count and ID set before preview and checks both again after ignored inputs are
+drained, before confirmation; no premature operation can be hidden by cached
+terminal text. Owned runtime URL/token originals remain private explicit inputs.

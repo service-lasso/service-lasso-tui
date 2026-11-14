@@ -8,7 +8,8 @@ OWNER_STAGE_LINES=frozenset(("tui20-native-owner-stage "+label+"\n").encode("asc
     "bound-replacement-probe-enter","bound-replacement-probe-return","missing-credential-enter","missing-credential-return",
     "invalid-credential-enter","invalid-credential-return","denied-credential-enter","denied-credential-return",
     "allowed-five-actions-enter","allowed-five-actions-return","allowed-action-enter","allowed-action-return",
-    "reconnect-enter","reconnect-return","primary-recovery-persist-enter","primary-recovery-persist-return"))
+    "reconnect-enter","reconnect-return","primary-recovery-persist-enter","primary-recovery-persist-return",
+    "action-preview-enter","action-preview-return","action-submit-enter","action-readback-enter","action-readback-return"))
 OWNER_STAGE_MAX=max(map(len,OWNER_STAGE_LINES))
 
 class OwnerStderrCapture:

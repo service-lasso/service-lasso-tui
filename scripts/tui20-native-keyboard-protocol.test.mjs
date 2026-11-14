@@ -15,8 +15,9 @@ def operations(url,token):
 namespace={'time':types.SimpleNamespace(sleep=lambda value:None,monotonic=lambda:clock[0]),'diagnostic_stage':lambda label:stages.append(label),'operations':operations}
 exec(compile(ast.Module(body=functions,type_ignores=[]),'<actual-keyboard-macros>','exec'),namespace)
 class Detail:
- def __init__(self):self.text='old Lifecycle: other old tui20-fixture';self.events=[];self.mode='dashboard'
+ def __init__(self):self.text='old Lifecycle: other old tui20-fixture';self.events=[];self.mode='startup';self.row_ack=False
  def write(self,value):
+  assert self.row_ack,'keyboard input before actual rendered service row'
   self.events.append(('write',value))
   if value=='/':
    assert self.mode=='dashboard';self.mode='search';self.text+=' new Search: '
@@ -27,13 +28,21 @@ class Detail:
   else:raise AssertionError('batched mode key or unexpected keyboard input')
  def wait(self,need,seconds,start=0):
   self.events.append(('wait',need,seconds,start))
+  if need==('tui20-fixture'.ljust(24)+' ',):
+   assert seconds==30 and not self.row_ack
+   assert not all(value in self.text for value in need),'bare ID/history incorrectly supplied readiness'
+   self.events.append(('delayed-row-read',));self.text+=' tui20-fixture'.ljust(25)+' running'
+   self.row_ack=True;self.mode='dashboard'
   assert all(value in self.text[start:] for value in need)
 term=Detail();namespace['detail'](term)
 assert term.mode=='detail'
 assert [event[1] for event in term.events if event[0]=='write']==['/','tui20-fixture\r','\r']
-assert term.events[1][1]==('Search:',) and term.events[1][3]>0
+assert term.events[0][1]==('tui20-fixture'.ljust(24)+' ',) and term.events[0][2]==30
+assert term.events[1]==('delayed-row-read',)
+search=next(event for event in term.events if event[0]=='wait' and event[1]==('Search:',))
+assert search[3]>0
 assert term.events[-1][1]==('Lifecycle:','tui20-fixture')
-assert term.events[-1][3]>term.events[1][3]
+assert term.events[-1][3]>search[3]
 class Action:
  def __init__(self):self.text='';self.writes=[];self.phase_at_write=[];self.reads=0
  def write(self,value):

@@ -278,3 +278,27 @@ the existing non-Linux loader stubs fcntl/pty but not the new termios import.
 Add an equally empty termios module only to that test loader. It supplies no
 TIOCSCTTY implementation or native authority; production imports and matching
 Linux effects stay mandatory. Do not add skips or a production fallback.
+
+## Postmerge startup navigation readiness
+
+PR39 merged normally as d606229 after exact-head hosted acceptance passed.
+The integrated run failed during invalid-credential navigation after about
+25 seconds. A fresh sequential d606229 local probe passed, so that failed
+hosted attempt remains failed rather than being overwritten by a rerun.
+Source/model analysis identifies a startup race consistent with that frontier:
+Runtime identity is rendered while loading and before services are selected;
+Enter before loadedMsg cannot open detail, and later loading does not navigate.
+
+On the issue-scoped follow-up branch from develop, require the actual rendered
+fixture service row before sending any search input. Match its fixed padded
+name from the current list renderer, not an ID/query echo or selected cursor.
+Each detail invocation owns a fresh terminal, so its initial row may be observed
+in accumulated output. Preserve standalone slash, fresh Search acknowledgement,
+separate Enter controls and fresh Lifecycle/fixture acknowledgement. No product
+UI change, sleep, command replay or relaxed deadline/gate is authorized.
+
+An actual decoder/model test must delay loadedMsg, demonstrate the premature
+sequence misses detail and prove readiness-first navigation reaches the fixture
+without mutations. The helper fixture must reject input before row readiness.
+Follow-up delivery requires distinct review, exact-head source/native checks,
+normal develop PR merge and integrated verification; genuine v2 stays closed.

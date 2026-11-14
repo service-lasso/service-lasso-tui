@@ -697,6 +697,9 @@ def bound_replacement_probe(launch_fd,held,executable,inode_identity,digest_iden
                 os.replace(original,executable)
     return results
 def detail(term):
+    # Initial dashboard metadata may render before the service snapshot. A
+    # fixed-width real service row, not bare ID/query echo, precedes any input.
+    term.wait(("tui20-fixture".ljust(24)+" ",),30)
     # BubbleTea may batch contiguous printable runes into one message. Enter
     # search with its standalone key before sending the query and control keys.
     start=len(term.text); term.write("/"); term.wait(("Search:",),20,start)

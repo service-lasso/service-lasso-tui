@@ -1,0 +1,53 @@
+name: Ordinary source local E2E
+on:
+  pull_request:
+    branches: [develop]
+  workflow_dispatch:
+    inputs:
+      core_revision:
+        description: Exact reviewed Core develop revision
+        required: true
+jobs:
+  source-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.23.2'
+      - run: node --test --test-timeout=20000 scripts/local-e2e.test.mjs
+  real-core-compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          path: tui
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: service-lasso/service-lasso
+          ref: ${{ inputs.core_revision || '85a94a131f488faee55dc36efcfb04827a267442' }}
+          path: core-input
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.23.2'
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: tui/go.mod
+      - name: Install Core dependencies without lifecycle scripts
+        working-directory: core-input
+        env:
+          npm_config_cache: ${{ runner.temp }}/core-e2e-npm-cache
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run ordinary real Core compatibility evidence
+        working-directory: tui
+        env:
+          CORE_REVISION: ${{ inputs.core_revision || '85a94a131f488faee55dc36efcfb04827a267442' }}
+        run: node scripts/run-local-e2e.mjs --core-dir "$GITHUB_WORKSPACE/core-input" --expected-core-revision "$CORE_REVISION" --suite compat --output-dir "$RUNNER_TEMP/tui-local-e2e"
+      - name: Retain closed summary only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ordinary-tui-e2e-summary
+          path: ${{ runner.temp }}/tui-local-e2e/summary.json

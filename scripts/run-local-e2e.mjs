@@ -72,6 +72,8 @@ export async function run(options){
   const go=options.go??'go';const stages=[];let backend,connectionFile,connection,stopPromise,coreReceipt,readyReceipt;let stderr=[];
   const summary={schemaVersion:1,suite:options.suite,scope:'ordinary-source-real-backend',status:'failed',stages,platform:process.platform,nativeQualified:false,platformApplicability:process.platform==='darwin'?'exploratory-deferred':'ordinary-required',privacy:publicPrivacy};
   try{
+    const python=options.python??(process.platform==='win32'?'python':'python3');
+    summary.pythonVersion=(await runCommand([python,'--version'],{cwd:repo,env,log:path.join(output,'python-version.private.log')})).trim();
     const npmCLI=await resolveNpmCLI(options['npm-cli']);
     const revision=(await runCommand(['git','rev-parse','HEAD'],{cwd:repo,env,log:path.join(output,'revision.private.log')})).trim();
     if((await runCommand(['git','status','--porcelain'],{cwd:repo,env,log:path.join(output,'status.private.log')})).trim())throw new Error('clean TUI checkout required');
@@ -107,7 +109,7 @@ export async function run(options){
     const modes=options.suite==='all'?['compat','v2']:[options.suite];
     for(const mode of modes){
       if(process.platform==='win32'){await privacyModule.createPrivateDirectory(path.join(output,mode));for(const name of ['terminal.private.ansi','result.json'])await privacyModule.writePrivateFile(path.join(output,mode,name),Buffer.alloc(0));}
-      try{await runCommand([options.python??(process.platform==='win32'?'python':'python3'),'-B',path.join(repo,process.platform==='win32'?'scripts/local-e2e-conpty.py':'scripts/local-e2e-pty.py'),'--binary',binary,'--connection-file',connectionFile,'--output',path.join(output,mode),'--mode',mode,'--observations',path.join(backendOutput,'request-observations.json')],{cwd:repo,env,timeout:60000,log:path.join(output,`${mode}.private.log`)});}catch{/* Read the closed stage result; no raw output enters public summary. */}
+      try{await runCommand([python,'-B',path.join(repo,process.platform==='win32'?'scripts/local-e2e-conpty.py':'scripts/local-e2e-pty.py'),'--binary',binary,'--connection-file',connectionFile,'--output',path.join(output,mode),'--mode',mode,'--observations',path.join(backendOutput,'request-observations.json')],{cwd:repo,env,timeout:60000,log:path.join(output,`${mode}.private.log`)});}catch{/* Read the closed stage result; no raw output enters public summary. */}
       if(process.platform==='win32'){for(const name of ['terminal.private.ansi','result.json'])await privacyModule.verifyPrivateFile(path.join(output,mode,name));}
       const result=JSON.parse(await readFile(path.join(output,mode,'result.json'),'utf8'));stages.push(result);
     }

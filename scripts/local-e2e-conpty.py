@@ -10,6 +10,7 @@ import os
 import pathlib
 import platform
 import select
+import re
 import sys
 import stat
 import time
@@ -19,6 +20,13 @@ try:
     from winpty.ptyprocess import PtyProcess
 except ImportError:
     Backend = PtyProcess = None
+
+
+def terminal_text(body):
+    # ConPTY may insert cursor controls and physical wraps inside a logical line.
+    value = re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]', b'', bytes(body))
+    value = re.sub(rb'\x1b\][^\x07]*?(?:\x07|\x1b\\)', b'', value)
+    return value.replace(b'\r', b'').replace(b'\n', b'')
 
 
 def exact_helper():
@@ -162,8 +170,7 @@ def run_probe(binary, connection, output, mode, observations, raw_handle,
         if mode == 'compat':
             before = len(data)
             key('?')
-            help_line = 'd dashboard • v services • i inbox • p connections • / search • n narrow • r reconnect • esc back • q quit'.encode()
-            wait_for(lambda: help_line in data[before:], 3)
+            wait_for(lambda: all(phrase in terminal_text(data[before:]) for phrase in [b'n narrow', b'esc back']), 3)
             help_state = True
             before = len(data)
             key('\x1b')
@@ -224,7 +231,7 @@ def run_probe(binary, connection, output, mode, observations, raw_handle,
             failure = failure or 'TransportCleanupError'
         raw = output / 'terminal.private.ansi'
         write_prepared(raw_handle, raw, data)
-    leaked = connection['token'].encode() in data
+    leaked = connection['token'].encode() in data or connection['token'].encode() in terminal_text(data)
     result = {'schemaVersion': 1, 'stage': 'terminal', 'mode': mode, 'transport': 'ConPTY',
               'status': 'failed' if failure or overflow or leaked or not reaped or status != 0 or forced else ('blocked' if mode == 'v2' else 'passed'),
               'reason': failure or ('operator-v2-functional-journeys-not-qualified' if mode == 'v2' else None),
@@ -233,6 +240,9 @@ def run_probe(binary, connection, output, mode, observations, raw_handle,
               'actualOwnedWait': reaped, 'socketCleanup': sockets_closed, 'readerJoined': reader_joined, 'exitCode': status, 'forcedCleanup': forced,
               'interruptedForCleanup': interrupted, 'tokenLeaked': leaked,
               'captureOverflow': overflow, 'events': events,
+              'helper': None if factory is not None else {'pythonVersion': platform.python_version(),
+                  'pointerBits': ctypes.sizeof(ctypes.c_void_p) * 8, 'pywinptyVersion': importlib.metadata.version('pywinpty'),
+                  'ptyprocessSourceSHA256': hashlib.sha256(pathlib.Path(inspect.getfile(PtyProcess)).read_bytes()).hexdigest()},
               'qToReapSeconds': reaped_at - q_at if reaped and q_at is not None else None}
     write_prepared(result_handle, output / 'result.json', (json.dumps(result, indent=2) + '\n').encode())
     return result

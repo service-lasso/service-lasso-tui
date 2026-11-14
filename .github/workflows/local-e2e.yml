@@ -7,6 +7,8 @@ on:
       core_revision:
         description: Exact reviewed Core develop revision
         required: true
+env:
+  CORE_REVISION: ${{ inputs.core_revision || '85a94a131f488faee55dc36efcfb04827a267442' }}
 jobs:
   source-contracts:
     runs-on: ubuntu-latest
@@ -16,38 +18,112 @@ jobs:
         with:
           node-version: '22.23.2'
       - run: node --test --test-timeout=20000 scripts/local-e2e.test.mjs
+      - run: python3 -B scripts/local-e2e-conpty.test.py
   real-core-compatibility:
-    runs-on: ubuntu-latest
+    name: ${{ matrix.name }} ordinary compatibility E2E
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-latest
+          - name: Windows ConPTY
+            os: windows-latest
+          - name: macOS exploratory deferred
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           path: tui
+      - name: Require an exact Core source revision
+        run: |
+          if ($env:CORE_REVISION -notmatch '^[a-f0-9]{40}$') { throw 'Exact Core revision required' }
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           repository: service-lasso/service-lasso
-          ref: ${{ inputs.core_revision || '85a94a131f488faee55dc36efcfb04827a267442' }}
+          ref: ${{ env.CORE_REVISION }}
           path: core-input
           persist-credentials: false
+      - name: Bind Core input to develop
+        run: |
+          git -C core-input fetch --no-tags origin develop
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C core-input merge-base --is-ancestor $env:CORE_REVISION origin/develop
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22.23.2'
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
           go-version-file: tui/go.mod
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        if: runner.os == 'Windows'
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        if: runner.os != 'Windows'
+        with:
+          python-version: '3.12'
+      - name: Prepare verified private tool and cache directories
+        shell: bash
+        run: |
+          node --input-type=module <<'JS'
+          import {realpath,appendFile} from 'node:fs/promises';
+          import {tmpdir} from 'node:os';
+          import {randomUUID} from 'node:crypto';
+          import path from 'node:path';
+          import {pathToFileURL} from 'node:url';
+          import {resolveNpmCLI} from './tui/scripts/run-local-e2e.mjs';
+          const privacy=await import(pathToFileURL(path.resolve('core-input/scripts/operator-e2e-fixture-private.mjs')));
+          const temp=await realpath(tmpdir());
+          const prep=path.join(temp,`tui-platform-tools-${randomUUID()}`);
+          await privacy.createPrivateDirectory(prep);
+          const output=path.join(temp,`tui-platform-proof-${randomUUID()}`);
+          const npmCLI=process.platform==='win32'
+            ? await realpath(path.join(path.dirname(process.execPath),'node_modules/npm/bin/npm-cli.js'))
+            : await resolveNpmCLI();
+          await appendFile(process.env.GITHUB_ENV,`TUI_E2E_PREP=${prep}\nTUI_E2E_OUTPUT=${output}\nTUI_E2E_NPM_CLI=${npmCLI}\n`);
+          JS
       - name: Install Core dependencies without lifecycle scripts
         working-directory: core-input
         env:
-          npm_config_cache: ${{ runner.temp }}/core-e2e-npm-cache
-        run: npm ci --ignore-scripts --no-audit --no-fund
+          HOME: ${{ env.TUI_E2E_PREP }}
+          USERPROFILE: ${{ env.TUI_E2E_PREP }}
+          npm_config_cache: ${{ env.TUI_E2E_PREP }}/npm-cache
+        run: |
+          & node $env:TUI_E2E_NPM_CLI ci --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install pinned ConPTY in an owned private virtual environment
+        if: runner.os == 'Windows'
+        env:
+          PIP_CACHE_DIR: ${{ env.TUI_E2E_PREP }}/pip-cache
+        run: |
+          $venv = Join-Path $env:TUI_E2E_PREP 'conpty-venv'
+          python -m venv $venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $python = Join-Path $venv 'Scripts/python.exe'
+          & $python -m pip install --require-hashes --only-binary=:all: --no-deps -r tui/scripts/requirements-conpty.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "TUI_E2E_PYTHON=$python" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Select matching POSIX Python
+        if: runner.os != 'Windows'
+        run: |
+          $python = (Get-Command python).Source
+          "TUI_E2E_PYTHON=$python" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Run ordinary real Core compatibility evidence
         working-directory: tui
-        env:
-          CORE_REVISION: ${{ inputs.core_revision || '85a94a131f488faee55dc36efcfb04827a267442' }}
-        run: node scripts/run-local-e2e.mjs --core-dir "$GITHUB_WORKSPACE/core-input" --expected-core-revision "$CORE_REVISION" --suite compat --output-dir "$RUNNER_TEMP/tui-local-e2e"
-      - name: Retain closed summary only
+        run: |
+          node scripts/run-local-e2e.mjs --core-dir (Join-Path $env:GITHUB_WORKSPACE 'core-input') --expected-core-revision $env:CORE_REVISION --suite compat --output-dir $env:TUI_E2E_OUTPUT --npm-cli $env:TUI_E2E_NPM_CLI --python $env:TUI_E2E_PYTHON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain closed scoped summary only
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: ordinary-tui-e2e-summary
-          path: ${{ runner.temp }}/tui-local-e2e/summary.json
+          name: ordinary-tui-e2e-${{ runner.os }}-summary
+          path: ${{ env.TUI_E2E_OUTPUT }}/summary.json

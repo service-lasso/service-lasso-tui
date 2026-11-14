@@ -163,6 +163,12 @@ class Tests(unittest.TestCase):
             self.assertEqual(called, [])
             self.assertEqual((root / 'terminal.private.ansi').read_bytes(), b'existing-evidence')
 
+    def test_conpty_wrap_and_control_normalization_preserves_visible_secrets(self):
+        body = b'\x1b]11;?\x1b\\visible\r\npri\x1b[31mvate-token-only\x1b[0m'
+        self.assertIn(b'private-token-only', module.terminal_text(body))
+        self.assertIn(b'visible', module.terminal_text(body))
+        self.assertNotIn(b'11;?', module.terminal_text(body))
+
     def test_exit_status_requires_actual_consistent_integer_wait(self):
         class Exited:
             exitstatus = 0

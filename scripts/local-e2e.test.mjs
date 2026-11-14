@@ -4,7 +4,7 @@ import {mkdtemp,writeFile,chmod,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
-import {parseOptions,validateConnection,suitePassed,assertSourceReceipt,assertReadyPaths,command} from './run-local-e2e.mjs';
+import {parseOptions,validateConnection,suitePassed,assertSourceReceipt,assertSelectedTools,assertReadyPaths,command} from './run-local-e2e.mjs';
 
 test('all cannot pass compatibility alone or v2 unavailable',()=>{
  assert.equal(suitePassed('all',[{mode:'compat',status:'passed'},{mode:'v2',status:'blocked'}]),false);
@@ -73,4 +73,10 @@ test('actual command capture uses supplied private writer and retains default ca
   assert.equal(observed.length,1);assert.equal(observed[0].file,log);assert.equal(observed[0].bytes.toString(),output);assert.ok(output.includes('controlled-out'));assert.ok(output.includes('controlled-err'));await assert.rejects(readFile(log),{code:'ENOENT'});
   const fallback=path.join(root,'default.log');await command([process.execPath,'-e',"process.stdout.write('default-capture')"],{cwd:root,env:process.env,log:fallback});assert.equal(await readFile(fallback,'utf8'),'default-capture');
  }finally{await rm(root,{recursive:true});}
+});
+
+test('Core receipts bind actual selected Node and npm path bytes and package version',()=>{
+ const selected={nodeSHA256:'a'.repeat(64),npmCLI:{path:'/actual/npm/bin/npm-cli.js',sha256:'b'.repeat(64),packageVersion:'11.0.0'}};
+ const receipt={tools:structuredClone(selected)};assert.doesNotThrow(()=>assertSelectedTools(receipt,selected));
+ for(const mutate of [row=>row.tools.nodeSHA256='c'.repeat(64),row=>row.tools.npmCLI.path='/foreign/npm-cli.js',row=>row.tools.npmCLI.sha256='d'.repeat(64),row=>row.tools.npmCLI.packageVersion='10.0.0']){const changed=structuredClone(receipt);mutate(changed);assert.throws(()=>assertSelectedTools(changed,selected));}
 });

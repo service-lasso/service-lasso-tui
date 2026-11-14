@@ -229,3 +229,16 @@ recognize readback success and retryable errors only after that boundary. A
 preview diagnostic must never trigger adjacent yr input, and historical success
 must never satisfy a new action. Regressions retain fresh post-submit retries
 and require a read before retry when only a preview error exists.
+
+## Actual shutdown-pipe fault boundary
+
+Hosted 4f1aeeb completed normal five-action acceptance and handoff-timeout
+closure, then failed shutdown-pipe refusal. Both adverse public projections
+exist, so the timeout assertion passed. A matching Node22 process with an actual
+piped stdin proves stdin.destroy() leaves descriptor 0 open after destruction.
+The controlled shutdown-pipe case must close its actual owned input descriptor
+and verify absence before emitting readiness. Preserve natural bounded runtime
+teardown and the observer's actual failed write, wait, zero exit and stream-close
+checks. Never replace those observations with an asserted receipt flag. A real
+subprocess regression must prove the parent write fails while the child remains
+alive, then observe natural exit; normal stdin-controlled shutdown stays intact.

@@ -1,5 +1,71 @@
 """Durable POSIX custody parent for the real Core/JWKS and native PTY owner."""
-import argparse, hashlib, json, os, select, subprocess, sys, time, urllib.request
+import argparse, hashlib, json, os, select, subprocess, sys, threading, time, urllib.request
+
+# Only exact closed source labels may leave the private helper stderr capture.
+# This diagnostic channel supplies no native result, deadline or release proof.
+OWNER_STAGE_LINES=frozenset(("tui20-native-owner-stage "+label+"\n").encode("ascii") for label in (
+    "terminal-normal-close-enter","terminal-normal-close-return","terminal-raw-pid-recovery-enter","terminal-recovery-enter",
+    "bound-replacement-probe-enter","bound-replacement-probe-return","missing-credential-enter","missing-credential-return",
+    "invalid-credential-enter","invalid-credential-return","denied-credential-enter","denied-credential-return",
+    "allowed-five-actions-enter","allowed-five-actions-return","allowed-action-enter","allowed-action-return",
+    "reconnect-enter","reconnect-return","primary-recovery-persist-enter","primary-recovery-persist-return"))
+OWNER_STAGE_MAX=max(map(len,OWNER_STAGE_LINES))
+
+class OwnerStderrCapture:
+    """Live safe diagnostics plus privately retained exact original stderr."""
+    def __init__(self,stream,forward=None):
+        self.stream=stream; self.forward=sys.stderr if forward is None else forward
+        self.raw=[]; self.originals=[]; self.eof=False; self.started=False
+        self.close_attempted=False; self.closed=False; self.finished=False
+        self.thread=None
+    def start(self):
+        try:
+            self.thread=threading.Thread(target=self.read_original)
+            self.thread.start(); self.started=True
+        except BaseException as original: self.originals.append({"stage":"start","original":original})
+    def read_original(self):
+        try: self._read_original()
+        except BaseException as original: self.originals.append({"stage":"capture","original":original})
+    def _read_original(self):
+        frame=bytearray(); oversized=False
+        while True:
+            try: chunk=self.stream.buffer.read1(4096)
+            except BaseException as original:
+                self.originals.append({"stage":"read","original":original}); return
+            self.raw.append(chunk)
+            if not chunk: self.eof=True; return
+            for byte in chunk:
+                if not oversized:
+                    frame.append(byte)
+                    if len(frame)>OWNER_STAGE_MAX: frame.clear(); oversized=True
+                if byte!=10: continue
+                line=bytes(frame)
+                if not oversized and line in OWNER_STAGE_LINES:
+                    # No raw line or exception conversion reaches this output.
+                    try:
+                        returned=self.forward.write(line.decode("ascii"))
+                        if returned!=len(line): raise OSError("diagnostic write incomplete")
+                    except BaseException as original: self.originals.append({"stage":"forward-write","original":original})
+                    try: self.forward.flush()
+                    except BaseException as original: self.originals.append({"stage":"forward-flush","original":original})
+                frame.clear(); oversized=False
+    def finish(self):
+        if self.finished: return
+        # The real owner wait precedes this join. An outstanding inherited pipe
+        # writer still retains this reader and its originals; no timeout closes it.
+        if self.thread is not None and self.thread.ident is not None:
+            try: self.thread.join()
+            except BaseException as original:
+                self.originals.append({"stage":"join","original":original}); return
+        else:
+            # Failed thread acquisition still owns the original pipe and drains
+            # it privately after the same actual owner wait.
+            self.read_original()
+        if not self.close_attempted:
+            self.close_attempted=True
+            try: self.stream.close(); self.closed=True
+            except BaseException as original: self.originals.append({"stage":"close","original":original})
+        self.finished=True
 
 def write_json(path, value):
     with open(path, "w", encoding="utf-8", newline="") as out:
@@ -43,6 +109,9 @@ def close_streams(process):
     """Drain only in memory, then close every observer-owned pipe."""
     for stream in (process.stdin, process.stdout, process.stderr):
         if stream is None: continue
+        capture=getattr(process,"tui20_stderr_capture",None)
+        if stream is process.stderr and capture is not None:
+            capture.finish(); continue
         try:
             if stream in (process.stdout, process.stderr): stream.read()
         except (OSError, ValueError): pass
@@ -108,6 +177,9 @@ def main():
         if args.adverse_owner_death: command.append("--adverse-owner-death")
         ready["_runtimePID"]=runtime.pid; ready["_runtimeBirth"]=runtime_birth
         owner=subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        # Root the original capture before any fallible birth or receipt read.
+        owner.tui20_stderr_capture=OwnerStderrCapture(owner.stderr)
+        owner.tui20_stderr_capture.start()
         owner_birth=process_birth(owner.pid)
         write_private(args.root,"witness",{"observerPID":os.getpid(),"recoveryOwnerPID":owner.pid,"recoveryOwnerBirth":owner_birth,"runtimePID":runtime.pid,"runtimeBirth":runtime_birth,"sourceCommit":args.source_commit,"binarySHA256":binary_sha256,"ownerStarted":True})
         owner.stdin.write(json.dumps(ready,separators=(",",":"))+"\n"); owner.stdin.close()
@@ -130,11 +202,12 @@ def main():
         except Exception:
             custody_failure="owner_finalization_receipt_invalid_or_missing"
         if not owner_birth_absent: custody_failure="owner_birth_absence_unproven"
+        if owner.tui20_stderr_capture.originals or not owner.tui20_stderr_capture.eof or not owner.tui20_stderr_capture.closed: custody_failure="owner_stderr_capture_failed"
         private_tuple={"observerPID":os.getpid(),"observerBirth":process_birth(os.getpid()),"recoveryOwnerPID":owner.pid,"ownerBirth":owner_birth,"runtimePID":runtime.pid,"runtimeBirth":runtime_birth,"sourceCommit":args.source_commit,"binarySHA256":binary_sha256}
         if live is not None:
             if live.get("externalOwnerPID")!=owner.pid or live.get("coreRuntimePID")!=runtime.pid or live.get("sourceCommit")!=args.source_commit or live.get("binarySHA256")!=binary_sha256 or live.get("ownerBirth")!=owner_birth or live.get("runtimeBirth")!=runtime_birth: custody_failure="owner_runtime_tui_custody_mismatch"
             private_tuple.update({"tuiChildPID":live.get("tuiChildPID"),"tuiChildBirth":live.get("tuiChildBirth"),"ownerPhase":live.get("phase")})
-        close={**private_tuple,"recoveryOwnerActualExit":status if status>=0 else None,"recoveryOwnerActualSignal":-status if status<0 else None,"actualWaitObserved":True,"ownerBirthAbsentObserved":owner_birth_absent,"ownerStdoutClosed":True,"ownerStderrClosed":True}
+        close={**private_tuple,"recoveryOwnerActualExit":status if status>=0 else None,"recoveryOwnerActualSignal":-status if status<0 else None,"actualWaitObserved":True,"ownerBirthAbsentObserved":owner_birth_absent,"ownerStdoutClosed":True,"ownerStderrClosed":getattr(getattr(owner,"tui20_stderr_capture",None),"closed",False)}
         write_private(args.root,"owner-closed",close)
         if status != 0 and (status < 0 or (live is not None and live.get("phase")=="owner_death_live")):
             externally_reaped=False
@@ -187,7 +260,7 @@ def main():
             except (OSError,ValueError): pass
             status=owner.wait(); close_streams(owner)
             owner_absent=birth_absent(owner.pid,owner_birth)
-            owner_close={"observerPID":os.getpid(),"recoveryOwnerPID":owner.pid,"ownerBirth":owner_birth,"recoveryOwnerActualExit":status if status>=0 else None,"recoveryOwnerActualSignal":-status if status<0 else None,"actualWaitObserved":True,"ownerBirthAbsentObserved":owner_absent,"ownerStdoutClosed":True,"ownerStderrClosed":True}
+            owner_close={"observerPID":os.getpid(),"recoveryOwnerPID":owner.pid,"ownerBirth":owner_birth,"recoveryOwnerActualExit":status if status>=0 else None,"recoveryOwnerActualSignal":-status if status<0 else None,"actualWaitObserved":True,"ownerBirthAbsentObserved":owner_absent,"ownerStdoutClosed":True,"ownerStderrClosed":getattr(getattr(owner,"tui20_stderr_capture",None),"closed",False)}
         if result is None or lifecycle_failed:
             # Acquisition/birth/launch/write errors still close and wait the
             # actual held child; missing birth is explicitly unproven absence.

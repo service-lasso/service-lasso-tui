@@ -49,3 +49,20 @@ originals and current exact-command admission. Host availability alone grants no
 Host inspection: command -v finds no Go or clang; /usr/local/bin/node resolves to /opt/node-v24.21.0-linux-x64/bin/node, not the required Node 22.23.2. No Go/native build or proof command has run. Static git diff --check passes. Authentic input originals remain unavailable.
 
 Bounded source validation: `node --test scripts/linux-candidate-executor.test.mjs scripts/file-backed-command-completion.test.mjs scripts/candidate-profile-source.test.mjs` passed 18/18, zero skips, on the available Node24 host. This is not Node22.23.2 matching-toolchain or native proof. Independent source review remains required before landing.
+
+## Effective lifecycle diagnostic continuation
+
+The current user explicitly requests fixing the inherited lifecycle stall and
+landing PR39. Actual legacy CI is tui20-native-core.mjs -> tui20 observer.
+Add literal helper stage markers plus a concurrent SAME stderr collector in
+the actual tui20 observer: retain every raw chunk/read/forward original privately,
+forward only exact complete allowlisted literal lines before helper exit, and
+join the sole reader before once-close. No competing read, raw error projection,
+forced shutdown, changed deadline, skipped proof, source pin or success shortcut.
+Real child tests must prove early marker visibility, secret/nonexact-line denial,
+raw retention and read/forward failure custody. These changes diagnose, never
+qualify, the legacy compat fixture. Review and focused tests precede pushes.
+
+Matching Go1.26.0 and Node22.23.2 are being acquired into an owned user cache
+from official distributions with published digest verification to reproduce the
+legacy matching-host probe; this grants no genuine v2 input/entry authority.

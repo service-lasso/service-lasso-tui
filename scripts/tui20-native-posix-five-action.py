@@ -3,7 +3,15 @@ import argparse, ctypes, fcntl, hashlib, json, os, pty, select, signal, stat, su
 
 ALLOWED_ENV=("HOME","LANG","LC_ALL","PATH","SHELL","TERM","TMPDIR","USER")
 OWNED_TERMINALS=[]
+DIAGNOSTIC_ORIGINALS=[]
 SAFE_CONFIGURATION_DIAGNOSTIC="connection configuration unavailable; check profile settings"
+
+def diagnostic_stage(label):
+    """Only source-literal labels reach this non-sensitive progress channel."""
+    try: sys.stderr.write("tui20-native-owner-stage "+label+"\n")
+    except (OSError,ValueError) as original: DIAGNOSTIC_ORIGINALS.append(original)
+    try: sys.stderr.flush()
+    except (OSError,ValueError) as original: DIAGNOSTIC_ORIGINALS.append(original)
 def assert_safe_missing_credential(text,env):
     """Inspect captured bytes in memory; never include private values in failures."""
     if SAFE_CONFIGURATION_DIAGNOSTIC not in text: raise RuntimeError("safe configuration diagnostic unavailable")
@@ -175,6 +183,7 @@ class Terminal:
                 raise TerminalUnresolved(self,"owned terminal was reaped without an observable exit status")
         raise RuntimeError("missing terminal state")
     def close(self,expected=0):
+        diagnostic_stage("terminal-normal-close-enter")
         current=self.child.poll()
         if current is None and not self.child.reaped_unowned: self.write("q")
         try: result=self.child.wait(timeout=10)
@@ -191,8 +200,10 @@ class Terminal:
         reason=terminal_exit_reason(result)
         self.exit_reason=reason
         if result!=expected: raise RuntimeError("unexpected terminal exit")
+        diagnostic_stage("terminal-normal-close-return")
         return reason
     def recover_raw_pid_until_observed(self):
+        diagnostic_stage("terminal-raw-pid-recovery-enter")
         owner=self.acquisition
         observations=owner.setdefault("waitObservations",[])
         while True:
@@ -223,6 +234,7 @@ class Terminal:
             time.sleep(.02)
     def recover_until_observed(self):
         """Keep this helper, its PTY, and its held launch object alive until exit."""
+        diagnostic_stage("terminal-recovery-enter")
         if self.child.reaped_unowned:
             os.close(self.master)
             return {"terminal":self.label,"outcome":"terminal_unknown","recovery":"child_reaped_unowned","observed":False}
@@ -737,7 +749,9 @@ def retain_primary_and_recover(root,outcome,terminal):
     terminal.exit_reason=terminal.exit_reason or "terminal_unknown"
     if not any(item.get("terminal")==terminal.label and item.get("exit")==terminal.exit_reason for item in outcome["terminals"]): outcome["terminals"].append({"terminal":terminal.label,"exit":terminal.exit_reason})
     outcome["failureReason"]="native_harness_assertion_failed"
+    diagnostic_stage("primary-recovery-persist-enter")
     persist_primary_outcome(root,outcome)
+    diagnostic_stage("primary-recovery-persist-return")
     outcome["recoveryObservation"]=terminal.recover_until_observed()
     return True
 def main(observation=None):
@@ -824,19 +838,31 @@ def _main_attempt(observation):
         for profile,label,expected,audit_expected in (("missing","missing-credential",2,0),("invalid","invalid-credential",0,0),("denied","scope-denied",0,5)):
             count=len(operations(url,token)); audit=audit_count(url,token)
             if profile=="missing":
+                diagnostic_stage("bound-replacement-probe-enter")
                 outcome["heldExecutableBinding"]["replacementProbe"]=bound_replacement_probe(launch_fd,held,args.executable,held_inode,identity,profile,env,observation.setdefault("replacementProbe",[]))
+                diagnostic_stage("bound-replacement-probe-return")
+                diagnostic_stage("missing-credential-enter")
                 term=Terminal(launch_fd,args.executable,profile,env); term.wait((SAFE_CONFIGURATION_DIAGNOSTIC,),30)
             else:
+                if profile=="invalid": diagnostic_stage("invalid-credential-enter")
+                else: diagnostic_stage("denied-credential-enter")
                 term=Terminal(launch_fd,args.executable,profile,env); term.wait(("Runtime identity:",),30); detail(term); term.write("i"); term.wait(("Runtime API unavailable:",),30)
             outcome["terminals"].append({"terminal":label,"exit":term.close(expected)})
-            if profile=="missing": assert_safe_missing_credential(term.text,env)
+            if profile=="missing":
+                assert_safe_missing_credential(term.text,env)
+                diagnostic_stage("missing-credential-return")
+            elif profile=="invalid": diagnostic_stage("invalid-credential-return")
+            else: diagnostic_stage("denied-credential-return")
             after=len(operations(url,token)); audit_after=audit_count(url,token); adverse.append({"case":label,"beforeOperationCount":count,"afterOperationCount":after,"noOperation":after==count,"coreDeniedAuditBefore":audit,"coreDeniedAuditAfter":audit_after,"coreDeniedAuditDelta":audit_after-audit})
             if after!=count or audit_after-audit!=audit_expected: raise RuntimeError("adverse lifecycle receipt invalid")
+        diagnostic_stage("allowed-five-actions-enter")
         term=Terminal(launch_fd,args.executable,"native",env); term.wait(("Runtime identity:",),30); detail(term)
         action_readbacks=[]; known_ids={record.get("operationId") for record in operations(url,token)}
         expected_by_ui={"install":"service_install","config":"service_configure","start":"service_start","stop":"service_stop","restart":"service_restart"}
         for key,name in (("i","install"),("c","config"),("s","start"),("x","stop"),("R","restart")):
+            diagnostic_stage("allowed-action-enter")
             action(term,key,name)
+            diagnostic_stage("allowed-action-return")
             current=operations(url,token); added=[record for record in current if record.get("operationId") not in known_ids]
             if len(added)!=1 or added[0].get("action")!=expected_by_ui[name] or added[0].get("targetIds")!=["tui20-fixture"]: raise RuntimeError("per-action durable readback invalid")
             known_ids.add(added[0]["operationId"]); action_readbacks.append({key:added[0].get(key) for key in ("operationId","action","targetIds","status","outcome","cancellationSupported")})
@@ -845,7 +871,10 @@ def _main_attempt(observation):
         outcome["terminals"].append({"terminal":"allowed","exit":term.close()})
         runtime_pid=runtime.pid if runtime is not None else runtime_handoff["_runtimePID"]; runtime_birth=runtime.tui20_birth if runtime is not None else runtime_handoff["_runtimeBirth"]
         write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"coreRuntimePID":runtime_pid,"runtimeBirth":runtime_birth,"tuiChildPID":term.child.pid,"tuiChildBirth":term.child.tui20_birth,"sourceCommit":identity["sourceCommit"],"binarySHA256":identity["binarySHA256"],"phase":"normal_q_exit","immutableExecutionHeld":True,"ptyHeld":False})
+        diagnostic_stage("allowed-five-actions-return")
+        diagnostic_stage("reconnect-enter")
         term=Terminal(launch_fd,args.executable,"native",env); term.wait(("Runtime identity:",),30); detail(term); outcome["terminals"].append({"terminal":"reconnect","exit":term.close()})
+        diagnostic_stage("reconnect-return")
         records=[{key:record.get(key) for key in ("operationId","action","targetIds","status","outcome","cancellationSupported")} for record in operations(url,token) if record.get("targetIds")==["tui20-fixture"]]
         expected=["service_restart","service_stop","service_start","service_configure","service_install"]
         operation_ids=[item["operationId"] for item in records]

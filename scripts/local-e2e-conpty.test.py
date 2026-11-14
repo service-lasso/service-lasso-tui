@@ -43,12 +43,14 @@ class Reader:
 
 
 class Terminal:
-    def __init__(self, clock, observations, fail_quit=False, leak=False, stuck_reader=False):
+    def __init__(self, clock, observations, fail_quit=False, leak=False, stuck_reader=False, missing_cleanup=False):
         self.clock, self.observations = clock, observations
         self.fail_quit = fail_quit
         self.fileobj = Socket(self)
         self._server = Socket(self)
         self._thread = Reader(stuck_reader)
+        if missing_cleanup:
+            del self._server
         self.chunks = [b'Runtime: ok (API up)\nServices\n' + (b'private-token-only' if leak else b'')]
         self.exit_at = None
         self.exitstatus = 0
@@ -100,10 +102,14 @@ class Tests(unittest.TestCase):
             def selected(readers, writers, errors, seconds):
                 clock.sleep(seconds)
                 return readers, [], []
+            (root / 'proof').mkdir(mode=0o700)
+            (root / 'proof' / 'terminal.private.ansi').write_bytes(b'')
+            (root / 'proof' / 'result.json').write_bytes(b'')
             result = module.probe(root / 'tui.exe', {'url': 'http://127.0.0.1:12345', 'token': 'private-token-only'}, root / 'proof', 'compat', observations,
                                   factory=factory, select_fn=selected, clock=clock.now, sleep=clock.sleep)
             self.assertTrue(terminal.fileobj.closed)
-            self.assertTrue(terminal._server.closed)
+            if hasattr(terminal, '_server'):
+                self.assertTrue(terminal._server.closed)
             self.assertNotIn('private-token-only', json.dumps(result))
             self.assertTrue(environment['APPDATA'].startswith(str(root / 'proof')))
             return result, terminal
@@ -139,6 +145,23 @@ class Tests(unittest.TestCase):
         result, _ = self.run_probe(stuck_reader=True)
         self.assertEqual(result['status'], 'failed')
         self.assertFalse(result['readerJoined'])
+
+    def test_missing_cleanup_field_still_writes_failed_closed_result(self):
+        result, _ = self.run_probe(missing_cleanup=True)
+        self.assertEqual(result['status'], 'failed')
+        self.assertFalse(result['socketCleanup'])
+
+    def test_nonempty_prepared_file_refuses_before_token_child_spawn(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            (root / 'terminal.private.ansi').write_bytes(b'existing-evidence')
+            (root / 'result.json').write_bytes(b'')
+            called = []
+            with self.assertRaises(RuntimeError):
+                module.probe(root / 'tui.exe', {'url': 'http://127.0.0.1:12345', 'token': 'private-token-only'}, root,
+                             'compat', root / 'observations.json', factory=lambda *_: called.append(True))
+            self.assertEqual(called, [])
+            self.assertEqual((root / 'terminal.private.ansi').read_bytes(), b'existing-evidence')
 
     def test_exit_status_requires_actual_consistent_integer_wait(self):
         class Exited:

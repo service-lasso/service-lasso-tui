@@ -3,12 +3,15 @@
 import argparse
 import ctypes
 import importlib.metadata
+import hashlib
+import inspect
 import json
 import os
 import pathlib
 import platform
 import select
 import sys
+import stat
 import time
 
 try:
@@ -22,7 +25,9 @@ def exact_helper():
     return (os.name == 'nt' and sys.version_info[:2] == (3, 12)
             and ctypes.sizeof(ctypes.c_void_p) == 8
             and platform.machine().lower().replace('_', '') in ('amd64', 'x8664')
-            and importlib.metadata.version('pywinpty') == '3.0.5')
+            and importlib.metadata.version('pywinpty') == '3.0.5'
+            and hashlib.sha256(pathlib.Path(inspect.getfile(PtyProcess)).read_bytes()).hexdigest()
+            == '52a9ab4b0e8de72d775a96587982530f9e70e009ab89d11faf703093eb1c8988')
 
 
 def observed_exit(process):
@@ -38,9 +43,42 @@ def observed_exit(process):
     return code
 
 
+def prepared_file(handle, file):
+    actual, named = os.fstat(handle.fileno()), file.lstat()
+    if (file.is_symlink() or not stat.S_ISREG(actual.st_mode) or actual.st_size != 0
+            or getattr(named, 'st_file_attributes', 0) & 0x400
+            or (actual.st_dev, actual.st_ino) != (named.st_dev, named.st_ino)):
+        raise RuntimeError('parent-prepared empty private file required')
+
+
+def write_prepared(handle, file, body):
+    before = os.fstat(handle.fileno())
+    handle.seek(0)
+    handle.write(body)
+    handle.truncate()
+    handle.flush()
+    os.fsync(handle.fileno())
+    after = file.lstat()
+    if file.is_symlink() or (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
+        raise RuntimeError('prepared output identity changed')
+
+
 def probe(binary, connection, output, mode, observations, factory=None,
           select_fn=select.select, clock=time.monotonic, sleep=time.sleep):
-    output.mkdir(mode=0o700, parents=False, exist_ok=False)
+    # Parent creates the protected stage directory and empty files through the
+    # shared Core private writer before this token-bearing process is launched.
+    if not output.is_dir() or output.is_symlink():
+        raise RuntimeError('parent-prepared private output required')
+    raw_file, result_file = output / 'terminal.private.ansi', output / 'result.json'
+    with raw_file.open('r+b') as raw_handle, result_file.open('r+b') as result_handle:
+        prepared_file(raw_handle, raw_file)
+        prepared_file(result_handle, result_file)
+        return run_probe(binary, connection, output, mode, observations,
+                         raw_handle, result_handle, factory, select_fn, clock, sleep)
+
+
+def run_probe(binary, connection, output, mode, observations, raw_handle,
+              result_handle, factory, select_fn, clock, sleep):
     config = output / 'config'
     config.mkdir()
     for name in ['roaming', 'local', 'tmp', 'home']:
@@ -61,7 +99,6 @@ def probe(binary, connection, output, mode, observations, factory=None,
         process = factory(argv, env)
     # pywinpty3.0.5 exposes its actual reader socket as fileobj. Read bytes
     # directly to avoid PtyProcess.read's unbounded UTF-8 continuation recv.
-    process.fileobj.settimeout(.1)
     data = bytearray()
     events = []
     reaped, status, reaped_at, overflow = False, None, None, False
@@ -114,6 +151,7 @@ def probe(binary, connection, output, mode, observations, factory=None,
     q_at = None
     forced, interrupted = False, False
     try:
+        process.fileobj.settimeout(.1)
         marker = b'Runtime: ok (API up)' if mode == 'compat' else b'Service Lasso  operator/v2'
         wait_for(lambda: marker in data, 20)
         if mode == 'v2':
@@ -172,17 +210,20 @@ def probe(binary, connection, output, mode, observations, factory=None,
             except Exception:
                 failure = failure or 'TerminalCloseError'
         sockets_closed = True
-        for owned_socket in [process.fileobj, process._server]:
+        for socket_name in ['fileobj', '_server']:
             try:
-                owned_socket.close()
+                getattr(process, socket_name).close()
             except Exception:
                 sockets_closed = False
-        process._thread.join(timeout=2)
-        reader_joined = not process._thread.is_alive()
+        try:
+            process._thread.join(timeout=2)
+            reader_joined = not process._thread.is_alive()
+        except Exception:
+            reader_joined = False
         if not sockets_closed or not reader_joined:
             failure = failure or 'TransportCleanupError'
         raw = output / 'terminal.private.ansi'
-        raw.write_bytes(data)  # Inherits the verified private evidence-root DACL.
+        write_prepared(raw_handle, raw, data)
     leaked = connection['token'].encode() in data
     result = {'schemaVersion': 1, 'stage': 'terminal', 'mode': mode, 'transport': 'ConPTY',
               'status': 'failed' if failure or overflow or leaked or not reaped or status != 0 or forced else ('blocked' if mode == 'v2' else 'passed'),
@@ -193,7 +234,7 @@ def probe(binary, connection, output, mode, observations, factory=None,
               'interruptedForCleanup': interrupted, 'tokenLeaked': leaked,
               'captureOverflow': overflow, 'events': events,
               'qToReapSeconds': reaped_at - q_at if reaped and q_at is not None else None}
-    (output / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
+    write_prepared(result_handle, output / 'result.json', (json.dumps(result, indent=2) + '\n').encode())
     return result
 
 

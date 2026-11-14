@@ -903,9 +903,14 @@ def _main_attempt(observation):
                 diagnostic_stage("bound-replacement-probe-return")
                 diagnostic_stage("missing-credential-enter")
                 term=Terminal(launch_fd,args.executable,profile,env); term.wait((SAFE_CONFIGURATION_DIAGNOSTIC,),30)
+            elif profile=="invalid":
+                diagnostic_stage("invalid-credential-enter")
+                # Authentication denial prevents service-list acquisition; no
+                # unavailable service is selected or used to request a mutation.
+                term=Terminal(launch_fd,args.executable,profile,env)
+                term.wait(("Runtime authentication denied:",),30)
             else:
-                if profile=="invalid": diagnostic_stage("invalid-credential-enter")
-                else: diagnostic_stage("denied-credential-enter")
+                diagnostic_stage("denied-credential-enter")
                 term=Terminal(launch_fd,args.executable,profile,env); term.wait(("Runtime identity:",),30); detail(term); term.write("i"); term.wait(("Runtime API unavailable:",),30)
             outcome["terminals"].append({"terminal":label,"exit":term.close(expected)})
             if profile=="missing":

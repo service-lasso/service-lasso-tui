@@ -79,3 +79,22 @@ indefinitely. No kill or false primary success. Real PTY tests must demonstrate
 output-backpressure drain, direct reaping and failed primary retention.
 A local prepare attempt built pinned Core successfully but refused dirty TUI
 source; it is failed diagnostic preparation, not proof.
+
+## Observed invalid-credential fixture mismatch
+
+The local legacy probe at bb4bf4645b94af329c0125066333165488b95df2 built
+from clean source and pinned Core, passed replacement/missing-credential stages,
+then failed at invalid-credential and recovered via observed natural exit.
+It returned failure without the former indefinite stall. Correct the invalid
+credential journey to observe the exact safe 401 authentication-denied dashboard
+state; an unauthorized connection cannot navigate service detail. Retain actual
+zero-operation, zero-audit and terminal-zero expectations. Do not replace these
+with generic error acceptance. Permission-denied assertions remain separately
+verified against actual scoped Core behavior.
+
+Go1.26 VCS discovery recognizes .git directories, not managed worktree .git
+files. The detached validation worktree therefore produced no VCS stamp and
+failed the required metadata grep. A clean issue-branch-only validation clone
+with a .git directory passed metadata verification; no stamp guard was bypassed.
+
+Regression evidence includes actual HTTP service-read responses for 401, 403 and 503, exact distinct safe titles, no returned services, no raw response body presentation, and exactly one GET. The invalid-terminal fixture must issue no detail/install interaction and retain zero-operation/audit and actual terminal-exit assertions.

@@ -51,8 +51,9 @@ export async function run(options){
   const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
   const output=options['output-dir']?path.resolve(options['output-dir']):await mkdtemp(path.join(tmpdir(),'tui-local-e2e-'));
   if(options['output-dir'])await mkdir(output,{mode:0o700});
-  const env={...process.env,GOWORK:'off',GOFLAGS:'',GOTOOLCHAIN:'local'};
-  const go=options.go??'go';const stages=[];let backend,connectionFile,connection,stopPromise,coreReceipt;let stderr=[];
+  const privateHome=path.join(output,'home'),privateTmp=path.join(output,'tmp');await mkdir(privateHome,{mode:0o700});await mkdir(privateTmp,{mode:0o700});
+  const env={PATH:process.env.PATH,LANG:'C.UTF-8',...(process.env.SystemRoot?{SystemRoot:process.env.SystemRoot}:{}),HOME:privateHome,USERPROFILE:privateHome,XDG_CONFIG_HOME:path.join(privateHome,'config'),XDG_CACHE_HOME:path.join(privateHome,'cache'),GOCACHE:path.join(output,'go-cache'),GOMODCACHE:path.join(output,'go-mod'),GOPATH:path.join(output,'go'),TMPDIR:privateTmp,TEMP:privateTmp,TMP:privateTmp,GOWORK:'off',GOFLAGS:'',GOTOOLCHAIN:'local'};
+  const go=options.go??'go';const stages=[];let backend,connectionFile,connection,stopPromise,coreReceipt,readyReceipt;let stderr=[];
   const summary={schemaVersion:1,suite:options.suite,scope:'ordinary-source-real-backend',status:'failed',stages,platform:process.platform,nativeQualified:false};
   try{
     if(process.platform==='win32'){summary.status='blocked';summary.reason='matching-host ConPTY adapter required';return summary;}
@@ -64,7 +65,7 @@ export async function run(options){
     summary.tuiRevision=revision;summary.tuiArtifactSHA256=digest(await readFile(binary));stages.push({stage:'source-build',status:'passed'});
     const helper=path.resolve(options['core-fixture-helper']??path.join(options['core-dir'],'scripts/operator-e2e-fixture.mjs'));
     const backendOutput=path.join(output,'backend');
-    backend=spawn(process.execPath,[helper,'--core-dir',path.resolve(options['core-dir']),'--expected-core-revision',options['expected-core-revision'],'--output-dir',backendOutput,'--build-core'],{stdio:['pipe','pipe','pipe']});
+    backend=spawn(process.execPath,[helper,'--core-dir',path.resolve(options['core-dir']),'--expected-core-revision',options['expected-core-revision'],'--output-dir',backendOutput,'--build-core'],{env,stdio:['pipe','pipe','pipe']});
     stderr=[];let stderrSize=0,stderrOverflow=false;backend.stderr.on('data',x=>{stderrSize+=x.length;if(stderrSize<=8*1024*1024)stderr.push(x);else stderrOverflow=true;});let backendError;
     backend.on('error',e=>{backendError=e;});backend.stdin.on('error',e=>{backendError=e;});
     stopPromise=new Promise(resolve=>backend.on('close',(code,signal)=>resolve({code,signal,error:Boolean(backendError)||stderrOverflow})));
@@ -77,7 +78,7 @@ export async function run(options){
       backend.on('error',()=>{clearTimeout(timer);reject(new Error('backend spawn failed'));});
     });
     await assertReadyPaths(ready,backendOutput);coreReceipt=ready.receiptFile;
-    const receipt=JSON.parse(await readFile(coreReceipt,'utf8'));assertSourceReceipt(receipt,options['expected-core-revision']);
+    const receipt=JSON.parse(await readFile(coreReceipt,'utf8'));readyReceipt=receipt;assertSourceReceipt(receipt,options['expected-core-revision']);
     for(const [file,field] of [['source-inputs.json','sourceInputSHA256'],['artifact-inventory.json','artifactInventorySHA256']]){const bytes=await readFile(path.join(backendOutput,file),'utf8');const rows=JSON.parse(bytes);if(digest(JSON.stringify(rows))!==receipt[field]||!Array.isArray(rows)||!rows.length)throw new Error('backend inventory correspondence failed');if(file==='artifact-inventory.json'&&!rows.some(row=>row.path==='dist/server/index.js'&&row.sha256===receipt.coreArtifactSHA256))throw new Error('actual Core artifact not in inventory');}
     connectionFile=ready.connectionFile;connection=await validateConnection(connectionFile);if(receipt.url!==connection.url)throw new Error('backend connection mismatch');
     summary.coreRevision=receipt.coreRevision;summary.coreArtifactSHA256=receipt.coreArtifactSHA256;
@@ -94,7 +95,7 @@ export async function run(options){
     summary.status=stages.some(row=>row.status==='failed')?'failed':suitePassed(options.suite,stages)?'passed':'blocked';
   }catch{summary.status='failed';summary.reason='stage-failed-see-private-evidence';}
   finally{
-    if(backend){backend.stdin.end('stop\n');try{const outcome=await stopBound(backend,stopPromise);await writeFile(path.join(output,'backend-stderr.private.log'),Buffer.concat(stderr),{mode:0o600});const closed=JSON.parse(await readFile(coreReceipt??path.join(output,'backend','receipt.json'),'utf8'));const cleanup=closed.cleanup;const verified=outcome.code===0&&!outcome.signal&&!outcome.error&&!outcome.forced&&closed.status==='passed'&&closed.stage==='closed'&&cleanup?.status==='complete'&&cleanup.serverClosed===true&&cleanup.portClosed===true&&cleanup.parentPortClosed===true&&cleanup.credentialRemoved===true&&cleanup.forcedTermination===false&&(!connection||await portClosed(connection.url));stages.push({stage:'backend-stop',status:verified?'passed':'failed'});if(!verified)summary.status='failed';}catch{stages.push({stage:'backend-stop',status:'failed'});summary.status='failed';}}
+    if(backend){backend.stdin.end('stop\n');try{const outcome=await stopBound(backend,stopPromise);await writeFile(path.join(output,'backend-stderr.private.log'),Buffer.concat(stderr),{mode:0o600});const closed=JSON.parse(await readFile(coreReceipt??path.join(output,'backend','receipt.json'),'utf8'));assertSourceReceipt(closed,options['expected-core-revision']);const sourceFields=['schemaVersion','coreRevision','coreTree','coreArtifactSHA256','sourceInputSHA256','artifactInventorySHA256','classification','cleanSource','initializationAPI','build','tools','installedDependencies','url'];if(sourceFields.some(field=>JSON.stringify(closed[field])!==JSON.stringify(readyReceipt?.[field])))throw new Error('Core source identity changed across attempt');const cleanup=closed.cleanup;const verified=outcome.code===0&&!outcome.signal&&!outcome.error&&!outcome.forced&&closed.status==='passed'&&closed.stage==='closed'&&cleanup?.status==='complete'&&cleanup.serverClosed===true&&cleanup.portClosed===true&&cleanup.parentPortClosed===true&&cleanup.credentialRemoved===true&&cleanup.parentCredentialRemoved===true&&cleanup.forcedTermination===false&&(!connection||await portClosed(connection.url));stages.push({stage:'backend-stop',status:verified?'passed':'failed'});if(!verified)summary.status='failed';}catch{stages.push({stage:'backend-stop',status:'failed'});summary.status='failed';}}
     if(connectionFile){try{await stat(connectionFile);summary.credentialRemoved=false;summary.status='failed';}catch(e){summary.credentialRemoved=e.code==='ENOENT';if(!summary.credentialRemoved)summary.status='failed';}}
     // Defend against accidental token inclusion in any public projection.
     if(connection&&JSON.stringify(summary).includes(connection.token))throw new Error('private token entered summary');

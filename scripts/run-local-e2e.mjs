@@ -68,6 +68,7 @@ export async function run(options){
     stderr=[];let stderrSize=0,stderrOverflow=false;backend.stderr.on('data',x=>{stderrSize+=x.length;if(stderrSize<=8*1024*1024)stderr.push(x);else stderrOverflow=true;});let backendError;
     backend.on('error',e=>{backendError=e;});backend.stdin.on('error',e=>{backendError=e;});
     stopPromise=new Promise(resolve=>backend.on('close',(code,signal)=>resolve({code,signal,error:Boolean(backendError)||stderrOverflow})));
+    let stdoutSize=0;backend.stdout.on('data',chunk=>{stdoutSize+=chunk.length;if(stdoutSize>16384){backendError=new Error('backend protocol ceiling');backend.stdin.end('stop\n');backend.stdout.destroy();}});
     const lines=createInterface({input:backend.stdout});
     const ready=await new Promise((resolve,reject)=>{
       const timer=setTimeout(()=>reject(new Error('backend readiness deadline')),180000);
@@ -77,7 +78,7 @@ export async function run(options){
     });
     await assertReadyPaths(ready,backendOutput);coreReceipt=ready.receiptFile;
     const receipt=JSON.parse(await readFile(coreReceipt,'utf8'));assertSourceReceipt(receipt,options['expected-core-revision']);
-    for(const [file,field] of [['source-inputs.json','sourceInputSHA256'],['artifact-inventory.json','artifactInventorySHA256']]){const bytes=await readFile(path.join(backendOutput,file),'utf8');if(digest(JSON.stringify(JSON.parse(bytes)))!==receipt[field])throw new Error('backend inventory correspondence failed');}
+    for(const [file,field] of [['source-inputs.json','sourceInputSHA256'],['artifact-inventory.json','artifactInventorySHA256']]){const bytes=await readFile(path.join(backendOutput,file),'utf8');const rows=JSON.parse(bytes);if(digest(JSON.stringify(rows))!==receipt[field]||!Array.isArray(rows)||!rows.length)throw new Error('backend inventory correspondence failed');if(file==='artifact-inventory.json'&&!rows.some(row=>row.path==='dist/server/index.js'&&row.sha256===receipt.coreArtifactSHA256))throw new Error('actual Core artifact not in inventory');}
     connectionFile=ready.connectionFile;connection=await validateConnection(connectionFile);if(receipt.url!==connection.url)throw new Error('backend connection mismatch');
     summary.coreRevision=receipt.coreRevision;summary.coreArtifactSHA256=receipt.coreArtifactSHA256;
     const identities=[];
@@ -90,7 +91,7 @@ export async function run(options){
       try{await command(['python3',path.join(repo,'scripts/local-e2e-pty.py'),'--binary',binary,'--connection-file',connectionFile,'--output',path.join(output,mode),'--mode',mode,'--observations',path.join(backendOutput,'request-observations.json')],{cwd:repo,env,timeout:60000,log:path.join(output,`${mode}.private.log`)});}catch{/* Read the closed stage result; no raw output enters public summary. */}
       const result=JSON.parse(await readFile(path.join(output,mode,'result.json'),'utf8'));stages.push(result);
     }
-    summary.status=suitePassed(options.suite,stages)?'passed':'blocked';
+    summary.status=stages.some(row=>row.status==='failed')?'failed':suitePassed(options.suite,stages)?'passed':'blocked';
   }catch{summary.status='failed';summary.reason='stage-failed-see-private-evidence';}
   finally{
     if(backend){backend.stdin.end('stop\n');try{const outcome=await stopBound(backend,stopPromise);await writeFile(path.join(output,'backend-stderr.private.log'),Buffer.concat(stderr),{mode:0o600});const closed=JSON.parse(await readFile(coreReceipt??path.join(output,'backend','receipt.json'),'utf8'));const cleanup=closed.cleanup;const verified=outcome.code===0&&!outcome.signal&&!outcome.error&&!outcome.forced&&closed.status==='passed'&&closed.stage==='closed'&&cleanup?.status==='complete'&&cleanup.serverClosed===true&&cleanup.portClosed===true&&cleanup.parentPortClosed===true&&cleanup.credentialRemoved===true&&cleanup.forcedTermination===false&&(!connection||await portClosed(connection.url));stages.push({stage:'backend-stop',status:verified?'passed':'failed'});if(!verified)summary.status='failed';}catch{stages.push({stage:'backend-stop',status:'failed'});summary.status='failed';}}

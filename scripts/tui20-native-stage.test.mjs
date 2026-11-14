@@ -39,25 +39,26 @@ namespace['diagnostic_stage']('terminal-normal-close-enter')
 assert namespace['DIAGNOSTIC_ORIGINALS']==[first,later]
 # A broken diagnostic stream cannot suppress the real close/recovery methods.
 terminal=next(node for node in tree.body if isinstance(node,ast.ClassDef) and node.name=='Terminal')
-methods=[node for node in terminal.body if isinstance(node,ast.FunctionDef) and node.name in ('close','recover_until_observed')]
+methods=[node for node in terminal.body if isinstance(node,ast.FunctionDef) and node.name in ('retain_lifecycle_original','request_quit_once','close_master_once','wait_draining_until_observed','close','recover_until_observed')]
 closes=[];events=[]
 namespace.update({'os':types.SimpleNamespace(close=lambda descriptor:closes.append(descriptor)),
- 'terminal_exit_reason':lambda result:'terminal_exited_zero','subprocess':types.SimpleNamespace(TimeoutExpired=TimeoutError),
+ 'time':types.SimpleNamespace(monotonic=lambda:0,sleep=lambda value:None),'terminal_exit_reason':lambda result:'terminal_exited_zero','subprocess':types.SimpleNamespace(TimeoutExpired=TimeoutError),
  'ChildReapedUnowned':type('ChildReapedUnowned',(Exception,),{})})
 exec(compile(ast.fix_missing_locations(ast.Module(body=[ast.ClassDef(name='TestTerminal',bases=[],keywords=[],body=methods,decorator_list=[])],type_ignores=[])),'<isolated-terminal>','exec'),namespace)
 class Child:
  returncode=None;reaped_unowned=False
- def poll(self): return None
- def wait(self,timeout): events.append('wait');return 0
- def wait_until_observed(self): events.append('recover');return 0
-term=namespace['TestTerminal']();term.child=Child();term.master=123;term.label='fixture';term.write=lambda value:events.append(value)
+ def poll(self): events.append('poll');return self.returncode
+term=namespace['TestTerminal']();term.child=Child();term.master=123;term.label='fixture'
+def quit(value):
+ events.append(value);term.child.returncode=0;return 1
+term.write=quit
 assert term.close()=='terminal_exited_zero'
-assert events==['q','wait'] and closes==[123]
+assert events==['poll','q','poll'] and closes==[123]
 assert term.recover_until_observed()['observed'] is True
-assert events==['q','wait','recover'] and closes==[123,123]
+assert events==['poll','q','poll','poll','poll'] and closes==[123]
 assert namespace['DIAGNOSTIC_ORIGINALS']==[first,later]*4
 print('fixed-stage-diagnostics-pass')
-`,fileURLToPath(new URL('./tui20-native-posix-five-action.py',import.meta.url))],{encoding:'utf8',env:{...process.env,SERVICE_LASSO_API_TOKEN:'PRIVATE_SENTINEL'}});
+`,fileURLToPath(new URL('./tui20-native-posix-five-action.py',import.meta.url))],{encoding:'utf8',env:{...process.env,SERVICE_LASSO_API_TOKEN:'PRIVATE_SENTINEL',PYTHONDONTWRITEBYTECODE:'1'}});
  assert.equal(result.status,0,result.stderr);
  assert.equal(result.stdout.trim(),'fixed-stage-diagnostics-pass');
  assert.equal(result.stderr,'');

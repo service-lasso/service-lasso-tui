@@ -153,9 +153,9 @@ class Terminal:
         # Registration precedes every fallible post-fork observation. Unknown
         # birth stays owned and cannot be used as proof of process absence.
         if sys_platform()!="linux": self.child.tui20_birth=process_birth(self.child.pid)
-    def write(self,value): os.write(self.master,value.encode())
-    def read(self):
-        ready,_,_=select.select([self.master],[],[],.1)
+    def write(self,value): return os.write(self.master,value.encode())
+    def read(self,seconds=.1):
+        ready,_,_=select.select([self.master],[],[],seconds)
         if ready:
             observation={"descriptor":self.master,"raw":None,"original":None,"emptyRaw":False}
             self.read_observations.append(observation)
@@ -172,6 +172,7 @@ class Terminal:
             # Terminal bytes are required in memory for the bounded interaction
             # assertions, but are never written to a receipt, artifact, or log.
             self.text+=chunk
+            return observation["raw"]
     def wait(self,need,seconds,start=0):
         until=time.monotonic()+seconds
         while time.monotonic()<until:
@@ -182,23 +183,65 @@ class Terminal:
                 self.exit_reason="terminal_unknown"; self.recovery_state="child_reaped_unowned"
                 raise TerminalUnresolved(self,"owned terminal was reaped without an observable exit status")
         raise RuntimeError("missing terminal state")
+    def retain_lifecycle_original(self,stage,original):
+        if not hasattr(self,"lifecycle_originals"): self.lifecycle_originals=[]
+        self.lifecycle_originals.append({"stage":stage,"original":original})
+    def request_quit_once(self):
+        if not hasattr(self,"quit_original"):
+            self.quit_original={"attempted":True,"returned":None,"original":None}
+            try:
+                self.quit_original["returned"]=self.write("q")
+                if self.quit_original["returned"]!=1: raise OSError("normal quit write incomplete")
+            except BaseException as original:
+                self.quit_original["original"]=original
+                self.retain_lifecycle_original("quit_write",original)
+        return self.quit_original
+    def close_master_once(self):
+        if not hasattr(self,"master_close_original"):
+            self.master_close_original={"attempted":True,"completed":False,"original":None}
+            try: os.close(self.master); self.master_close_original["completed"]=True
+            except BaseException as original:
+                self.master_close_original["original"]=original
+                self.retain_lifecycle_original("master_close",original)
+        return self.master_close_original
+    def wait_draining_until_observed(self,expires=None):
+        while True:
+            # This is the SAME initial normal-close deadline, never renewed by
+            # a read, retry, recovery transition or a later child observation.
+            if expires is not None and time.monotonic()>=expires:
+                raise subprocess.TimeoutExpired("held executable",10)
+            try: result=self.child.poll()
+            except BaseException as original:
+                self.retain_lifecycle_original("exit_poll",original)
+                if expires is not None: raise
+                result=None
+            if result is not None: return result
+            if self.child.reaped_unowned: raise ChildReapedUnowned("owned child was reaped outside BoundProcess")
+            seconds=.1 if expires is None else max(0,min(.1,expires-time.monotonic()))
+            try: raw=self.read(seconds)
+            except BaseException as original:
+                self.retain_lifecycle_original("exit_drain",original); raw=None
+            # EOF, EIO and any read failure never supply a child exit. Keep
+            # actual ownership/polling without a busy loop on a closed PTY.
+            if not raw: time.sleep(.02)
     def close(self,expected=0):
         diagnostic_stage("terminal-normal-close-enter")
         current=self.child.poll()
-        if current is None and not self.child.reaped_unowned: self.write("q")
-        try: result=self.child.wait(timeout=10)
+        if current is None and not self.child.reaped_unowned:
+            quit_original=self.request_quit_once()
+            if quit_original["original"] is not None: raise quit_original["original"]
+        if not hasattr(self,"close_expires"): self.close_expires=time.monotonic()+10
+        try: result=self.wait_draining_until_observed(self.close_expires)
         except ChildReapedUnowned:
             self.exit_reason="terminal_unknown"; self.recovery_state="child_reaped_unowned"
             raise TerminalUnresolved(self,"owned terminal was reaped without an observable exit status")
         except subprocess.TimeoutExpired:
-            # The helper stays alive as the recovery owner; do not close its
-            # PTY or execution object while an owned terminal remains live.
-            self.exit_reason="terminal_unknown"
-            self.recovery_state="live_child_unresolved"
+            # Failed normal quit retains SAME child, PTY and execution object.
+            self.exit_reason="terminal_unknown"; self.recovery_state="live_child_unresolved"
             raise TerminalUnresolved(self,"owned terminal exit unresolved")
-        os.close(self.master)
-        reason=terminal_exit_reason(result)
-        self.exit_reason=reason
+        closed=self.close_master_once()
+        reason=terminal_exit_reason(result); self.exit_reason=reason
+        if closed["original"] is not None: raise closed["original"]
         if result!=expected: raise RuntimeError("unexpected terminal exit")
         diagnostic_stage("terminal-normal-close-return")
         return reason
@@ -207,6 +250,8 @@ class Terminal:
         owner=self.acquisition
         observations=owner.setdefault("waitObservations",[])
         while True:
+            try: self.read()
+            except BaseException as original: self.retain_lifecycle_original("raw_pid_drain",original)
             item={"pid":owner["pid"],"returned":None,"original":None}
             observations.append(item)
             try: item["returned"]=os.waitpid(owner["pid"],os.WNOHANG)
@@ -233,19 +278,28 @@ class Terminal:
                 return {"terminal":self.label,"outcome":self.exit_reason,"recovery":"owned_exit_observed","observed":True}
             time.sleep(.02)
     def recover_until_observed(self):
-        """Keep this helper, its PTY, and its held launch object alive until exit."""
+        """Request normal quit once, drain and retain ownership until real exit."""
         diagnostic_stage("terminal-recovery-enter")
+        current=None; current_known=True
+        try: current=self.child.poll()
+        except BaseException as original:
+            current_known=False; self.retain_lifecycle_original("recovery_poll",original)
         if self.child.reaped_unowned:
-            os.close(self.master)
+            self.close_master_once()
             return {"terminal":self.label,"outcome":"terminal_unknown","recovery":"child_reaped_unowned","observed":False}
-        try: result=self.child.wait_until_observed()
+        # The original failed result has already been persisted by our caller.
+        # Sending q is only a normal keyboard request, never proof it was read
+        # as quit (for example an active editor may consume it as text).
+        if current_known and current is None: self.request_quit_once()
+        try: result=self.wait_draining_until_observed()
         except ChildReapedUnowned:
             self.exit_reason="terminal_unknown"; self.recovery_state="child_reaped_unowned"
-            os.close(self.master)
+            self.close_master_once()
             return {"terminal":self.label,"outcome":"terminal_unknown","recovery":"child_reaped_unowned","observed":False}
-        os.close(self.master)
+        self.close_master_once()
         self.exit_reason=terminal_exit_reason(result)
         return {"terminal":self.label,"outcome":self.exit_reason,"recovery":"owned_exit_observed","observed":True}
+
 def sys_platform(): return sys.platform
 def sha256_fd(fd):
     digest=hashlib.sha256(); os.lseek(fd,0,os.SEEK_SET)

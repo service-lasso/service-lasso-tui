@@ -7,7 +7,7 @@ const observer=fileURLToPath(new URL('./tui20-native-owner-observer.py',import.m
 const helper=fileURLToPath(new URL('./tui20-native-posix-five-action.py',import.meta.url));
 const python=process.platform==='win32'?'python':'python3';
 function check(source){
- const result=spawnSync(python,['-c',source,observer,helper],{encoding:'utf8'});
+ const result=spawnSync(python,['-c',source,observer,helper],{encoding:'utf8',env:{...process.env,PYTHONDONTWRITEBYTECODE:'1'}});
  assert.equal(result.status,0,result.stderr);
  assert.equal(result.stderr,'');
  assert.equal(result.stdout.trim(),'private-stage-capture-pass');

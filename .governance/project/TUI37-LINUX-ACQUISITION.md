@@ -66,3 +66,16 @@ qualify, the legacy compat fixture. Review and focused tests precede pushes.
 Matching Go1.26.0 and Node22.23.2 are being acquired into an owned user cache
 from official distributions with published digest verification to reproduce the
 legacy matching-host probe; this grants no genuine v2 input/entry authority.
+
+## Legacy recovery semantics repair
+
+Independent bounded intent review permits the existing normal operator q on
+failed legacy fixture recovery. Root the per-Terminal quit attempt before write,
+at most once, retain first assertion and all later originals, persist failure
+before recovery, and drain SAME PTY while observing actual owned waitpid exit.
+Preserve normal close's original ten-second deadline; recovery adds no deadline.
+EOF/EIO/read failure never means exit, and a refusing live child retains custody
+indefinitely. No kill or false primary success. Real PTY tests must demonstrate
+output-backpressure drain, direct reaping and failed primary retention.
+A local prepare attempt built pinned Core successfully but refused dirty TUI
+source; it is failed diagnostic preparation, not proof.

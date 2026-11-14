@@ -242,3 +242,33 @@ teardown and the observer's actual failed write, wait, zero exit and stream-clos
 checks. Never replace those observations with an asserted receipt flag. A real
 subprocess regression must prove the parent write fails while the child remains
 alive, then observe natural exit; normal stdin-controlled shutdown stays intact.
+
+## Controlled finalization failure classification
+
+The a116689 local finalization case completed all five readbacks, retained the
+injected cleanup original and truthfully exited the helper with status 1; owned
+runtime closure was observed with zero exit. The observer/CI incorrectly
+expected helper zero. Keep the helper failure and public failed projection.
+Only the explicit injection flag, exact injected reason, successful primary,
+helper status exactly 1 and all existing custody/actual closure checks may
+complete the controlled negative test with controller zero. Reject helper zero,
+other exits/signals, failed primary, absent injection or incomplete closure.
+Normal positive paths still require helper zero. CI must assert the actual
+helper failure plus failed public result, false actionsPassed and closed runtime.
+
+## Linux controlling-terminal ownership
+
+Two a116689 owner-death attempts remain FAILED/UNRESOLVED. Same-birth private
+snapshots prove the TUI still sleeping at the 15-second frontier, not a zombie:
+tty_nr=0, tpgid=-1, and neither session nor process-group leader. Linux fork/dup2
+attached slave descriptors without a controlling terminal. Establish a new child
+session, acquire the existing slave as controlling terminal and set its foreground
+group before held fexecve. Preserve child-master closure, parent custody, launch
+failures, exact executable and no fallback. Darwin is unchanged.
+
+A real held-exec regression must prove session/foreground/TTY relationships,
+then close the final master and directly observe/reap actual SIGHUP termination,
+without sending a signal or inferring exit from closure. Existing normal quit,
+drain and recovery proofs remain. Do not weaken the observer's 15-second bound,
+same-birth absence check or unresolved classification after actual owner death.
+Later supervisor cleanup never qualifies an earlier failed frontier.

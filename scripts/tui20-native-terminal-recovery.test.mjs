@@ -28,6 +28,37 @@ def terminal():
  term.text='';term.label='fixture';term.exit_reason=None;term.read_observations=[]
  return term
 `;
+test('Linux held executable owns the controlling foreground PTY and receives kernel hangup only after last master closes',{skip:process.platform!=='linux'},()=>check(setup+String.raw`
+import signal,time
+master,slave=pty.openpty();tty.setraw(slave)
+extra_master=os.dup(master)
+os.set_inheritable(extra_master,False)
+held=os.open(sys.executable,os.O_RDONLY)
+term=Terminal.__new__(Terminal);term.master=master;term.slave=slave
+term.text='';term.label='fixture';term.exit_reason=None;term.child=None;term.read_observations=[]
+term.acquisition={'pid':None,'originals':[],'descriptors':{'master':{'descriptor':master,'attempted':False,'completed':False,'original':None},'slave':{'descriptor':slave,'attempted':False,'completed':False,'original':None}}}
+program="import json,os,signal;signal.signal(signal.SIGHUP,signal.SIG_DFL);print(json.dumps({'sessionLeader':os.getsid(0)==os.getpid(),'groupLeader':os.getpgrp()==os.getpid(),'foreground':os.tcgetpgrp(0)==os.getpgrp(),'tty':os.isatty(0)}),flush=True);signal.pause()"
+try:
+ term.child=h['fexecve_child'](held,[sys.executable,'-c',program],dict(os.environ),master,slave,term)
+ deadline=time.monotonic()+3
+ while '\n' not in term.text and time.monotonic()<deadline:
+  term.read()
+ assert '\n' in term.text,'held executable did not report terminal ownership'
+ assert json.loads(term.text.splitlines()[0])=={'sessionLeader':True,'groupLeader':True,'foreground':True,'tty':True}
+ term.close_master_once()
+ assert term.master_close_original['completed']
+ # A separately held master keeps the actual child alive; no process signal
+ # or timeout supplies the later hangup or observable wait status.
+ time.sleep(.05);assert term.child.poll() is None
+ os.close(extra_master);extra_master=None
+ assert term.child.wait(3)==-signal.SIGHUP
+ assert term.child.returncode==-signal.SIGHUP
+finally:
+ if extra_master is not None:os.close(extra_master)
+ term.close_master_once()
+ os.close(held)
+print('natural-terminal-recovery-pass')
+`));
 test('normal q drains a real PTY beyond kernel capacity and observes actual child exit with once-only q/close',{skip:process.platform!=='linux'},()=>check(setup+String.raw`
 term=terminal();writes=[];write=term.write
 term.write=lambda value:writes.append(value) or write(value)

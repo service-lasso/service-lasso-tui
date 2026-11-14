@@ -236,7 +236,7 @@ def main():
             write_json(os.path.join(args.root,"owner-finalization-failure-proof.json"),proof)
             write_private(args.root,"closed",{**private_tuple,"reason":"owner_finalization_failed",**result})
             write_public(args.root,args.source_commit,binary_sha256,"failed",False,True)
-            if status != 0 or not args.inject_finalization_cleanup_failure or finalization["finalizationFailure"]!="injected_cleanup_failure" or finalization["primaryOutcome"]!="succeeded" or not result["shutdownRequested"]: raise SystemExit(1)
+            if status != 1 or not args.inject_finalization_cleanup_failure or finalization["finalizationFailure"]!="injected_cleanup_failure" or finalization["primaryOutcome"]!="succeeded" or not result["shutdownRequested"]: raise SystemExit(1)
             return
         if status != 0:
             write_private(args.root,"closed",{**private_tuple,"reason":"owner_reported_failure",**result})

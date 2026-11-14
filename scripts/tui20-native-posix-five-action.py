@@ -1,5 +1,5 @@
 """Native Linux/macOS PTY evidence for Issue 20; credentials remain process-memory only."""
-import argparse, ctypes, fcntl, hashlib, json, os, pty, select, signal, stat, subprocess, sys, time, urllib.request
+import argparse, ctypes, fcntl, hashlib, json, os, pty, select, signal, stat, subprocess, sys, termios, time, urllib.request
 
 ALLOWED_ENV=("HOME","LANG","LC_ALL","PATH","SHELL","TERM","TMPDIR","USER")
 OWNED_TERMINALS=[]
@@ -105,7 +105,14 @@ def fexecve_child(fd,argv,env,master,slave,terminal=None):
         else: os.close(slave)
         return child
     try:
-        os.close(master); os.dup2(slave,0); os.dup2(slave,1); os.dup2(slave,2)
+        os.close(master)
+        # The Linux held-executable child owns this PTY as its controlling
+        # terminal, not merely three descriptors referring to a slave. Kernel
+        # last-master closure can then deliver the real terminal hangup.
+        os.setsid()
+        fcntl.ioctl(slave,termios.TIOCSCTTY,0)
+        os.tcsetpgrp(slave,os.getpgrp())
+        os.dup2(slave,0); os.dup2(slave,1); os.dup2(slave,2)
         if slave>2: os.close(slave)
         values=[value.encode() for value in argv]; argp=(ctypes.c_char_p*(len(values)+1))(*values,None)
         entries=[(key+"="+value).encode() for key,value in env.items()]; envp=(ctypes.c_char_p*(len(entries)+1))(*entries,None)

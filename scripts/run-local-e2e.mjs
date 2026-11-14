@@ -46,7 +46,7 @@ export async function command(argv,{cwd,env,log,timeout=120000,writePrivate=(fil
  const capture=x=>{size+=x.length;if(size<=8*1024*1024)chunks.push(x);else overflow=true;};child.stdout.on('data',capture);child.stderr.on('data',capture);child.on('error',x=>{error=x;});
  const closed=new Promise(resolve=>child.on('close',(code,signal)=>resolve({code,signal})));let outcome,timedOut=false;
  try{outcome=await waitBound(closed,timeout);}catch{timedOut=true;child.kill('SIGINT');outcome=await stopBound(child,closed);}
- await writeFile(log,Buffer.concat(chunks),{mode:0o600});if(error||overflow||timedOut||outcome.forced||outcome.signal||outcome.code!==0)throw new Error('E2E command failed');return Buffer.concat(chunks).toString();
+ await writePrivate(log,Buffer.concat(chunks));if(error||overflow||timedOut||outcome.forced||outcome.signal||outcome.code!==0)throw new Error('E2E command failed');return Buffer.concat(chunks).toString();
 }
 async function portClosed(url){return await new Promise(resolve=>{const socket=net.connect({host:'127.0.0.1',port:Number(new URL(url).port)});socket.once('connect',()=>{socket.destroy();resolve(false);});socket.once('error',error=>resolve(error.code==='ECONNREFUSED'));socket.setTimeout(1000,()=>{socket.destroy();resolve(false);});});}
 export async function resolveNpmCLI(provided){

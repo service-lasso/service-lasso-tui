@@ -65,3 +65,12 @@ test('bounded command rejects timeout and waits actual child close',async()=>{
  assert.ok((await readFile(path.join(root,'private.log'))).length<1024);
  }finally{await rm(root,{recursive:true});}
 });
+
+test('actual command capture uses supplied private writer and retains default capture behavior',async()=>{
+ const root=await mkdtemp(path.join(tmpdir(),'tui-e2e-writer-'));try{
+  const log=path.join(root,'injected.log'),observed=[];
+  const output=await command([process.execPath,'-e',"process.stdout.write('controlled-out');process.stderr.write('controlled-err')"],{cwd:root,env:process.env,log,writePrivate:async(file,bytes)=>observed.push({file,bytes:Buffer.from(bytes)})});
+  assert.equal(observed.length,1);assert.equal(observed[0].file,log);assert.equal(observed[0].bytes.toString(),output);assert.ok(output.includes('controlled-out'));assert.ok(output.includes('controlled-err'));await assert.rejects(readFile(log),{code:'ENOENT'});
+  const fallback=path.join(root,'default.log');await command([process.execPath,'-e',"process.stdout.write('default-capture')"],{cwd:root,env:process.env,log:fallback});assert.equal(await readFile(fallback,'utf8'),'default-capture');
+ }finally{await rm(root,{recursive:true});}
+});

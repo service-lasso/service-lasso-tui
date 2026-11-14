@@ -15,7 +15,7 @@ def load_posix_harness():
     # this controlled recorder-path test also runs on Windows source CI.
     if sys.platform == "linux":
         return runpy.run_path(str(pathlib.Path(__file__).with_name("tui20-native-posix-five-action.py")))
-    with patch.dict(sys.modules, {"fcntl": types.ModuleType("fcntl"), "pty": types.ModuleType("pty")}):
+    with patch.dict(sys.modules, {"fcntl": types.ModuleType("fcntl"), "pty": types.ModuleType("pty"), "termios": types.ModuleType("termios")}):
         return runpy.run_path(str(pathlib.Path(__file__).with_name("tui20-native-posix-five-action.py")))
 
 

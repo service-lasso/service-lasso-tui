@@ -272,3 +272,9 @@ without sending a signal or inferring exit from closure. Existing normal quit,
 drain and recovery proofs remain. Do not weaken the observer's 15-second bound,
 same-birth absence check or unresolved classification after actual owner death.
 Later supervisor cleanup never qualifies an earlier failed frontier.
+
+Windows source CI on ba9d647 exposed an import-only recorder fixture gap:
+the existing non-Linux loader stubs fcntl/pty but not the new termios import.
+Add an equally empty termios module only to that test loader. It supplies no
+TIOCSCTTY implementation or native authority; production imports and matching
+Linux effects stay mandatory. Do not add skips or a production fallback.

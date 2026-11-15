@@ -164,6 +164,8 @@ def _main_attempt(observation):
                     if p.isalive(): time.sleep(.05);continue
                     p.tui28_queue.put(None);return
                 except Exception as original:
+                    if not p.isalive():
+                        p.tui28_queue.put(None);return
                     observation["originals"].append({"phase":"terminal_reader","process":p,"original":original})
                     p.tui28_reader_failed=True;p.tui28_queue.put(None);return
                 if not chunk:

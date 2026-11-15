@@ -82,7 +82,7 @@ async function main() {
   try { receipt = JSON.parse(await readFile(path.join(root, 'native-exit-receipt.json'), 'utf8')); } catch { fail('native exit receipt missing'); }
   try { projection = JSON.parse(await readFile(path.join(root, 'native-public-projection.json'), 'utf8')); } catch { fail('native public projection missing'); }
   try { audit = JSON.parse(await readFile(path.join(root, 'operation-audit.json'), 'utf8')); } catch { fail('native operation audit missing'); }
-  if (code !== 0) fail('Windows native five-action lifecycle failed' + (receipt.failureStage ? ' at ' + receipt.failureStage : ''));
+  if (code !== 0) fail('Windows native five-action lifecycle failed' + (receipt.failureStage ? ' at ' + receipt.failureStage : '') + (receipt.failureDetail ? ': ' + receipt.failureDetail : ''));
   if (receipt.outcome !== 'succeeded') fail('Windows native five-action lifecycle outcome invalid');
   if (receipt.candidateIdentity?.sourceCommit !== sourceCommit || receipt.candidateIdentity?.binarySHA256 !== binarySHA256 || receipt.coreCommit !== coreCommit) fail('native lifecycle receipt identity invalid');
   if (projection.result !== 'succeeded' || projection.actionsPassed !== true || projection.ownedRuntimeClosed !== true) fail('native lifecycle public projection invalid');

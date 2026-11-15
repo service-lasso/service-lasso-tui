@@ -176,8 +176,18 @@ def _main_attempt(observation):
         write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"coreRuntimePID":ready["_runtimePID"],"sourceCommit":args.source_commit,"binarySHA256":identity["binarySHA256"],"ownerBirth":process_birth(os.getpid()),"runtimeBirth":ready["_runtimeBirth"],"tuiChildPID":p.pid,"tuiChildBirth":p.tui28_birth,"phase":"live_terminal"})
         return p,[""]
     def finish(p,t,label,expected="terminal_exited_zero"):
-        outcome["terminals"].append({"terminal":label,"exit":close_terminal(p,t,expected)})
-        complete_reader(p,t,observation)
+        try:
+            observed=close_terminal(p,t,expected)
+        except RuntimeError as error:
+            detail=str(error)
+            outcome["failureDetail"]=detail if detail.startswith(("unexpected terminal exit: ","terminal exit was not observed","actual terminal wait mismatch")) else "terminal_close_failed"
+            raise
+        outcome["terminals"].append({"terminal":label,"exit":observed})
+        try:
+            complete_reader(p,t,observation)
+        except RuntimeError:
+            outcome["failureDetail"]="native terminal reader failed"
+            raise
         write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"coreRuntimePID":ready["_runtimePID"],"sourceCommit":args.source_commit,"binarySHA256":identity["binarySHA256"],"ownerBirth":process_birth(os.getpid()),"runtimeBirth":ready["_runtimeBirth"],"tuiChildPID":p.pid,"tuiChildBirth":p.tui28_birth,"phase":"normal_q_exit"})
         open_processes.remove(p)
     try:

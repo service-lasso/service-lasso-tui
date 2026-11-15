@@ -27,9 +27,8 @@ operation/audit counts.
   and built Core, runs the Windows observer/runtime/owner, validates closed
   receipts, and writes `windows-native-lifecycle-summary.json`.
 - `scripts/run-windows-native-lifecycle.test.mjs` — closed-summary refusal tests.
-- `.github/workflows/ci.yml` — `windows-native-lifecycle` job on
-  `windows-latest`, pinned Core `2633c07be25512d0a84f9bfa28de6be5edff35e8`,
-  Node 22.23.2, Go 1.26.0, Python 3.12 x64, pywinpty 3.0.5.
+- `scripts/local-e2e.test.mjs` / `local-e2e.yml` source checks: this PR adds
+  only source tests; no native lifecycle CI job is enabled.
 
 The target and unrelated services are the existing source-owned
 `tui20-native-runtime.mjs` fixture services used by the POSIX native lifecycle
@@ -44,10 +43,22 @@ no provider mutation, publication, GA, or release authority. Raw terminal
 output and bearer credentials stay memory-only; the uploaded evidence is the
 closed summary.
 
-## Evidence
+## Core identity
 
-A local Windows x64 run at TUI `714e5a51d7a9da9e0d388bc2139dcf48456d9307`
-and Core `2633c07be25512d0a84f9bfa28de6be5edff35e8` passed: five operations,
-five Core audit entries, actual terminal exits zero, unrelated service
-unchanged, reconnect with no replay, resize, and frozen preview. The hosted CI
-run and artifact are attached to the pull request.
+`f32270731ff42f2a2f6dbcbc02f188b3fdd8813b` is the exact Core pin used by
+the merged #44 ordinary Windows ConPTY E2E (`local-e2e.yml`
+`CORE_REVISION`). It is the merged Core develop commit
+`test: support private Windows ordinary Core fixtures (#1926)` that added the
+private Windows fixture support the runner requires, and the #44 hosted run at
+that pin passed Windows and Linux (run 43617334472). It is an accepted source
+pin, not merely an ancestor of Core develop.
+
+## Evidence and disposition
+
+Source-only. On Windows, `node --test scripts/local-e2e.test.mjs` passes 9/0/1
+with only the intended POSIX-only skip. `node --test
+scripts/run-windows-native-lifecycle.test.mjs` covers the closed summary,
+preview/readback/replay/unrelated/resize/reconnect/exits, and fail-closed
+refusals. **Windows native lifecycle: UNRUN** until independent review, a new
+authentic ROOT, and exact-command admission. This PR does not close #23 and
+does not claim #37 closure.

@@ -223,6 +223,7 @@ def _main_attempt(observation):
         outcome["failureStage"]="five-actions"; known_ids={record.get("operationId") for record in records(url,token)}; per_action=[]; running_proofs=[]
         expected_by_ui={"install":"service_install","config":"service_configure","start":"service_start","stop":"service_stop","restart":"service_restart"}
         for key,name in (("i","install"),("c","config"),("s","start"),("x","stop"),("R","restart")):
+            outcome["failureStage"]="five-actions:"+name
             running=action(p,t,key,name,url,token)
             if running is not None: running_proofs.append(running)
             added=[record for record in records(url,token) if record.get("operationId") not in known_ids]

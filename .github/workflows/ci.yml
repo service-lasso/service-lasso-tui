@@ -929,3 +929,4 @@ jobs:
             go version -m "$binary" | grep -F "vcs.revision=$source_commit" >/dev/null
             go version -m "$binary" | grep -F 'vcs.modified=false' >/dev/null
           done
+

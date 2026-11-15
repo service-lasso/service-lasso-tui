@@ -959,7 +959,7 @@ jobs:
           go-version: '1.26.0'
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
           architecture: x64
       - name: Build pinned Core source
         working-directory: core-input

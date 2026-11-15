@@ -53,6 +53,12 @@ private Windows fixture support the runner requires, and the #44 hosted run at
 that pin passed Windows and Linux (run 43617334472). It is an accepted source
 pin, not merely an ancestor of Core develop.
 
+For #23 the lifecycle Core is `2633c07be25512d0a84f9bfa28de6be5edff35e8`, the
+Core used by `tui20-native-runtime.mjs` and the POSIX native lifecycle. The same
+driver against `f322707` fails at `five-actions`; the ordinary pin does not
+expose the lifecycle path. The service payload is the runtime fixture; Core,
+TUI, terminal and authentication are real.
+
 ## Evidence and disposition
 
 Source-only. On Windows, `node --test scripts/local-e2e.test.mjs` passes 9/0/1
@@ -60,5 +66,8 @@ with only the intended POSIX-only skip. `node --test
 scripts/run-windows-native-lifecycle.test.mjs` covers the closed summary,
 preview/readback/replay/unrelated/resize/reconnect/exits, and fail-closed
 refusals. **Windows native lifecycle: UNRUN** until independent review, a new
-authentic ROOT, and exact-command admission. This PR does not close #23 and
-does not claim #37 closure.
+authentic ROOT, and exact-command admission. The `2633c07` local run is
+exploratory; native lifecycle remains UNRUN. The merged driver is the legacy
+`tui28`/observer path; an adapter-based driver on `local-e2e-conpty.py` /
+`run-local-e2e.mjs` remains source work. This PR does not close #23 and does
+not claim #37 closure.

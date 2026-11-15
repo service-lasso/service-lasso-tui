@@ -39,8 +39,15 @@ async function selectedTools(npmCLI){
  return {nodeSHA256:digest(await readFile(process.execPath)),npmCLI:{path:npmCLI,sha256:digest(await readFile(npmCLI)),packageVersion:pkg.version}};
 }
 export async function assertReadyPaths(ready,backendRoot){
- const root=await realpath(backendRoot);if((await lstat(backendRoot)).isSymbolicLink())throw new Error('backend root link');
- for(const [key,name] of [['connectionFile','connection.json'],['receiptFile','receipt.json']]){const expected=path.join(root,name);if(path.resolve(ready[key]??'')!==expected||(await lstat(expected)).isSymbolicLink()||await realpath(expected)!==expected)throw new Error('ready path escaped owned backend');}
+ const rootStat=await lstat(backendRoot);if(rootStat.isSymbolicLink())throw new Error('backend root link');
+ const root=await realpath(backendRoot);
+ for(const [key,name] of [['connectionFile','connection.json'],['receiptFile','receipt.json']]){
+  const supplied=ready[key];if(typeof supplied!=='string')throw new Error('ready path escaped owned backend');
+  const resolved=path.resolve(supplied);const suppliedStat=await lstat(resolved);if(suppliedStat.isSymbolicLink())throw new Error('ready path escaped owned backend');
+  const canonical=await realpath(resolved);const expected=path.join(root,name);
+  if(canonical!==expected)throw new Error('ready path escaped owned backend');
+  const expectedStat=await lstat(expected);if(expectedStat.isSymbolicLink()||await realpath(expected)!==expected)throw new Error('ready path escaped owned backend');
+ }
 }
 function waitBound(promise,ms){return new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('deadline')),ms);promise.then(x=>{clearTimeout(timer);resolve(x);},e=>{clearTimeout(timer);reject(e);});});}
 async function stopBound(child,closed){

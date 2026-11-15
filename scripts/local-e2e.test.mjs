@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,writeFile,chmod,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,writeFile,chmod,readFile,rm,realpath} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {spawn,spawnSync} from 'node:child_process';
@@ -56,7 +56,10 @@ test('stale or unqualified Core receipts fail before private connection use',()=
 test('foreign ready paths deny before any private credential read',async()=>{
  const root=await mkdtemp(path.join(tmpdir(),'tui-e2e-path-'));try{
  const connectionFile=path.join(root,'connection.json'),receiptFile=path.join(root,'receipt.json');await writeFile(connectionFile,'{}');await writeFile(receiptFile,'{}');
- await assertReadyPaths({connectionFile,receiptFile},root);await assert.rejects(assertReadyPaths({connectionFile:path.join(root,'foreign.json'),receiptFile},root));
+ await assertReadyPaths({connectionFile,receiptFile},root);
+ const canonical=await realpath(root);await assertReadyPaths({connectionFile,receiptFile},canonical);
+ await assert.rejects(assertReadyPaths({connectionFile:path.join(root,'foreign.json'),receiptFile},root));
+ await assert.rejects(assertReadyPaths({connectionFile,receiptFile:path.join(canonical,'foreign.json')},canonical));
  }finally{await rm(root,{recursive:true});}
 });
 test('bounded command rejects timeout and waits actual child close',async()=>{

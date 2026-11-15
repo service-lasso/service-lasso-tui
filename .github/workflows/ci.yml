@@ -944,6 +944,7 @@ jobs:
           GIT_CONFIG_VALUE_0: 'false'
         with:
           ref: ${{ env.CI_SOURCE_SHA }}
+          path: tui
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: service-lasso/service-lasso
@@ -967,6 +968,7 @@ jobs:
           npm run build
       - name: Install pinned ConPTY helper
         shell: pwsh
+        working-directory: tui
         run: |
           $venv = Join-Path $env:RUNNER_TEMP 'tui23-conpty-venv'
           python -m venv $venv
@@ -975,11 +977,12 @@ jobs:
           "TUI23_PYTHON=$python" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Build exact TUI and stage the acceptance root
         shell: pwsh
+        working-directory: tui
         run: |
           $root = Join-Path $env:RUNNER_TEMP 'tui23-native-lifecycle'
           New-Item -ItemType Directory -Path $root -Force
           New-Item -ItemType Directory -Path (Join-Path $root 'registry') -Force
-          Copy-Item -Recurse -Path core-input -Destination (Join-Path $root 'core-source')
+          Copy-Item -Recurse -Path (Join-Path $env:GITHUB_WORKSPACE 'core-input') -Destination (Join-Path $root 'core-source')
           $env:CGO_ENABLED='0'
           $env:GOOS='windows'
           $env:GOARCH='amd64'
@@ -987,6 +990,7 @@ jobs:
           "TUI23_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Run Windows native five-action lifecycle
         shell: pwsh
+        working-directory: tui
         run: |
           $source = (git rev-parse HEAD)
           node scripts/run-windows-native-lifecycle.mjs --root $env:TUI23_ROOT --executable (Join-Path $env:TUI23_ROOT 'service-lasso-tui.exe') --source-commit $source --core-commit $env:CORE_COMMIT --python $env:TUI23_PYTHON --go go --output $env:TUI23_ROOT

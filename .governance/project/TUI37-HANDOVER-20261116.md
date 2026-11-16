@@ -60,3 +60,10 @@ Pinned lifecycle Core: `2633c07be25512d0a84f9bfa28de6be5edff35e8`.
 1. Have an input custodian supply the authentic originals and custody references; run the readiness gate before any target execution.
 2. Optional: implement the adapter-based Windows five-action driver on the #42/#44 ConPTY adapter (source-only, native UNRUN).
 3. Keep Linux green against new `develop` heads; review the Windows agent PR as a distinct reviewer.
+
+## Adapter lifecycle contract (source-only)
+
+- `scripts/local-e2e-lifecycle.mjs` adds a fail-closed five-action contract (install, config, start, stop, restart) over the ordinary ConPTY adapter. It requires frozen preview/confirmation, exactly one durable operation and one Core audit entry per action, reload refusal, no replay after reconnect, unchanged unrelated state, a real resize, and an observed zero exit.
+- `scripts/local-e2e-lifecycle.test.mjs` exercises the contract with fake adapters, including every fail-closed path.
+- Wired into `.github/workflows/local-e2e.yml` source contracts.
+- Native Windows lifecycle remains UNRUN. The concrete ConPTY binding still needs a matching Windows host; the contract source does not claim native evidence.

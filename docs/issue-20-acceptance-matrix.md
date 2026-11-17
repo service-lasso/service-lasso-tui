@@ -5,39 +5,76 @@ release acceptance distinct for the durable keyboard operator workflows.
 
 ## Exact TUI candidate
 
-- Branch: `feature/20-durable-keyboard-operations`
-- Qualified direct-binary source: `e7d23695112e87b05d93a81e45117c8f080c6f83`
-- Base: `develop` `f99e8d493b19b088c9f6c9d9b2aacb9d25388094`
-- Pull request: [#21](https://github.com/service-lasso/service-lasso-tui/pull/21)
+Current evidence is bound to `develop`
+`c82f69048f992ea3635f6147e6401023cefc62c3`. The durable keyboard operations
+first landed through [#21](https://github.com/service-lasso/service-lasso-tui/pull/21)
+and later Linux lifecycle repairs through
+[#39](https://github.com/service-lasso/service-lasso-tui/pull/39). The original
+`e7d23695112e87b05d93a81e45117c8f080c6f83` head is retained only as historical
+evidence for the first direct-Core attempt.
+
+Both owning paths now implement the durable contract: the default operator/v2
+client (`internal/api/operator_mutations.go`) and the explicit `--compat-v1`
+legacy adapter (`internal/api/client.go`). The Linux native acceptance phase
+runs the default operator/v2 path without `--compat-v1`.
 
 ## Requirement and evidence
 
 | Requirement | Source evidence | Direct or hosted evidence | Status |
 | --- | --- | --- | --- |
-| Five durable actions: install, config, start, stop, restart | `internal/api/client_test.go` checks availability, exact preview, one submit, and readback for all five. `internal/app/model_test.go` checks each keyboard shortcut uses only the selected service and preserves the exact preview. | CI run `36870493722` compiled and tested this exact head on Windows, Linux, and macOS. | Source and hosted compilation covered; no full real-Core TUI mutation receipt. |
-| Denial and retired reload | The model refuses non-durable clients, unavailable Core actions, and `reload`; it creates no confirmation in those cases. | Not exercised against the current Core runtime. | Source covered. |
-| Frozen preview and one confirmed mutation | Confirmation accepts only `y` or Escape; late dashboard data cannot retarget a preview; repeated `y` does not resubmit. | Not exercised against the current Core runtime. | Source covered. |
-| Durable readback, reconnect, and no replay | Accepted and uncertain operations retain their original client and refresh reads only that operation. | Not exercised against the current Core runtime. | Source covered. |
-| Persistent reconciliation context | The production adapter fails closed until Core #1553 provides its reviewed server-issued opaque actor/client/instance context. Tests only use a surrogate provider to prove the refusal boundary. | No current reviewed #1553 adapter was available. | Blocked; no URL, profile, or credential-derived substitute is used. |
-| Advertised cancellation only | `z` is enabled only when Core readback advertises cancellation support, and a pending cancellation cannot be dispatched twice. | Current-Core lifecycle run did not reach operation execution. | Source covered. |
-| Inbox and health-history read workflows | Existing bounded dashboard client consumes inbox summaries and health transition counts only, without inbox detail or mutation routes. | Not re-executed in the current-Core attempt. | Existing source coverage; direct evidence remains required. |
-| Unrelated-service safety | The five-action keyboard matrix includes a second service and asserts availability and preview use the selected service only. | Not exercised against the current Core runtime. | Source covered. |
+| Five durable actions: install, config, start, stop, restart | `internal/api/client_test.go` checks availability, exact preview, one submit, and readback for all five. `internal/app/model_test.go` checks each keyboard shortcut uses only the selected service and preserves the exact preview. | Linux real-Core: develop run `43702278820` job `132776264736`, artifact `14156787665` verified; `five-actions` result `succeeded`, `actionsPassed: true`, binary `cb8c0280a5f14195e98bd35d891d7f53d9fa2020e6c814e8f35523a91e3a79e1`. Exactly five operations were created for `install`, `config`, `start`, `stop`, and `restart`, each with one matching Core terminal-success audit. | Source and direct Linux real-Core acceptance. Windows remains partial and packaged three-OS evidence remains separate. |
+| Denial and retired reload | The model refuses non-durable clients, unavailable Core actions, and `reload`; it creates no confirmation in those cases. | Linux real-Core: missing, invalid, and scope-denied profiles created zero new operations; the denied case produced ten Core denial audits. `reload` stayed disabled and pressing `l` created no operation or confirmation. | Source and direct Linux real-Core acceptance. |
+| Frozen preview and one confirmed mutation | Confirmation accepts only `y` or Escape; late dashboard data cannot retarget a preview; repeated `y` does not resubmit. | Linux real-Core: each keyboard action added exactly one new operation with a unique ID and the expected target; an unconfirmed preview created none. | Source and direct Linux real-Core acceptance. |
+| Durable readback, reconnect, and no replay | Accepted and uncertain operations retain their original client and refresh reads only that operation. | Linux real-Core: a separate reconnect terminal read back the same five operation IDs, actions, targets, and outcomes; no operation was replayed. | Source and direct Linux real-Core acceptance. |
+| Persistent reconciliation context | The production adapter fails closed until Core #1553 provides its reviewed server-issued opaque actor/client/instance context. Tests only use a surrogate provider to prove the refusal boundary. | No current reviewed #1553 adapter is available. | Blocked; no URL, profile, or credential-derived substitute is used. |
+| Advertised cancellation only | `z` is enabled only when Core readback advertises cancellation support, and a pending cancellation cannot be dispatched twice. | Linux real-Core: all five readbacks reported `cancellationSupported: false`, and the UI never offered cancellation. Advertised-true cancellation remains source-only. | Source and direct Linux negative path; advertised-true direct evidence remains outstanding. |
+| Inbox and health-history read workflows | Existing bounded dashboard client consumes inbox summaries and health transition counts only, without inbox detail or mutation routes. | Not exercised by the native lifecycle phase. | Existing source coverage; direct evidence remains required. |
+| Unrelated-service safety | The five-action keyboard matrix includes a second service and asserts availability and preview use the selected service only. | Linux real-Core: `tui20-unrelated` availability and safe lifecycle fields were compared before and after the five accepted actions and were unchanged. | Source and direct Linux real-Core acceptance. |
 
 ## Native and direct evidence
 
-CI run `36870493722` passed against the exact TUI head:
+### Current Linux real-Core receipt (2026-11-17)
 
-- Windows: source test/build plus the existing native AMD64 ConPTY
+Develop run
+[`43702278820`](https://github.com/service-lasso/service-lasso-tui/actions/runs/43702278820)
+job `132776264736` passed the native POSIX lifecycle job and uploaded artifact
+`14156787665` (`tui20-native-Linux-lifecycle-c82f690...`). The retained artifact
+was downloaded and passed `node scripts/verify-tui20-native-public-receipt.mjs`.
+It contains seven separate phases: `preflight`, `five-actions`,
+`adverse-controller`, `adverse-owner-death`, `finalization-failure`,
+`handoff-timeout`, and `shutdown-pipe-failure`.
+
+The `five-actions` projection records:
+
+```json
+{"schemaVersion":1,"kind":"tui20-native-public-result","sourceCommit":"c82f69048f992ea3635f6147e6401023cefc62c3","binarySHA256":"cb8c0280a5f14195e98bd35d891d7f53d9fa2020e6c814e8f35523a91e3a79e1","result":"succeeded","actionsPassed":true,"ownedRuntimeClosed":true}
+```
+
+The same receipt was also verified at the merged PR #39 head
+`de86c24f1bf3513f71e78c7a9be4fa080b054b3b` from run `43561737841` job
+`132347213873`, artifact `14101410120`, with binary
+`4108bc929f8186b14b7dfdb60e72bba238c3cc6a23cf555e2f1f3fb89452930a`.
+
+These receipts establish direct Linux real-Core five-action acceptance against
+Core pin `2633c07be25512d0a84f9bfa28de6be5edff35e8`. They do not establish a
+genuine Windows five-action receipt, packaged candidate acceptance, macOS
+acceptance (deferred `N/A`, never PASS), release qualification, deployment, or
+GA.
+
+### Historical direct-Core attempts (2026-10-02)
+
+An earlier hosted CI run `36870493722` passed against the then-current TUI head
+`e7d2369`:
+
+- Windows: source test/build plus the bounded native AMD64 ConPTY
   unavailable-state probe.
 - Linux and macOS: native hosted source test/build.
 - Linux release job: cross-compiled all declared release targets.
 
-Those receipts establish exact-head source compilation and the bounded Windows
-unavailable-state probe. They do not establish an authenticated Core lifecycle
-operation, packaged candidate acceptance, release qualification, deployment,
-or GA.
+Those receipts established exact-head source compilation and the bounded
+Windows unavailable-state probe only.
 
-For a direct current-Core check, owned detached checkouts at
+For that earlier direct current-Core check, owned detached checkouts at
 `93d9d343a058d296069c017d17f4f8d1fc1505ea` were built after clean dependency
 installations. The initial shared-registry attempt failed before fixture
 execution and is retained as failed evidence. A later run used fresh owned
@@ -106,8 +143,9 @@ and rerun.
 Windows direct lifecycle acceptance is therefore **partial and blocked**:
 source tests and the earlier bounded fixture exercise remain useful, while a
 successful secrecy-safe, same-handle, true-exit receipt remains required.
-Linux and macOS real-Core native journeys now have an executable native-host
-workflow on TUI PR #22. It obtains clean detached Core
+The Linux real-Core native journey now has a completed native-host receipt on
+the current head, using the executable native-host workflow introduced on TUI
+PR #22. It obtains clean detached Core
 `2633c07be25512d0a84f9bfa28de6be5edff35e8`, runs `npm ci` and `npm run build`,
 and starts that actual Core source only after a fresh shell creates three
 distinct, non-link owned workspace/instance-registry/host-port-registry paths
@@ -133,9 +171,11 @@ success audit event per distinct operation ID, no-replay reconnect, and named
   or cleanup receipt. The injected cleanup-failure phase proves that a real
   owner gracefully closes Core/JWKS after finalization cleanup has failed.
   Core #1553 remains fail-closed for persistent
-reconciliation. Until the exact-head Linux and macOS jobs complete and their
-receipts are read back, this is an executable path and remains **Blocked**, not
-native acceptance; hosted builds and cross-compilation are not replacements.
+reconciliation. The exact-head Linux job completed and its retained receipt was
+verified (run `43702278820`, artifact `14156787665`). macOS remains deferred
+`N/A`, never PASS. Windows remains **Blocked** until a genuine five-action,
+secrecy-safe, same-handle, true-exit receipt exists; hosted builds and
+cross-compilation are not replacements.
 
 ### Executable-byte binding
 
@@ -194,5 +234,14 @@ the owner may clear `UF_IMMUTABLE`, while only the superuser can set or clear
 
 ## Remaining boundary
 
-A separate reviewed Core #1553 context adapter is required before persistent
-operation reconciliation can be claimed.
+The Linux default operator/v2 path now has a verified real-Core five-action
+receipt on `c82f690`. The following remain outstanding and are not implied by
+that receipt:
+
+- A separate reviewed Core #1553 context adapter is required before persistent
+  operation reconciliation can be claimed.
+- Genuine Windows five-action acceptance requires a secrecy-safe, same-handle,
+  true-exit receipt; the existing Windows result remains partial and blocked.
+- macOS remains deferred `N/A` and is never recorded as PASS.
+- Packaged same-byte Core+TUI acceptance and release qualification remain
+  separate gates and are not established by the source-built native receipt.

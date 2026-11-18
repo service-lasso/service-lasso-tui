@@ -58,7 +58,7 @@ static inline int exceeds_available_bytes(const struct policy_file *fp,
 	return req_size > fp->len;
 }
 
-#define is_saturated(x) ((x) == (typeof(x))-1)
+#define is_saturated(x) ((x) == (__typeof__(x))-1)
 
 #define zero_or_saturated(x) (((x) == 0) || is_saturated(x))
 

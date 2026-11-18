@@ -239,7 +239,7 @@ static long final_services(sl_linux_final_capture *r,unsigned emit,unsigned long
   unsigned long root_index=final_service_index(c,worker->root_terminal_original,0),join_index=final_service_index(c,worker->joined_by,3);
   if(root_index==ULONG_MAX-1||join_index==ULONG_MAX-1||f->read_count>22)return -EINVAL;
   if(worker->create_returned&&!worker->create_result&&(!atomic_load_explicit(&worker->body_returned,memory_order_acquire)||join_index>=c->service_capacity||!worker->joined_by->returned||worker->joined_by->native_result||worker->joined_by->worker_original!=worker||worker->joined_by->joined_result!=f))return -EINVAL;
-  sl_linux_call *native[6]={&f->open,&f->filesystem_query,&f->identity_query,&f->close,&f->lift.duplicate,&f->lift.original_close};
+  sl_linux_call *native[6]={&f->open,&f->filesystem_query,&f->identity_query,&f->close,&f->lift.duplicate,&f->lift.close_original};
   for(unsigned j=0;j<6;j++)if(native[j]->source&&!atomic_load_explicit(&native[j]->returned,memory_order_acquire))return -EINVAL;
   uint64_t family[3][10]={{i,worker->attempted,worker->create_entered,worker->create_returned,(uint64_t)worker->create_result,worker->create_entered?atomic_load(&worker->body_entered):0,worker->create_entered?atomic_load(&worker->body_returned):0,root_index,join_index,0},
   {f->attempted,f->returned,f->eof,f->excess,f->framing_complete,f->populated,f->frozen,f->read_count,f->extent,(uint64_t)f->result},
@@ -428,7 +428,7 @@ static long final_policy_helper(sl_linux_final_capture *r,unsigned emit,unsigned
   * pointer slot once per bucket visit, not the entire table for every node. */
  if(v->kind==SL_SELINUX_HASH_BUCKET||v->kind==SL_SELINUX_AVTAB_BUCKET){
   unsigned field=v->kind==SL_SELINUX_HASH_BUCKET?0:1;
-  const void *body=field?(v->avtab_original?v->avtab_original->htable:NULL):(v->table_original?v->table_original->htable:NULL);
+  const void *body=field?(v->avtab_original?(const void*)v->avtab_original->htable:NULL):(v->table_original?(const void*)v->table_original->htable:NULL);
   unsigned long entries=field?(v->avtab_original?v->avtab_original->nslot:0):(v->table_original?v->table_original->size:0);
   unsigned long width=field?sizeof(avtab_ptr_t):sizeof(hashtab_ptr_t),offset=0;
   if(!body||!entries||entries>ULONG_MAX/width||v->bucket>=entries)return -EINVAL;
@@ -822,7 +822,7 @@ static long final_request_input(sl_linux_final_capture *r,unsigned emit,unsigned
  for(unsigned long i=0;i<channel->prepared_capacity;i++){
   sl_linux_terminal_request *q=&channel->prepared_requests[i];sl_linux_input_worker *w=&q->input;
   if(!q->prefix.attempted)continue;
-  sl_linux_call *calls[11]={&q->window.query,&q->window.copy,&q->mode.query,&q->mode.change,&q->restoration.restore,&q->input_stop.send,&w->control_pair,&w->control_lifts[0].duplicate,&w->control_lifts[0].original_close,&w->control_lifts[1].duplicate,&w->control_lifts[1].original_close};
+  sl_linux_call *calls[11]={&q->window.query,&q->window.copy,&q->mode.query,&q->mode.change,&q->restoration.restore,&q->input_stop.send,&w->control_pair,&w->control_lifts[0].duplicate,&w->control_lifts[0].close_original,&w->control_lifts[1].duplicate,&w->control_lifts[1].close_original};
   for(unsigned j=0;j<11;j++)if(calls[j]->source&&!atomic_load_explicit(&calls[j]->returned,memory_order_acquire))return -EINVAL;
   unsigned long stop_index=ULONG_MAX,restore_index=ULONG_MAX;
   for(unsigned long j=0;j<channel->prepared_capacity;j++){
@@ -934,13 +934,13 @@ static long final_terminal(sl_linux_final_capture *r,unsigned emit,unsigned long
  if(t->attempted&&(t->input_original!=&c->entry.public_streams[0]||t->output_original!=&c->entry.public_streams[1]))return -EINVAL;
  long result=final_entry_span(r,t,sizeof(*t));if(result)return result;
  result=final_entry_span(r,c->routes,sizeof(c->routes));if(result)return result;
- sl_linux_call *calls[80]={&t->input_query,&t->output_query,&t->fallback_open,&t->fallback_query,&t->fallback_lift.duplicate,&t->fallback_lift.original_close,
+ sl_linux_call *calls[80]={&t->input_query,&t->output_query,&t->fallback_open,&t->fallback_query,&t->fallback_lift.duplicate,&t->fallback_lift.close_original,
  &c->private_query,&c->private_set,&c->parent_slave_close,&c->parent_custody_child_close,&c->parent_gate_child_close,
- &c->pty_open,&c->pty_unlock,&c->pty_peer,&c->master_flags,&c->master_nonblocking,&c->master_lift.duplicate,&c->master_lift.original_close,&c->slave_lift.duplicate,&c->slave_lift.original_close};unsigned used=20;
+ &c->pty_open,&c->pty_unlock,&c->pty_peer,&c->master_flags,&c->master_nonblocking,&c->master_lift.duplicate,&c->master_lift.close_original,&c->slave_lift.duplicate,&c->slave_lift.close_original};unsigned used=20;
  for(unsigned i=0;i<3;i++){
   sl_linux_stream_route *route=&c->routes[i];
   if(route->attempted&&(route->public_original!=&c->entry.public_streams[i]||route->stream_index!=(int)i))return -EINVAL;
-  sl_linux_call *group[12]={&route->query,&route->pipe,&route->pty_open,&route->pty_unlock,&route->pty_peer,&route->private_query,&route->private_set,&route->close_child,&route->lifts[0].duplicate,&route->lifts[0].original_close,&route->lifts[1].duplicate,&route->lifts[1].original_close};
+  sl_linux_call *group[12]={&route->query,&route->pipe,&route->pty_open,&route->pty_unlock,&route->pty_peer,&route->private_query,&route->private_set,&route->close_child,&route->lifts[0].duplicate,&route->lifts[0].close_original,&route->lifts[1].duplicate,&route->lifts[1].close_original};
   for(unsigned j=0;j<12;j++)calls[used++]=group[j];
  }
  for(unsigned i=0;i<used;i++){result=final_entry_span(r,calls[i],sizeof(*calls[i]));if(result)return result;if(calls[i]->source&&!atomic_load_explicit(&calls[i]->returned,memory_order_acquire))return -EINVAL;}

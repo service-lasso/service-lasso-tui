@@ -21,6 +21,16 @@ test('candidate source test and payload select the same held genuine-source lane
  assert.equal(plan.sourceInputs.generatedGo,input.generatedGo);
  assert.equal(plan.link.output,input.ownerOutput);
  assert.ok(plan.prerequisites.includes('new-complete-input-root'));
+ assert.equal(plan.entryFixture.source,path.join(input.sourceRoot,'native/owner/tests/generated_owned_entry_linux_test.c'));
+ assert.equal(plan.sourceInputs.entryFixtureSource,plan.entryFixture.source);
+ assert.equal(plan.entryFixture.notExecuted,true);
+ assert.ok(plan.entryFixture.compile.argv.includes('-DSL_CANDIDATE_GENERATED_SOURCE='+JSON.stringify(input.generatedEntry)));
+ assert.ok(plan.entryFixture.compile.argv.includes(plan.entryFixture.source));
+ const generatedEntryObject=plan.owner.commands.find(row=>row.source===input.generatedEntry).output;
+ assert.ok(!plan.entryFixture.link.argv.includes(generatedEntryObject));
+ assert.ok(plan.entryFixture.link.argv.includes(plan.entryFixture.object));
+ assert.ok(plan.order.indexOf('compile-generated-entry-fixture')<plan.order.indexOf('link-generated-entry-fixture'));
+ assert.ok(plan.order.indexOf('link-generated-entry-fixture')<plan.order.indexOf('link-existing-native-owner'));
 });
 test('missing and aliased held originals refuse before a plan is produced',()=>{
  const input=fixture();

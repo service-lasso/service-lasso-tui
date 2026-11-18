@@ -59,7 +59,7 @@ $NODE --test scripts/native-input-bundle.test.mjs
 $NODE --test scripts/scoped-candidate.test.mjs scripts/native-owner-package.test.mjs scripts/native-pair-wiring.test.mjs scripts/verify-candidate-publication.test.mjs scripts/verify-candidate-publication-fresh-job.test.mjs scripts/native-input-bundle.test.mjs
 ```
 
-The current focused run is 147 tests: 146 pass, 1 Windows-only load test
+The current focused run is 157 tests: 156 pass, 1 Windows-only load test
 skipped on Linux. This is bounded source validation, not native proof.
 
 ## Development-only Linux probe (2026-11-18)
@@ -89,8 +89,12 @@ compiles, and the emitted `candidate-entry.c` compile. `link-native-owner` then
 failed only with `undefined reference to main`, matching
 `nativeEntrySupplied:false`. A temporary `/tmp` `int main(void){return 0;}`
 link probe linked every non-test object with no other unresolved symbols; it is
-not a native entry and was not added to the tree. This is GCC source validation,
-not the selected clang toolchain, native execution, ROOT admission, or PASS.
+not a native entry and was not added to the tree. The Linux plan now also
+compiles and links the existing generated-owned-entry refusal fixture against
+the SAME generated C and all non-test owner/libsepol objects. The fixture is a
+compile/link-only gate and is not executed; its test `main` does not supply the
+product's missing genuine installer entry. This is GCC source validation, not
+the selected clang toolchain, native execution, ROOT admission, or PASS.
 
 ## Still missing before issue #53 can begin
 

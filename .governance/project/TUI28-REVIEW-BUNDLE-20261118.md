@@ -69,9 +69,9 @@ canonical policy bytes, TUI HEAD `c82f69048f992ea3635f6147e6401023cefc62c3`,
 and actual Go 1.26.0 / Node 22.23.2 / GCC 15.2.0 originals. It is not
 authorization and is not a durable review input.
 
-The Linux executor passed source head/clean, matching Go/Node checks, paired
-source emission, Go candidate tests, and the Go payload. Compilation then found
-real source defects:
+The first Linux executor run passed source head/clean, matching Go/Node checks,
+paired source emission, Go candidate tests, and the Go payload. Compilation then
+found real source defects:
 
 - `native/owner/final_capture_linux.c` used `sl_linux_fd_lift.original_close`;
   the actual member is `close_original`.
@@ -82,14 +82,15 @@ real source defects:
 - Vendored `third_party/libsepol/src/private.h` used `typeof` in a `-std=c11`
   build; `__typeof__` preserves the GCC/clang extension.
 
-After those fixes, all 135 non-test owner sources and all 45 selected libsepol
-sources compiled with `-std=c11`, and the emitted `candidate-entry.c` compiled.
-Link reached only `undefined reference to main`, matching
+After those fixes were committed at `7a4ea99240048d732874e363c6516ba804b49921`,
+a clean-tree executor rerun passed source head/clean, the matching toolchain
+check, paired emission, Go candidate tests, the Go payload, all owner and libsepol
+compiles, and the emitted `candidate-entry.c` compile. `link-native-owner` then
+failed only with `undefined reference to main`, matching
 `nativeEntrySupplied:false`. A temporary `/tmp` `int main(void){return 0;}`
-link probe then linked every non-test object with no other unresolved symbols.
-That probe is not a native entry and was not added to the tree. This is GCC
-source validation, not the selected clang toolchain, native execution, ROOT
-admission, or PASS.
+link probe linked every non-test object with no other unresolved symbols; it is
+not a native entry and was not added to the tree. This is GCC source validation,
+not the selected clang toolchain, native execution, ROOT admission, or PASS.
 
 ## Still missing before issue #53 can begin
 

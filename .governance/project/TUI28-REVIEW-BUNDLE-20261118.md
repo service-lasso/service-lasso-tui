@@ -7,7 +7,7 @@ ROOT admission, native proof, qualification, or publication.
 
 | Role | Repository | Commit | Tree |
 | --- | --- | --- | --- |
-| TUI base | `service-lasso/service-lasso-tui` | `c82f69048f992ea3635f6147e6401023cefc62c3` | pending commit |
+| TUI base | `service-lasso/service-lasso-tui` | `edb08312452c9988c510100f1082c580d3714d88` | `ce86f0343983b856884db5d8af4834f0c518c222` |
 | Core SPEC-008 authority | `service-lasso/service-lasso` | `0087aa4b3c9870ac6e36769ef5632785c9411fd9` | `33d5b7f94b61958562b4725086443caf6b5174e4` |
 | Core native runtime pin | `service-lasso/service-lasso` | `2633c07be25512d0a84f9bfa28de6be5edff35e8` | `2178666c6ea0fde729a1499a59d74db881e02eb7` |
 | CLI reference only | `service-lasso/service-lasso-cli` | `f8042bf0d325d01c9b4389446c16774a2ca76ac1` | `fb2ac9f44cadfb738a0c86a3ecd306d31cc6b895` |
@@ -29,6 +29,12 @@ currently pinned.
   - Working-tree SHA-256: `7bb6d1b5ba66aa48a64f1c8b8b62aea44afb89534b894bb13065a98fbabac456`
 - `scripts/native-input-bundle.test.mjs`
   - Working-tree SHA-256: `1f4a73a2619a178b2cd9ba3a225314c809b107c71e3140c918a635df6bc4d6cf`
+- `scripts/native-owner-build-plan.mjs`
+  - SHA-256 at `edb0831`: `2f15a15a2d3713894c9e5cbb3ad3bda8a10da26ed0675e511f6bdcfeb4721348`
+- `scripts/linux-candidate-executor.mjs`
+  - SHA-256 at `edb0831`: `affa7e7719cbf21752842edf2fccdefa327023175d1f3c610ad7ed57244a1c60`
+- `scripts/linux-candidate-build-plan.test.mjs`
+  - SHA-256 at `edb0831`: `3d6d7efc75a022e5eb4f5dc2949e832c9b15f02ea3448900756a6635401771de`
 
 These hashes are provisional until the final TUI commit is created. The module
 defines a closed `service-lasso.tui-native-input-bundle.v1` record, denies
@@ -95,6 +101,15 @@ the SAME generated C and all non-test owner/libsepol objects. The fixture is a
 compile/link-only gate and is not executed; its test `main` does not supply the
 product's missing genuine installer entry. This is GCC source validation, not
 the selected clang toolchain, native execution, ROOT admission, or PASS.
+
+On 2026-11-19, commit `edb08312452c9988c510100f1082c580d3714d88` added that
+compile/link-only gate to the Linux build plan and executor. A clean-tree rerun
+using `/tmp/tui28-inputs-syDmz2` (version `2026.11.19-edb0831`) compiled and
+linked `objects/generated-owned-entry-fixture`, then reached
+`link-native-owner`; the product link again failed only with
+`undefined reference to main`. Attempt root:
+`/tmp/tui28-attempt-1795008333295251625`. The bundle and attempt remain
+development-synthetic; neither is authorization, ROOT admission, or native proof.
 
 ## Still missing before issue #53 can begin
 

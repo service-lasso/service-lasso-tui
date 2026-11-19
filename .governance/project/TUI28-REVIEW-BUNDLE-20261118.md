@@ -7,7 +7,7 @@ ROOT admission, native proof, qualification, or publication.
 
 | Role | Repository | Commit | Tree |
 | --- | --- | --- | --- |
-| TUI base | `service-lasso/service-lasso-tui` | `063b7d8997f94e13687497fcae8f2bb546ad1fe6` | `2b331d11ce69b3c0667b47b2ac7f6b0f0467bec1` |
+| TUI base | `service-lasso/service-lasso-tui` | `f0337e315506ae154f02f8874bce7fc3cafc1cc5` | `45ee624104fb658ddf38fc87ae8d5d93f37c7efa` |
 | Core SPEC-008 authority | `service-lasso/service-lasso` | `0087aa4b3c9870ac6e36769ef5632785c9411fd9` | `33d5b7f94b61958562b4725086443caf6b5174e4` |
 | Core native runtime pin | `service-lasso/service-lasso` | `2633c07be25512d0a84f9bfa28de6be5edff35e8` | `2178666c6ea0fde729a1499a59d74db881e02eb7` |
 | CLI reference only | `service-lasso/service-lasso-cli` | `f8042bf0d325d01c9b4389446c16774a2ca76ac1` | `fb2ac9f44cadfb738a0c86a3ecd306d31cc6b895` |
@@ -56,6 +56,8 @@ original before writing a non-overwriting bundle.
   - SHA-256: `654b22921b5e69dce76f0ae09fae852996305b94956ce0fe1442969c1d402dd0`
 - `.governance/project/TUI37-LINUX-ACQUISITION.md`
   - SHA-256: `614911984564248eb8e1c037c859ef60bacf47a9ba7d5d0e00cb0beff95050dd`
+- `.governance/project/TUI28-CORE-ENTRY-CONTRACT-20261119.md`
+  - SHA-256 at `f0337e3`: `4df988405ca2cd76d982b33f78b5518be7e0b939c6a31bb11c2dfdfddfec2120`
 - `.governance/project/ga-platform-scope.json`
   - SHA-256: `159d644c161cf532c94d3bfe17ed55e32bf94c5d2843928945c450f6d8140c12`
 
@@ -123,6 +125,13 @@ entry authority. A clean-tree rerun using `/tmp/tui28-inputs-LV4ewl` (version
 `2026.11.19-063b7d8`) compiled and linked the fixture including this seam, then
 failed product `link-native-owner` only with `undefined reference to main`.
 Attempt root: `/tmp/tui28-attempt-1795010229681724780`.
+
+Commit `f0337e315506ae154f02f8874bce7fc3cafc1cc5` adds the proposed Core-owned
+entry contract. It fixes Core as the sole acquisition/authority owner and makes
+CLI and TUI consumers of a per-attempt opaque lease plus a Core binder. TUI's
+eventual `main` may only bind that record and call `sl_candidate_owned_entry`;
+it may not acquire or invent operands. The contract is unimplemented, has no
+closed ABI, and changes no native source or proof status.
 
 ## Still missing before issue #53 can begin
 

@@ -219,9 +219,12 @@ remain truthful until the product path and its genuine inputs exist.
   originals handle is supplied. No synthetic originals are accepted.
 - Native build: `scripts/native-owner-build-plan.mjs` includes the private
   contract source and `native/entry` include path.
+- Go bridge: `internal/coreentry/native_cgo_linux.go` passes the sealed views to
+  the private contract under cgo; `native_nocgo_linux.go` refuses when cgo is
+  unavailable. The Core-bound entry requires `NativeAcquired` before startup.
 - Refusal fixture: `native/entry/sl_core_initial_entry_test.c`, run by
   `scripts/core-entry-c-contract.test.mjs`.
 
-Still not implemented or admitted: the native-owner call from the bound TUI
-record, authentic Core originals, the production binder adapter, native
-execution, ROOT admission, qualification, and publication.
+Still not implemented or admitted: authentic Core originals, the production
+Core binder adapter, native execution, ROOT admission, qualification, and
+publication.

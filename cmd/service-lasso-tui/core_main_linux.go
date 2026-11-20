@@ -23,6 +23,9 @@ func main() {
 	if err := receiver.Enroll(coreOriginal, "core.entry", entry); err != nil {
 		os.Exit(2)
 	}
+	if entry.AcquireNative() != coreentry.NativeAcquired {
+		os.Exit(3)
+	}
 	startup := &startupOccurrence{}
 	publicZero := ""
 	var publicTail []string

@@ -301,3 +301,34 @@ func TestBindStreamsHandoffAndRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBindReleasesWhenBoundIsRefused(t *testing.T) {
+	handoffLine := []byte(`{"contract":"service-lasso.candidate-entry-handoff.v1","lease":{"leaseId":"lease-a"}}`)
+	imageBytes := testImage(t, handoffLine, requiredSections(), true)
+	binding, err := json.Marshal(bindingEnvelope{
+		Kind:        "binding",
+		LeaseID:     "lease-a",
+		ImageBytes:  uint64(len(imageBytes)),
+		ImageSHA256: imageHash(imageBytes),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := bytes.NewBuffer(nil)
+	input.Write(append(handoffLine, '\n'))
+	input.Write(append(binding, '\n'))
+	input.Write(imageBytes)
+	input.Write([]byte("{\"kind\":\"refused\",\"code\":\"binder_ack_mismatch\"}\n"))
+	output := bytes.NewBuffer(nil)
+	if _, err := Bind(bufio.NewReader(input), output, true); err == nil {
+		t.Fatal("refused bound was admitted")
+	}
+	lines := bytes.Split(bytes.TrimSuffix(output.Bytes(), []byte{'\n'}), []byte{'\n'})
+	if len(lines) != 3 {
+		t.Fatalf("unexpected output lines: %d", len(lines))
+	}
+	var release map[string]string
+	if err := json.Unmarshal(lines[2], &release); err != nil || release["kind"] != "release" || release["leaseId"] != "lease-a" {
+		t.Fatalf("unexpected release: %v %#v", err, release)
+	}
+}

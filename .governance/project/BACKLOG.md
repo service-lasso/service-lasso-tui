@@ -291,6 +291,10 @@ SPEC-004 TUI28-CANDIDATE/NATIVE/AGGREGATE/PUBLISH/DENIALS/CLOSURE maps the entir
 ## Issue #28 source implementation ready for entire review
 SPEC-004 TUI28-CANDIDATE/NATIVE/AGGREGATE/PUBLISH/DENIALS/CLOSURE is implemented coherently in the separate scoped workflow, native producer/owner/observer, current-attempt aggregate, archive/public byte verifiers and protected publisher. Existing v2 workflow and publisher source stay unchanged. The canonical policy copy is byte-identical. All new local product/compiler/parser/test/native execution remains UNEXECUTED; source-only review and NEW complete-input ROOT are mandatory. Preserve natural pre-code CI37150082745: macOS failure and native jobs skipped, never scoped acceptance. Persistent/pending reconciliation against2633 remains blocked despite source support for the reviewed future endpoint. Full programme ACTIVE; no protected catalog entry, real publication, Core qualification or GA is claimed.
 
+## Issue28 Linux source audit (2026-11-17)
+
+A scoped Linux source audit (`.governance/project/TUI28-LINUX-SOURCE-AUDIT-20261117.md`) found no Linux-specific source gap in the scoped workflow, current-attempt aggregate, Linux archive verifier or protected publisher. The reachable `produceNative()` entry remains intentionally fail-closed with no provider call or output; the private historical Go-only body cannot issue a wrapper. Authentic #37 inputs/constructors, Windows query-profile input, independent ENTIRE review and NEW complete-input ROOT remain mandatory. #28 stays open and source-only; no native proof, publication, qualification, pin, GA or catalog state is claimed.
+
 ## Issue28 PR31 R1 retained-record correction (2026-10-04)
 SPEC001 TUI-OPERATIONS-R1 binds the reviewed failure at125eb: terminal or
 unknown_after_crash B must never remove preexisting retained A after failed

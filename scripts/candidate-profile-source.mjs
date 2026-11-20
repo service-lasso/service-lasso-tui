@@ -393,6 +393,14 @@ export function emitCandidateProfileSources(original, buildGeometry, nativeGeome
     ' /* Consume the SAME already-constructed/enrolled root. No new clock or',
     '  * renewal, parent-pointer authority copy, or postbirth shared write. */',
     ' return sl_candidate_dispatch_prepared_outer(owner,charge,sequence);',
+    '}',
+    '/* TUI-owned composition seam for a future genuine installer main. It',
+    ' * supplies no acquisition, public ABI or entry authority. */',
+    'static long sl_candidate_owned_entry(sl_linux_containing_charge *charge,int argc,char **argv,char **environment,',
+    ' const sl_linux_deadline_source *source,sl_linux_deadline *root,sl_linux_deadline_sequence *sequence){',
+    ' sl_linux_public_main_owner *owner=sl_candidate_prepare_owned_entry(charge,argc,argv,environment);',
+    ' if(!owner)return -1;',
+    ' return sl_candidate_enter_owned_outer(owner,charge,source,root,sequence);',
     '}','#endif',''
   ].join('\n');
   const go=[

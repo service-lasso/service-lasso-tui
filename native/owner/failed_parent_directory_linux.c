@@ -1,6 +1,7 @@
 #if defined(__linux__) && defined(__x86_64__)
 #include "failed_parent_directory_linux.h"
 #include <errno.h>
+#include <limits.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>

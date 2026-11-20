@@ -1,0 +1,201 @@
+# TUI28 Core entry contract (proposed, 2026-11-19)
+
+Status: proposed source contract. Core has no implementation of this contract at
+the pinned commits. CLI and TUI currently have no genuine entry caller. This
+document defines the boundary; it grants no source, native, ROOT, admission, or
+publication authority.
+
+## Decision
+
+Core is the sole native entry owner and authority. CLI and TUI are consumers:
+
+- Core acquires the real launch/startup occurrence, containing reservation,
+  source/domain, issuer-to-operation relation, deadline root/sequence, and
+  custody originals.
+- Core creates a per-attempt opaque entry lease.
+- Core launches the consumer and passes only that lease through an inherited
+  handle.
+- CLI renders Core results; it does not construct native operands.
+- TUI receives the Core-bound entry record and passes it to
+  `sl_candidate_owned_entry`; it does not acquire or invent operands.
+
+A consumer launched without a Core lease has no entry and must refuse before
+effects.
+
+## Non-goals
+
+This contract does not:
+
+- add a public C ABI, CLI flag, environment variable, JSON file, or path-based
+  authority;
+- let CLI or TUI create a containing charge, domain, issuer, deadline, or
+  reservation;
+- treat hashes, dimensions, pointer equality, process identity, or a lease
+  shape as issuer authority;
+- require or permit a fabricated `main` for link success;
+- replace authentic inputs, separate ROOT admission, or matching-host native
+  proof.
+
+## Opaque lease
+
+A lease is a Core-owned, non-transferable record for exactly one attempt.
+
+It binds at least:
+
+- lease magic/version/size and Core attempt identity;
+- consumer PID, process start identity, executable identity, and cgroup/domain
+  identity;
+- exact `argc`/`argv`/environment bytes and the selected public entry identity;
+- the Core reservation, containing source/domain, issuer, operation, and
+  expected deadline;
+- issue/expiry times and a single-use state.
+
+The lease is not authority by itself. Core retains the original reservation,
+issuer, source, operation, and custody objects. The lease only identifies which
+Core originals the binder may materialize for this consumer.
+
+## API surface
+
+The following methods are conceptual and versioned. Exact transports, names,
+and codecs are selected during Core implementation; callers must use the
+versioned contract, never a fallback.
+
+### `entry.launch.v1`
+
+Core-only operation. CLI or another authorized view requests a launch; Core:
+
+1. verifies the reservation, issuer, operation, and requested command;
+2. creates the lease and retains every original;
+3. performs the real exec/launch with the lease handle inherited;
+4. retains the child and original launch observations.
+
+There is no consumer-side equivalent that adopts an existing process.
+
+### `entry.bind.v1`
+
+Consumer-side call through the Core binder. Input: inherited lease handle plus
+the consumer's own observed PID, process start identity, executable identity,
+`argc`/`argv`/environment, and current domain. Core returns either:
+
+- a bound entry record containing exact consumer-local views of the Core-owned
+  charge/source/domain/actors/bases, real public inputs, deadline source/root/
+  sequence, issuer relation, and custody handles; or
+- a typed refusal, with no partial authority.
+
+The binder is Core code. It may materialize consumer-local views from immutable
+Core originals, but it must not copy authority. A copy, substituted mapping, or
+relocated pointer that is not proven against the Core original is a refusal.
+
+### `entry.observe.v1`
+
+Read-only: returns Core's original launch/reservation/issuer observations for
+diagnostics. It never returns a new charge, issuer, deadline, or permission.
+
+### `entry.release.v1`
+
+Releases the lease and consumer-local bound views after the last borrower. It
+does not release Core's original reservation/custody until Core's own last
+borrower and terminal checks complete.
+
+## Consumer sequence
+
+CLI:
+
+1. Calls `entry.launch.v1` with the requested command and reservation.
+2. Does not link native acquisition code or construct operands.
+3. Displays the returned status/result; it never turns a missing lease into a
+   local entry.
+
+TUI:
+
+1. Starts only with an inherited Core lease handle.
+2. Calls `entry.bind.v1` before any native effect.
+3. On refusal, exits nonzero without creating a plan, charge, deadline, or
+   native operation.
+4. On success, passes the bound record directly to
+   `sl_candidate_owned_entry`:
+   `charge`, actual public inputs, deadline source, constructed root, and
+   enrolled sequence.
+5. Preserves every borrowed original through public capture, parent supervision,
+   and last use.
+6. Calls `entry.release.v1` once after the last borrower; no fallback release,
+   retry, or local custody claim.
+
+No PID/argv/env/path lookup, `/proc` reconstruction, local clock construction,
+or profile parsing may appear between bind and `sl_candidate_owned_entry`.
+
+## Lease binding rules
+
+`entry.bind.v1` must verify all of the following against Core's retained
+originals:
+
+- the lease is live, single-use, unexpired, and issued for this attempt;
+- the consumer PID/start/executable/domain match the launched occurrence;
+- the observed public `argc`/`argv`/environment bytes match exactly;
+- the bound charge/source/domain/actors/bases are the same Core originals;
+- the issuer-to-operation relation is the same Core relation;
+- the deadline source/root/sequence are the same constructed/enrolled
+  originals, not storage bindings or fresh clocks;
+- every borrowed handle is the same original, with a complete lifetime.
+
+A lease cannot be renewed, rebound to a second consumer, reused for a second
+attempt, or elevated by a later CLI/TUI call.
+
+## Required Core-held operands
+
+Core must hold through the consumer's last borrower:
+
+- real initial stack, `argc`/`argv`/environment, auxv, `execfn`, loader/CRT and
+  pre-main costs;
+- containing source graph/domain/items and every actor/basis original;
+- real reservation/charge rows, available bytes, page size, copies, and
+  capacity;
+- issuer, operation, domain, and provider/family relation;
+- deadline source/operation/duration, constructed root, enrolled sequence, and
+  observations;
+- installed/public image, held files, memfd/custody, readbacks, and failure
+  prefixes.
+
+Observations from `public_startup_linux.c`, `local_installation_linux.c`,
+`creator_file_linux.c`, `creator_elf_linux.c`, or the CLI initial-installer
+stack are building blocks. They do not by themselves establish the reservation
+or issuer relation.
+
+## Refusal matrix
+
+`entry.bind.v1` and `entry.launch.v1` must fail closed on:
+
+- absent, malformed, expired, replayed, or already-bound lease;
+- consumer launched outside Core or by a different attempt;
+- PID reuse, wrong start identity, wrong executable, or wrong domain;
+- any `argc`/`argv`/environment byte change or alias;
+- missing/mismatched reservation, source, domain, actor, basis, or issuer;
+- substituted charge/copies/capacity, foreign deadline root/sequence, fresh or
+  unenrolled clock, or storage binding presented as a constructor;
+- borrowed-handle substitution, duplicate ownership, or use after release;
+- any attempt to derive authority from a path, flag, env string, JSON field,
+  hash, digest, Boolean, or caller-supplied numeric value.
+
+Refusals preserve the original failure and produce no partial entry.
+
+## Implementation order
+
+1. Core defines the versioned contract types, lease state machine, refusal
+   codes, and source tests.
+2. Core implements real launch/exec acquisition, retained originals, and lease
+   issuance.
+3. Core provides the private binder that materializes exact consumer views and
+   proves every binding.
+4. CLI becomes a view over `entry.launch`/`entry.observe`; no native
+   constructors.
+5. TUI adds a product `main` that only binds and calls
+   `sl_candidate_owned_entry`.
+6. Focused refusal tests run first; positive native execution waits for
+   authentic inputs, separate ROOT admission, and matching-host qualification.
+
+## Non-claims
+
+This contract is not implemented. It is not a Core API, a closed ABI, a native
+entry, or evidence of issuer authority. The current generated C still has no
+product `main`; `nativeEntrySupplied:false` and `authenticatedIssuer:false`
+remain truthful until the Core contract and its genuine inputs exist.

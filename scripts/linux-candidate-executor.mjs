@@ -151,7 +151,7 @@ export async function executeLinuxCandidateBuild(inputs){
     'file-backed-command-completion.mjs','native-owner-build-plan.mjs','windows-native-root-layout.mjs',
     'emit-linux-candidate-profile.mjs','candidate-profile-source.mjs'].map(file=>path.join(sourceRoot,'scripts',file)),
    ...plan.owner.commands.filter(row=>row.source!==output('candidate-entry.c')).map(row=>path.resolve(sourceRoot,row.source)),
-   ...transitiveInputs];
+   plan.entryFixture.source,...transitiveInputs];
   async function acquireDistinct(file){
    const row=await held.acquire(file);
    if(held.rows.some(previous=>previous!==row&&same(previous.before,row.before)))throw new Error('distinct input names alias original');
@@ -222,6 +222,11 @@ export async function executeLinuxCandidateBuild(inputs){
   await command('test-candidate-source',plan.test.command,plan.test.argv);
   await command('build-private-payload',plan.payload.command,plan.payload.argv,output('service-lasso-tui-go'));
   for(const row of plan.owner.commands)await command('compile-native-owner',row.command,row.argv,row.output);
+  // This fixture includes the SAME generated C and has its own test main. It
+  // proves the reviewed owner composition compiles and links; it is not run and
+  // does not supply the product's missing genuine installer entry.
+  await command('compile-generated-entry-fixture',plan.entryFixture.compile.command,plan.entryFixture.compile.argv,plan.entryFixture.object);
+  await command('link-generated-entry-fixture',plan.entryFixture.link.command,plan.entryFixture.link.argv,plan.entryFixture.output);
   await command('link-native-owner',plan.link.command,plan.link.argv,plan.link.output);
   await held.revalidate();
   // Current generated C has no genuine main/_start. A natural link failure is

@@ -72,6 +72,10 @@ int main(void){
   assert(f.charge.attempted==attempted&&!f.charge.returned);
   assert_no_constructor_write();arguments[0]=empty;
  }
+ /* The TUI-owned composition seam refuses absent operands before either
+  * constructor write or outer continuation. */
+ assert(sl_candidate_owned_entry(0,1,arguments,environment,0,0,0)==-1);
+ assert_no_constructor_write();
  /* Missing genuine prepared owner/charge/source/root/sequence cannot dispatch
   * or fabricate clock enrollment. Each actual generated helper guard runs. */
  sl_linux_deadline_source source={0};sl_linux_deadline root={0};sl_linux_deadline_sequence sequence={0};

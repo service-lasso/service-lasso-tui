@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"sort"
 	"testing"
 )
@@ -228,5 +229,75 @@ func TestAcquireNativeRefusesWithoutAuthenticOriginals(t *testing.T) {
 	}
 	if got := (*Entry)(nil).AcquireNative(); got != NativeRefused {
 		t.Fatalf("nil entry got %v", got)
+	}
+}
+
+func TestBindStreamsHandoffAndRelease(t *testing.T) {
+	handoffLine := []byte(`{"contract":"service-lasso.candidate-entry-handoff.v1","lease":{"leaseId":"lease-a"}}`)
+	imageBytes := testImage(t, handoffLine, requiredSections(), true)
+	binding, err := json.Marshal(bindingEnvelope{
+		Kind:        "binding",
+		LeaseID:     "lease-a",
+		ImageBytes:  uint64(len(imageBytes)),
+		ImageSHA256: imageHash(imageBytes),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, err := json.Marshal(boundEnvelope{Kind: "bound", LeaseID: "lease-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	coreToTUIReader, coreToTUIWriter := io.Pipe()
+	tuiToCoreReader, tuiToCoreWriter := io.Pipe()
+	done := make(chan error, 1)
+	go func() {
+		defer close(done)
+		coreLines := bufio.NewReader(tuiToCoreReader)
+		write := func(value []byte) {
+			if _, err := coreToTUIWriter.Write(value); err != nil {
+				done <- err
+			}
+		}
+		write(append(handoffLine, '\n'))
+		if _, err := readControlLine(coreLines); err != nil {
+			done <- err
+			return
+		}
+		write(append(binding, '\n'))
+		write(imageBytes)
+		if _, err := readControlLine(coreLines); err != nil {
+			done <- err
+			return
+		}
+		write(append(bound, '\n'))
+		release, err := readControlLine(coreLines)
+		if err != nil {
+			done <- err
+			return
+		}
+		var value map[string]string
+		if err := json.Unmarshal(release, &value); err != nil || value["kind"] != "release" || value["leaseId"] != "lease-a" {
+			done <- err
+			return
+		}
+		_ = coreToTUIWriter.Close()
+	}()
+	entry, err := Bind(bufio.NewReader(coreToTUIReader), tuiToCoreWriter, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.LeaseID != "lease-a" {
+		t.Fatalf("unexpected lease: %q", entry.LeaseID)
+	}
+	if err := entry.Release(); err != nil {
+		t.Fatal(err)
+	}
+	if err := entry.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_ = tuiToCoreWriter.Close()
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

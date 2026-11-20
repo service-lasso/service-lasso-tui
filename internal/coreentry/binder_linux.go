@@ -102,6 +102,13 @@ func (e *Entry) Release() error {
 	return e.releaseErr
 }
 
+func releaseControl(writer io.Writer, leaseID string) {
+	if writer == nil || leaseID == "" {
+		return
+	}
+	_ = writeControlLine(writer, map[string]string{"kind": "release", "leaseId": leaseID})
+}
+
 // Bind consumes the Core handoff, sends the consumer observation, validates the
 // binding image, acknowledges it, and waits for Core's bound message.
 func Bind(reader *bufio.Reader, writer io.Writer, allowSynthetic bool) (*Entry, error) {
@@ -157,21 +164,25 @@ func Bind(reader *bufio.Reader, writer io.Writer, allowSynthetic bool) (*Entry, 
 		LeaseID:     handoff.Lease.LeaseID,
 		ImageSHA256: sealed.ImageSHA256,
 	}); err != nil {
+		releaseControl(writer, handoff.Lease.LeaseID)
 		_ = sealed.Close()
 		return nil, err
 	}
 
 	boundLine, err := readControlLine(reader)
 	if err != nil {
+		releaseControl(writer, handoff.Lease.LeaseID)
 		_ = sealed.Close()
 		return nil, err
 	}
 	var bound boundEnvelope
 	if err := decodeClosed(boundLine, &bound); err != nil {
+		releaseControl(writer, handoff.Lease.LeaseID)
 		_ = sealed.Close()
 		return nil, fmt.Errorf("core entry bound: %w", err)
 	}
 	if bound.Kind != "bound" || bound.LeaseID != handoff.Lease.LeaseID {
+		releaseControl(writer, handoff.Lease.LeaseID)
 		_ = sealed.Close()
 		return nil, fmt.Errorf("core entry bound: invalid message")
 	}

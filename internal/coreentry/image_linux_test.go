@@ -203,3 +203,20 @@ func TestDecodeClosedRejectsDuplicateKeysAndTrailingData(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAcquireNativeRefusesWithoutAuthenticOriginals(t *testing.T) {
+	handoff := []byte(`{"contract":"service-lasso.candidate-entry-handoff.v1"}`)
+	imageBytes := testImage(t, handoff, requiredSections(), false)
+	image, err := ValidateImage(imageBytes, handoff, imageHash(imageBytes), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer image.Close()
+	entry := &Entry{LeaseID: "lease-a", Image: image}
+	if got := entry.AcquireNative(); got != NativeRetainedUnavailable {
+		t.Fatalf("got %v", got)
+	}
+	if got := (*Entry)(nil).AcquireNative(); got != NativeRefused {
+		t.Fatalf("nil entry got %v", got)
+	}
+}

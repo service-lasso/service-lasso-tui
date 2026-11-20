@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"golang.org/x/sys/unix"
 )
@@ -69,6 +70,10 @@ type boundEnvelope struct {
 type Entry struct {
 	LeaseID string
 	Image   *Image
+
+	writer      io.Writer
+	releaseOnce sync.Once
+	releaseErr  error
 }
 
 func (e *Entry) Close() error {
@@ -76,6 +81,25 @@ func (e *Entry) Close() error {
 		return nil
 	}
 	return e.Image.Close()
+}
+
+// Release tells Core the last borrower is finished. It is once-only and must
+// be called before Close.
+func (e *Entry) Release() error {
+	if e == nil {
+		return nil
+	}
+	e.releaseOnce.Do(func() {
+		if e.writer == nil || e.LeaseID == "" {
+			e.releaseErr = refusalChannelAbsent
+			return
+		}
+		e.releaseErr = writeControlLine(e.writer, map[string]string{
+			"kind":    "release",
+			"leaseId": e.LeaseID,
+		})
+	})
+	return e.releaseErr
 }
 
 // Bind consumes the Core handoff, sends the consumer observation, validates the
@@ -151,7 +175,7 @@ func Bind(reader *bufio.Reader, writer io.Writer, allowSynthetic bool) (*Entry, 
 		_ = sealed.Close()
 		return nil, fmt.Errorf("core entry bound: invalid message")
 	}
-	return &Entry{LeaseID: handoff.Lease.LeaseID, Image: sealed}, nil
+	return &Entry{LeaseID: handoff.Lease.LeaseID, Image: sealed, writer: writer}, nil
 }
 
 // BindInherited consumes the descriptors Core reserved for the candidate entry.

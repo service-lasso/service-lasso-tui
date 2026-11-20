@@ -162,10 +162,13 @@ func TestBindConsumesExactHandoffAndAcknowledges(t *testing.T) {
 	if entry.LeaseID != "lease-a" || entry.Image == nil {
 		t.Fatalf("unexpected entry: %#v", entry)
 	}
+	if err := entry.Release(); err != nil {
+		t.Fatal(err)
+	}
 	_ = entry.Close()
 
 	lines := bytes.Split(bytes.TrimSuffix(output.Bytes(), []byte{'\n'}), []byte{'\n'})
-	if len(lines) != 2 {
+	if len(lines) != 3 {
 		t.Fatalf("unexpected output lines: %d", len(lines))
 	}
 	var observation observationEnvelope
@@ -182,6 +185,13 @@ func TestBindConsumesExactHandoffAndAcknowledges(t *testing.T) {
 	}
 	if ack.Kind != "ack" || ack.LeaseID != "lease-a" || ack.ImageSHA256 != imageHash(imageBytes) {
 		t.Fatalf("unexpected ack: %#v", ack)
+	}
+	var release map[string]string
+	if err := json.Unmarshal(lines[2], &release); err != nil {
+		t.Fatal(err)
+	}
+	if release["kind"] != "release" || release["leaseId"] != "lease-a" {
+		t.Fatalf("unexpected release: %#v", release)
 	}
 }
 

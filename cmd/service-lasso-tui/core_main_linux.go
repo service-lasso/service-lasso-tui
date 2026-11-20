@@ -9,22 +9,27 @@ import (
 	"github.com/service-lasso/service-lasso-tui/internal/lifetime"
 )
 
+func main() {
+	os.Exit(runCoreEntry())
+}
+
 // The Core-bound product entry refuses unless the inherited Core handoff is
 // present. The receiver below owns local API/app lifetime only; it does not
 // acquire a charge, source, domain, issuer, deadline, or custody object.
-func main() {
+func runCoreEntry() int {
 	entry, err := coreentry.BindInherited(false)
 	if err != nil {
-		os.Exit(2)
+		return 2
 	}
 	defer entry.Close()
+	defer entry.Release()
 	receiver := lifetime.NewReceiver()
 	coreOriginal := &lifetime.Original{}
 	if err := receiver.Enroll(coreOriginal, "core.entry", entry); err != nil {
-		os.Exit(2)
+		return 2
 	}
 	if entry.AcquireNative() != coreentry.NativeAcquired {
-		os.Exit(3)
+		return 3
 	}
 	startup := &startupOccurrence{}
 	publicZero := ""
@@ -33,8 +38,5 @@ func main() {
 		publicZero = os.Args[0]
 		publicTail = os.Args[1:]
 	}
-	status := runPublicCommand(startup, receiver, publicZero, publicTail, nil)
-	if status != 0 {
-		os.Exit(status)
-	}
+	return runPublicCommand(startup, receiver, publicZero, publicTail, nil)
 }

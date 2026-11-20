@@ -1,9 +1,11 @@
 # TUI28 Core entry contract (proposed, 2026-11-19)
 
-Status: proposed source contract. Core has no implementation of this contract at
-the pinned commits. CLI and TUI currently have no genuine entry caller. This
-document defines the boundary; it grants no source, native, ROOT, admission, or
-publication authority.
+Status: source contract partially implemented. Core now owns the launch, image,
+lease-failure, and handoff path; the TUI has a consumer binder and a private
+`sl_core_initial_entry_*` source contract that refuses when authentic originals
+are absent. Native product wiring, ROOT admission, and execution remain gated.
+This document grants no native execution, ROOT, admission, or publication
+authority.
 
 ## Decision
 
@@ -195,7 +197,25 @@ Refusals preserve the original failure and produce no partial entry.
 
 ## Non-claims
 
-This contract is not implemented. It is not a Core API, a closed ABI, a native
+This contract is not fully implemented. It is not a closed native ABI, a native
 entry, or evidence of issuer authority. The current generated C still has no
 product `main`; `nativeEntrySupplied:false` and `authenticatedIssuer:false`
-remain truthful until the Core contract and its genuine inputs exist.
+remain truthful until the product path and its genuine inputs exist.
+
+## Source implementation status (2026-11-20)
+
+- Core image/lease/launcher: `service-lasso/src/contracts/candidate-entry-binder.ts`,
+  `service-lasso/src/contracts/candidate-entry.ts`, and
+  `service-lasso/src/runtime/entry/candidate-entry-launcher.ts`.
+- TUI consumer: `internal/coreentry/` validates the Core image, seals it into a
+  read-only memfd, builds offset views, and acknowledges the exact digest.
+- Private link-in contract: `native/entry/sl_core_initial_entry.h` and
+  `native/entry/sl_core_initial_entry.c`. Acquisition returns
+  `SL_CORE_ENTRY_RETAINED_UNAVAILABLE` unless a non-null authentic Core
+  originals handle is supplied. No synthetic originals are accepted.
+- Refusal fixture: `native/entry/sl_core_initial_entry_test.c`, run by
+  `scripts/core-entry-c-contract.test.mjs`.
+
+Still not implemented or admitted: the product TUI `main`, authentic Core
+originals, the production binder adapter, native execution, ROOT admission,
+qualification, and publication.

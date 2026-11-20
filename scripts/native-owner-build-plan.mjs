@@ -5,6 +5,7 @@ import path from 'node:path';
 const roster = {
   "schemaVersion": 1,
   "linuxOwner": [
+    "native/entry/sl_core_initial_entry.c",
     "native/owner/archive_access_linux.c",
     "native/owner/archive_close_linux.c",
     "native/owner/archive_context_linux.c",
@@ -263,7 +264,7 @@ export function nativeOwnerCompilePlan(platform, compiler, generatedEntry, outpu
   if ((!linux && (typeof windowsRootHeader !== 'string' || !windowsRootHeader.length || windowsRootHeader.includes('\0'))) ||
       (!linux && (typeof windowsQueryHeader!=='string'||!windowsQueryHeader.length||windowsQueryHeader.includes('\0'))) ||
       (linux && (windowsRootHeader !== null||windowsQueryHeader!==null))) throw new Error('missing exact Windows root build input');
-  const includes=['-Inative/owner',...(linux?['-Ithird_party/libsepol/src','-Ithird_party/libsepol/include']:[])];
+  const includes=['-Inative/owner',...(linux?['-Inative/entry','-Ithird_party/libsepol/src','-Ithird_party/libsepol/include']:[])];
   const definitions=linux?['-DSERVICE_LASSO_OWNED_SEPOL','-D_GNU_SOURCE']:[];
   const commands=[];
   function compile(source,index,library) {

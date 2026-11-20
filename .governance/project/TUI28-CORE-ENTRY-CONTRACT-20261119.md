@@ -209,13 +209,19 @@ remain truthful until the product path and its genuine inputs exist.
   `service-lasso/src/runtime/entry/candidate-entry-launcher.ts`.
 - TUI consumer: `internal/coreentry/` validates the Core image, seals it into a
   read-only memfd, builds offset views, and acknowledges the exact digest.
+- Core-bound product entry: `cmd/service-lasso-tui/core_main_linux.go` under the
+  `service_lasso_core_entry` build tag requires the inherited Core handoff,
+  refuses an absent channel, and records the Core entry in local app/API
+  lifetime. The manual entry remains the default.
 - Private link-in contract: `native/entry/sl_core_initial_entry.h` and
   `native/entry/sl_core_initial_entry.c`. Acquisition returns
   `SL_CORE_ENTRY_RETAINED_UNAVAILABLE` unless a non-null authentic Core
   originals handle is supplied. No synthetic originals are accepted.
+- Native build: `scripts/native-owner-build-plan.mjs` includes the private
+  contract source and `native/entry` include path.
 - Refusal fixture: `native/entry/sl_core_initial_entry_test.c`, run by
   `scripts/core-entry-c-contract.test.mjs`.
 
-Still not implemented or admitted: the product TUI `main`, authentic Core
-originals, the production binder adapter, native execution, ROOT admission,
-qualification, and publication.
+Still not implemented or admitted: the native-owner call from the bound TUI
+record, authentic Core originals, the production binder adapter, native
+execution, ROOT admission, qualification, and publication.

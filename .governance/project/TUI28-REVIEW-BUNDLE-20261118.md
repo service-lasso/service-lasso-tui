@@ -61,6 +61,26 @@ original before writing a non-overwriting bundle.
 - `.governance/project/ga-platform-scope.json`
   - SHA-256: `159d644c161cf532c94d3bfe17ed55e32bf94c5d2843928945c450f6d8140c12`
 
+## Durable input producers
+
+Two source-only producer CLIs now exist:
+
+```sh
+# Nine section files -> canonical SLCPROF1. The spec is a closed JSON object
+# with {"sections":[{"id":1,"path":"sections/01.bin"}, ...]}.
+node scripts/produce-slcprof1.mjs /abs/sections.json /abs/profile.slcprof1
+
+# Record + original files -> non-overwriting native input bundle.
+node scripts/produce-native-input-bundle.mjs   /abs/native-inputs.json /abs/originals /abs/bundle --authorization
+```
+
+`produce-slcprof1.mjs` rejects traversal, symlinks, duplicate/missing sections,
+and existing output. `produce-native-input-bundle.mjs` rejects non-leaf names,
+symlinks, missing originals, output collisions, and non-authorization records
+when `--authorization` is set. Both write mode-0600 outputs and preserve the
+existing closed validators. They produce durable artifacts from supplied
+originals; they do not invent evidence.
+
 ## Exact source-review commands
 
 Use the cached Node 22.23.2 binary already used by the source suite:

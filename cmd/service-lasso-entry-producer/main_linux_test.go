@@ -3,6 +3,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -101,4 +103,43 @@ func TestProduceRefusesMissingOriginal(t *testing.T) {
 	if _, _, err := produce(directory, request); err == nil {
 		t.Fatal("missing original admitted")
 	}
+}
+
+func TestProducerImageBindsThroughCoreEntry(t *testing.T) {
+	directory := writeBundle(t, "authorization")
+	handoff := []byte(`{"contract":"service-lasso.candidate-entry-handoff.v1","lease":{"leaseId":"lease-a"}}`)
+	image, imageHash, err := produce(directory, materializeRequest{
+		Kind:        "materialize",
+		HandoffLine: base64.StdEncoding.EncodeToString(handoff),
+		Observation: json.RawMessage(`{"pid":7}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding, err := json.Marshal(map[string]any{
+		"kind": "binding", "leaseId": "lease-a", "imageBytes": len(image), "imageSha256": imageHash,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, err := json.Marshal(map[string]string{"kind": "bound", "leaseId": "lease-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := bytes.NewBuffer(nil)
+	input.Write(append(handoff, '\n'))
+	input.Write(append(binding, '\n'))
+	input.Write(image)
+	input.Write(append(bound, '\n'))
+	entry, err := coreentry.Bind(bufio.NewReader(input), bytes.NewBuffer(nil), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.LeaseID != "lease-a" || entry.Image == nil {
+		t.Fatalf("unexpected entry: %#v", entry)
+	}
+	if err := entry.Release(); err != nil {
+		t.Fatal(err)
+	}
+	_ = entry.Close()
 }

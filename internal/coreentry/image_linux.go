@@ -36,6 +36,18 @@ const (
 	viewObservation
 )
 
+const (
+	ViewCharge      = viewCharge
+	ViewSource      = viewSource
+	ViewDomain      = viewDomain
+	ViewActors      = viewActors
+	ViewBases       = viewBases
+	ViewPublicInput = viewPublicInput
+	ViewDeadline    = viewDeadline
+	ViewIssuer      = viewIssuer
+	ViewCustody     = viewCustody
+)
+
 var requiredViews = [...]uint32{
 	viewCharge,
 	viewSource,

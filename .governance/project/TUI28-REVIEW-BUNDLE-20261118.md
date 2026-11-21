@@ -77,6 +77,10 @@ node scripts/produce-native-geometry.mjs \
 # Record + original files -> non-overwriting native input bundle.
 node scripts/produce-native-input-bundle.mjs \
   /abs/native-inputs.json /abs/originals /abs/bundle --authorization
+
+# Authorization bundle -> Core binding image over stdin.
+go build -o /abs/service-lasso-entry-producer ./cmd/service-lasso-entry-producer
+/abs/service-lasso-entry-producer /abs/bundle
 ```
 
 `produce-slcprof1.mjs` rejects traversal, symlinks, duplicate/missing sections,
@@ -86,6 +90,12 @@ rejects non-leaf names, symlinks, missing originals, output collisions, and
 non-authorization records when `--authorization` is set. All write mode-0600
 outputs and preserve the existing closed validators. They produce durable
 artifacts from supplied originals; they do not invent evidence.
+
+`cmd/service-lasso-entry-producer` consumes only an `authorization` bundle and
+maps its retained profile/ABI/geometry/custody/toolchain bytes into the nine
+binding-image sections. It emits the exact image only after all bundle files
+match their recorded sizes and hashes. It does not construct a fabricated
+profile or accept a caller-supplied image.
 
 ## Exact source-review commands
 

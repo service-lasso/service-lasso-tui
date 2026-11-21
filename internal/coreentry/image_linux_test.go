@@ -332,3 +332,23 @@ func TestBindReleasesWhenBoundIsRefused(t *testing.T) {
 		t.Fatalf("unexpected release: %v %#v", err, release)
 	}
 }
+
+func TestEncodeImageRoundTripsThroughValidator(t *testing.T) {
+	handoff := []byte(`{"contract":"service-lasso.candidate-entry-handoff.v1"}`)
+	sections := make([]ImageSection, 0, len(requiredSections()))
+	for _, kind := range requiredViews {
+		sections = append(sections, ImageSection{Kind: kind, Bytes: requiredSections()[kind]})
+	}
+	image, imageHashValue, err := EncodeImage(handoff, sections)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := ValidateImage(image, handoff, imageHashValue, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer decoded.Close()
+	if decoded.ImageSHA256 != imageHashValue || len(decoded.Views) != len(requiredViews) {
+		t.Fatalf("unexpected encoded image: %s %d", decoded.ImageSHA256, len(decoded.Views))
+	}
+}

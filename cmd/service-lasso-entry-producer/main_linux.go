@@ -162,14 +162,20 @@ func refuse(code string) {
 }
 
 func main() {
-	if len(os.Args) != 2 {
+	args := os.Args[1:]
+	allowSynthetic := false
+	if len(args) == 2 && args[0] == "--development-synthetic" {
+		allowSynthetic = true
+		args = args[1:]
+	}
+	if len(args) != 1 {
 		os.Exit(2)
 	}
 	var request materializeRequest
 	if err := json.NewDecoder(os.Stdin).Decode(&request); err != nil {
 		refuse("binder_message_invalid")
 	}
-	image, imageSha256, err := produce(os.Args[1], request)
+	image, imageSha256, err := produceWithPolicy(args[0], request, allowSynthetic)
 	if err != nil {
 		refuse("binder_originals_unavailable")
 	}

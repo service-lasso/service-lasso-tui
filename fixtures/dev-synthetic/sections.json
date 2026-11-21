@@ -1,0 +1,40 @@
+{
+  "sections": [
+    {
+      "id": 1,
+      "path": "sections/01.bin"
+    },
+    {
+      "id": 2,
+      "path": "sections/02.bin"
+    },
+    {
+      "id": 3,
+      "path": "sections/03.bin"
+    },
+    {
+      "id": 4,
+      "path": "sections/04.bin"
+    },
+    {
+      "id": 5,
+      "path": "sections/05.bin"
+    },
+    {
+      "id": 6,
+      "path": "sections/06.bin"
+    },
+    {
+      "id": 7,
+      "path": "sections/07.bin"
+    },
+    {
+      "id": 8,
+      "path": "sections/08.bin"
+    },
+    {
+      "id": 9,
+      "path": "sections/09.bin"
+    }
+  ]
+}

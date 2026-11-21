@@ -63,23 +63,29 @@ original before writing a non-overwriting bundle.
 
 ## Durable input producers
 
-Two source-only producer CLIs now exist:
+Three source-only producer CLIs now exist:
 
 ```sh
 # Nine section files -> canonical SLCPROF1. The spec is a closed JSON object
 # with {"sections":[{"id":1,"path":"sections/01.bin"}, ...]}.
 node scripts/produce-slcprof1.mjs /abs/sections.json /abs/profile.slcprof1
 
+# Profile + ABI + geometry source -> canonical geometry JSON.
+node scripts/produce-native-geometry.mjs \
+  /abs/profile.slcprof1 /abs/abi.json /abs/geometry-source.json /abs/geometry.json
+
 # Record + original files -> non-overwriting native input bundle.
-node scripts/produce-native-input-bundle.mjs   /abs/native-inputs.json /abs/originals /abs/bundle --authorization
+node scripts/produce-native-input-bundle.mjs \
+  /abs/native-inputs.json /abs/originals /abs/bundle --authorization
 ```
 
 `produce-slcprof1.mjs` rejects traversal, symlinks, duplicate/missing sections,
-and existing output. `produce-native-input-bundle.mjs` rejects non-leaf names,
-symlinks, missing originals, output collisions, and non-authorization records
-when `--authorization` is set. Both write mode-0600 outputs and preserve the
-existing closed validators. They produce durable artifacts from supplied
-originals; they do not invent evidence.
+and existing output. `produce-native-geometry.mjs` rejects a geometry roster
+that does not join to the profile quantities and ABI. `produce-native-input-bundle.mjs`
+rejects non-leaf names, symlinks, missing originals, output collisions, and
+non-authorization records when `--authorization` is set. All write mode-0600
+outputs and preserve the existing closed validators. They produce durable
+artifacts from supplied originals; they do not invent evidence.
 
 ## Exact source-review commands
 

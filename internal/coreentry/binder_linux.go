@@ -21,11 +21,17 @@ import (
 const maxControlLine = 64 * 1024
 
 type leaseIdentity struct {
-	LeaseID       string `json:"leaseId"`
-	AttemptID     string `json:"attemptId"`
-	IssuerID      string `json:"issuerId"`
-	ReservationID string `json:"reservationId"`
-	OperationID   string `json:"operationId"`
+	Contract      string          `json:"contract"`
+	Version       int             `json:"version"`
+	LeaseID       string          `json:"leaseId"`
+	AttemptID     string          `json:"attemptId"`
+	IssuerID      string          `json:"issuerId"`
+	ReservationID string          `json:"reservationId"`
+	OperationID   string          `json:"operationId"`
+	Consumer      json.RawMessage `json:"consumer"`
+	PublicInput   json.RawMessage `json:"publicInput"`
+	IssuedAtMs    int64           `json:"issuedAtMs"`
+	ExpiresAtMs   int64           `json:"expiresAtMs"`
 }
 
 type handoffEnvelope struct {
@@ -61,8 +67,9 @@ type ackEnvelope struct {
 }
 
 type boundEnvelope struct {
-	Kind    string `json:"kind"`
-	LeaseID string `json:"leaseId"`
+	Kind    string          `json:"kind"`
+	LeaseID string          `json:"leaseId"`
+	Binding json.RawMessage `json:"binding"`
 }
 
 // Entry is the Core-bound consumer record. It is not a charge, source, domain,

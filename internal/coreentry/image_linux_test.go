@@ -352,3 +352,37 @@ func TestEncodeImageRoundTripsThroughValidator(t *testing.T) {
 		t.Fatalf("unexpected encoded image: %s %d", decoded.ImageSHA256, len(decoded.Views))
 	}
 }
+
+func TestBindAcceptsFullCoreLeaseAndBoundBinding(t *testing.T) {
+	handoffLine := []byte(`{"contract":"service-lasso.candidate-entry-handoff.v1","lease":{"contract":"service-lasso.candidate-entry-lease.v1","version":1,"leaseId":"lease-a","attemptId":"attempt-a","issuerId":"issuer-a","reservationId":"reservation-a","operationId":"operation-a","consumer":{"pid":7,"startIdentity":"linux-start-v1:1","executableIdentity":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","domainIdentity":"linux-ns-v1:pid:[1]:mnt:[1]"},"publicInput":{"argv":["service-lasso-tui"],"environment":[]},"issuedAtMs":1,"expiresAtMs":2}}`)
+	imageBytes := testImage(t, handoffLine, requiredSections(), true)
+	binding, err := json.Marshal(bindingEnvelope{
+		Kind:        "binding",
+		LeaseID:     "lease-a",
+		ImageBytes:  uint64(len(imageBytes)),
+		ImageSHA256: imageHash(imageBytes),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, err := json.Marshal(map[string]any{
+		"kind": "bound", "leaseId": "lease-a", "binding": map[string]string{"leaseId": "lease-a"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := bytes.NewBuffer(nil)
+	input.Write(append(handoffLine, '\n'))
+	input.Write(append(binding, '\n'))
+	input.Write(imageBytes)
+	input.Write(append(bound, '\n'))
+	entry, err := Bind(bufio.NewReader(input), bytes.NewBuffer(nil), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.LeaseID != "lease-a" {
+		t.Fatalf("unexpected lease: %q", entry.LeaseID)
+	}
+	_ = entry.Release()
+	_ = entry.Close()
+}

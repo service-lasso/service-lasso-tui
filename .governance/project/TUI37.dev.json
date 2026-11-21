@@ -1,0 +1,8 @@
+{
+  "classification": "LOCAL_DEV_SYNTHETIC",
+  "authorization": false,
+  "production": false,
+  "owner": "LOCAL_DEV_SYNTHETIC",
+  "bundle": "fixtures/dev-synthetic/bundle/native-inputs.json",
+  "note": "Local development and test fixture only. Not issuer custody, authorization, native proof, or production input."
+}

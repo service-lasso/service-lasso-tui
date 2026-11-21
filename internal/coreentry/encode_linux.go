@@ -15,9 +15,14 @@ type ImageSection struct {
 	ItemCount uint64
 }
 
-// EncodeImage produces the exact Core-owned binding image. It is the producer
-// side of the same format ValidateImage consumes.
+// EncodeImage produces a production binding image.
 func EncodeImage(handoffLine []byte, sections []ImageSection) ([]byte, string, error) {
+	return EncodeImageWithFlags(handoffLine, sections, 0)
+}
+
+// EncodeImageWithFlags is the producer side of the same format ValidateImage
+// consumes. Non-zero flags are only for explicit development-synthetic tests.
+func EncodeImageWithFlags(handoffLine []byte, sections []ImageSection, flags uint32) ([]byte, string, error) {
 	if len(sections) == 0 || len(sections) > 11 {
 		return nil, "", fmt.Errorf("binder section count invalid")
 	}
@@ -67,6 +72,7 @@ func EncodeImage(handoffLine []byte, sections []ImageSection) ([]byte, string, e
 	copy(image[:8], []byte(binderMagic))
 	binary.LittleEndian.PutUint16(image[8:10], binderVersion)
 	binary.LittleEndian.PutUint16(image[10:12], binderHeaderBytes)
+	binary.LittleEndian.PutUint32(image[12:16], flags)
 	binary.LittleEndian.PutUint64(image[16:24], uint64(total))
 	binary.LittleEndian.PutUint64(image[24:32], uint64(len(placements)))
 	binary.LittleEndian.PutUint64(image[32:40], binderHeaderBytes)

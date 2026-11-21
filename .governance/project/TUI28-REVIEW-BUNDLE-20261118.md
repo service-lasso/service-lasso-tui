@@ -91,11 +91,17 @@ non-authorization records when `--authorization` is set. All write mode-0600
 outputs and preserve the existing closed validators. They produce durable
 artifacts from supplied originals; they do not invent evidence.
 
-`cmd/service-lasso-entry-producer` consumes only an `authorization` bundle and
-maps its retained profile/ABI/geometry/custody/toolchain bytes into the nine
+`cmd/service-lasso-entry-producer` consumes an `authorization` bundle and maps
+its retained profile/ABI/geometry/custody/toolchain bytes into the nine
 binding-image sections. It emits the exact image only after all bundle files
 match their recorded sizes and hashes. It does not construct a fabricated
 profile or accept a caller-supplied image.
+
+A `development-synthetic` bundle is accepted only through the explicit
+`produceWithPolicy(..., true)` test seam. Production `produce` and the CLI
+reject it, the image carries the synthetic header flag, and the TUI binder must
+also be invoked with `allowSynthetic=true`. The integration test proves the
+production producer/binder reject the same synthetic bundle/image.
 
 ## Exact source-review commands
 

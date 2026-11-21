@@ -71,7 +71,7 @@ func readOriginal(directory string, ref reference) ([]byte, error) {
 	return bytes, nil
 }
 
-func readRecord(directory string) (bundleRecord, error) {
+func readRecord(directory string, allowSynthetic bool) (bundleRecord, error) {
 	var record bundleRecord
 	bytes, err := os.ReadFile(filepath.Join(directory, "native-inputs.json"))
 	if err != nil {
@@ -81,7 +81,7 @@ func readRecord(directory string) (bundleRecord, error) {
 		return record, err
 	}
 	if record.Schema != "service-lasso.tui-native-input-bundle.v1" ||
-		record.Classification != "authorization" ||
+		(record.Classification != "authorization" && !(allowSynthetic && record.Classification == "development-synthetic")) ||
 		record.Platform != "linux" ||
 		record.Host.Platform != "linux" ||
 		record.Host.Arch != "amd64" {
@@ -91,6 +91,10 @@ func readRecord(directory string) (bundleRecord, error) {
 }
 
 func produce(bundleDirectory string, request materializeRequest) (image []byte, imageSha256 string, failure error) {
+	return produceWithPolicy(bundleDirectory, request, false)
+}
+
+func produceWithPolicy(bundleDirectory string, request materializeRequest, allowSynthetic bool) (image []byte, imageSha256 string, failure error) {
 	if request.Kind != "materialize" || request.HandoffLine == "" {
 		return nil, "", fmt.Errorf("materialize request invalid")
 	}
@@ -98,7 +102,7 @@ func produce(bundleDirectory string, request materializeRequest) (image []byte, 
 	if err != nil {
 		return nil, "", fmt.Errorf("handoff line invalid")
 	}
-	record, err := readRecord(bundleDirectory)
+	record, err := readRecord(bundleDirectory, allowSynthetic)
 	if err != nil {
 		return nil, "", err
 	}
@@ -144,7 +148,11 @@ func produce(bundleDirectory string, request materializeRequest) (image []byte, 
 		{Kind: coreentry.ViewIssuer, Bytes: files["custody.finance"]},
 		{Kind: coreentry.ViewCustody, Bytes: custody},
 	}
-	image, imageSha256, err = coreentry.EncodeImage(handoff, sections)
+	flags := uint32(0)
+	if allowSynthetic {
+		flags = 1
+	}
+	image, imageSha256, err = coreentry.EncodeImageWithFlags(handoff, sections, flags)
 	return image, imageSha256, err
 }
 

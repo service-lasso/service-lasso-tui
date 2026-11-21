@@ -143,3 +143,52 @@ func TestProducerImageBindsThroughCoreEntry(t *testing.T) {
 	}
 	_ = entry.Close()
 }
+
+func TestDevelopmentSyntheticBundleBindsOnlyWhenExplicitlyAllowed(t *testing.T) {
+	directory := writeBundle(t, "development-synthetic")
+	handoff := []byte(`{"contract":"service-lasso.candidate-entry-handoff.v1","lease":{"leaseId":"lease-dev"}}`)
+	request := materializeRequest{
+		Kind:        "materialize",
+		HandoffLine: base64.StdEncoding.EncodeToString(handoff),
+		Observation: json.RawMessage(`{"pid":7}`),
+	}
+	if _, _, err := produce(directory, request); err == nil {
+		t.Fatal("production producer admitted development-synthetic bundle")
+	}
+	image, imageHash, err := produceWithPolicy(directory, request, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding, err := json.Marshal(map[string]any{
+		"kind": "binding", "leaseId": "lease-dev", "imageBytes": len(image), "imageSha256": imageHash,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, err := json.Marshal(map[string]string{"kind": "bound", "leaseId": "lease-dev"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := bytes.NewBuffer(nil)
+	input.Write(append(handoff, '\n'))
+	input.Write(append(binding, '\n'))
+	input.Write(image)
+	input.Write(append(bound, '\n'))
+	if _, err := coreentry.Bind(bufio.NewReader(input), bytes.NewBuffer(nil), false); err == nil {
+		t.Fatal("production binder admitted synthetic image")
+	}
+	input.Reset()
+	input.Write(append(handoff, '\n'))
+	input.Write(append(binding, '\n'))
+	input.Write(image)
+	input.Write(append(bound, '\n'))
+	entry, err := coreentry.Bind(bufio.NewReader(input), bytes.NewBuffer(nil), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.LeaseID != "lease-dev" {
+		t.Fatalf("unexpected lease: %q", entry.LeaseID)
+	}
+	_ = entry.Release()
+	_ = entry.Close()
+}

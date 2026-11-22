@@ -23,6 +23,9 @@ Owner assignment: every role is assigned to `wildone` (Max Barrass,
 `max.barrass@gmail.com`) by the local owner instruction. Assignment is not
 evidence and does not change any group state or authorize execution.
 
+Code-declared release status: `NOT_GA`, `ga: false`, `declared: false`,
+`authority: release-owner-only` from `scripts/native-v2-readiness.mjs`.
+
 Disposition: `NOT_READY_NOT_ADMITTED`. No target execution is authorized.
 
 The last custody search found no authentic SLCPROF1 original; that search was not re-run in this slice. Absence remains the recorded state until an owner supplies a reference.

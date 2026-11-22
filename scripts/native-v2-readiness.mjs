@@ -10,6 +10,13 @@ const READY = "READY";
 const UNAVAILABLE = "UNAVAILABLE";
 const INVALID = "INVALID";
 
+export const NATIVE_RELEASE_STATUS = Object.freeze({
+  status: "NOT_GA",
+  ga: false,
+  declared: false,
+  authority: "release-owner-only",
+});
+
 export const READINESS_GROUPS = Object.freeze([
   Object.freeze({ id: "slcprof1-profile", requirement: "authentic nine-section SLCPROF1 original" }),
   Object.freeze({ id: "go-c-abi", requirement: "closed goIntBits/cSizeTBits ABI original" }),
@@ -81,6 +88,7 @@ export function assessNativeV2Readiness(input = {}) {
 
   const blockers = rows.filter(entry => entry.state !== READY).map(entry => ({ id: entry.id, state: entry.state, detail: entry.detail }));
   return {
+    ...NATIVE_RELEASE_STATUS,
     admitted: blockers.length === 0,
     disposition: blockers.length === 0 ? "ADMITTED_FOR_REVIEW" : "NOT_READY_NOT_ADMITTED",
     groups: rows,

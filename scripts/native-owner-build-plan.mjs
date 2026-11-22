@@ -6,6 +6,8 @@ const roster = {
   "schemaVersion": 1,
   "linuxOwner": [
     "native/entry/sl_core_initial_entry.c",
+    "native/entry/sl_core_entry_construct.c",
+    "native/entry/sl_core_entry_native.c",
     "native/owner/archive_access_linux.c",
     "native/owner/archive_close_linux.c",
     "native/owner/archive_context_linux.c",

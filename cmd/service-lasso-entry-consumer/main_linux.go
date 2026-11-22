@@ -24,6 +24,12 @@ func main() {
 		os.Exit(2)
 	}
 	fmt.Println(entry.LeaseID)
+	native := entry.AcquireNative()
+	if native != coreentry.NativeAcquired && native != coreentry.NativeRetainedUnavailable {
+		fmt.Fprintf(os.Stderr, "unexpected native result: %d\n", native)
+		os.Exit(5)
+	}
+	fmt.Printf("native=%d\n", native)
 	if err := entry.Release(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(3)

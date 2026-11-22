@@ -2,6 +2,9 @@
 
 Tracking dependency: [service-lasso/service-lasso#1461](https://github.com/service-lasso/service-lasso/issues/1461).
 
+See [Core-owned entry boundary: use cases and status](core-entry-boundary.md)
+for when the candidate entry boundary applies and why it is currently `NOT_GA`.
+
 The TUI is launched by an operator after Service Lasso Core is already running.
 Core does not register, start, stop, supervise, or health-check an interactive
 TUI process. The only connection boundary is an operator-supplied API URL and

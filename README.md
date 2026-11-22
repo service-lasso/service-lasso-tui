@@ -169,8 +169,9 @@ only the direct outcome and candidate identity; it never records the nonce,
 URL, terminal text, or raw error.
 
 See [the runtime API contract](docs/runtime-api-contract.md), [the Core
-integration and release contract](docs/core-integration-contract.md), and [the
-framework decision](docs/framework-decision.md).
+integration and release contract](docs/core-integration-contract.md), [the
+Core-owned entry boundary](docs/core-entry-boundary.md), and [the framework
+decision](docs/framework-decision.md).
 
 ## Scoped Windows/Linux candidate source
 

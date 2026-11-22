@@ -16,6 +16,13 @@ static void prepare_views(void) {
     }
 }
 
+static int owned_calls;
+static long owned_fixture(const struct sl_core_initial_entry *entry) {
+    if (!entry || entry->view_count != 9) return 99;
+    owned_calls++;
+    return 0;
+}
+
 int main(void) {
     struct sl_core_initial_entry_source source = {0};
     struct sl_core_initial_entry entry;
@@ -46,6 +53,15 @@ int main(void) {
         sl_core_initial_entry(&entry) != NULL || !sl_core_initial_entry(&moved)) {
         fprintf(stderr, "handoff did not move ownership\n");
         return 4;
+    }
+
+    if (sl_core_initial_entry_owned(&moved, owned_fixture) != 0 || owned_calls != 1) {
+        fprintf(stderr, "owned callback did not receive the validated record\n");
+        return 6;
+    }
+    if (sl_core_initial_entry_owned(&moved, NULL) != SL_CORE_ENTRY_REFUSED) {
+        fprintf(stderr, "null owned callback was admitted\n");
+        return 7;
     }
 
     views[0].length = 0;

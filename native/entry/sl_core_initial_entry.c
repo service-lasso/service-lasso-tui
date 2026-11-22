@@ -99,3 +99,10 @@ long sl_core_initial_entry_handoff(struct sl_core_initial_entry *destination,
     memset(source, 0, sizeof(*source));
     return SL_CORE_ENTRY_ACQUIRED;
 }
+
+
+long sl_core_initial_entry_owned(const struct sl_core_initial_entry *entry,
+                                 sl_core_owned_entry_fn owned) {
+    if (!owned || !valid_entry(entry)) return SL_CORE_ENTRY_REFUSED;
+    return owned(entry);
+}

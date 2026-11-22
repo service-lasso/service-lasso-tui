@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { assessNativeV2Readiness, assessNativeV2ReadinessFromFiles, READINESS_GROUPS } from "./native-v2-readiness.mjs";
+import { assessNativeV2Readiness, assessNativeV2ReadinessFromFiles, NATIVE_RELEASE_STATUS, READINESS_GROUPS } from "./native-v2-readiness.mjs";
 
 const SCALAR = "scheduler_interval_ns services outer_observations deadline_roots deadline_observations deadline_polls deadline_poll_fds creator_file_bytes creator_file_reads collector_joins requests prefix_attempts terminal_reply_attempts input_frames input_steps body_bytes scan_frames scan_bytes fd_views fd_actions membership_frames membership_bytes membership_path mountinfo_bytes mountinfo_attempts mountinfo_rows mount_location_bytes selinux_rows selinux_path policy_frames policy_frame_bytes policy_body parser_bytes parser_attempts diagnostics diagnostic_arguments diagnostic_bytes diagnostic_format self_context_bytes domain_types domain_steps access_visits access_helpers access_strings reach_visits reach_helpers reach_strings reach_steps children_frames children_bytes children_views executable_path directory_path image_frames image_bytes image_writes image_readbacks credential_status_bytes credential_status_attempts credential_group_capacity pidfd_info_bytes pidfd_info_attempts public_argument_count public_argument_bytes public_environment_count public_environment_bytes security_label_bytes terminal_calls maintenance_role_rows archive_path_bytes archive_declarations".split(" ");
 const ABI = Object.freeze({ goIntBits: 64, cSizeTBits: 64 });
@@ -148,4 +148,15 @@ test("file assessment and CLI exit codes fail closed", async () => {
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+
+test("release status is code-declared NOT_GA even when all inputs are ready", () => {
+  const result = assessNativeV2Readiness(full());
+  assert.equal(result.admitted, true);
+  assert.deepEqual(result.status ?? NATIVE_RELEASE_STATUS.status, "NOT_GA");
+  assert.equal(result.ga, false);
+  assert.equal(result.declared, false);
+  assert.equal(result.authority, "release-owner-only");
+  assert.equal(JSON.stringify(result).includes('"ga":true'), false);
 });

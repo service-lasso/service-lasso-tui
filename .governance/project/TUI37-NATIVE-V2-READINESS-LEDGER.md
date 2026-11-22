@@ -10,14 +10,18 @@ This ledger is a mutable locator, not an immutable ROOT, admission receipt, or n
 
 | Group | State | Owner | Evidence | Validation |
 |---|---|---|---|---|
-| `slcprof1-profile` | `UNAVAILABLE` | UNASSIGNED | none supplied | `decodeCandidateProfile` closed header, nine sections, fixed extents, non-zero quantities |
-| `go-c-abi` | `UNAVAILABLE` | UNASSIGNED | none supplied | exact `goIntBits`/`cSizeTBits` in {32,64} |
-| `native-geometry` | `UNAVAILABLE` | UNASSIGNED | none supplied | `decodeNativeGeometry` roster, array extents, canonical quantities, `body_bytes = representationBytes`, `requests = terminalCalls + 1` |
-| `constructors` | `UNAVAILABLE` | UNASSIGNED | none supplied | closed custody record |
-| `windows-inputs` | `UNAVAILABLE` | UNASSIGNED | none supplied | closed custody record |
-| `matching-host-ownership` | `UNAVAILABLE` | UNASSIGNED | none supplied | closed custody record |
-| `admission` | `UNAVAILABLE` | UNASSIGNED | none supplied | closed custody record |
-| `core-integration` | `UNAVAILABLE` | UNASSIGNED | none supplied | closed custody record |
+| `slcprof1-profile` | `UNAVAILABLE` | `wildone` (Max Barrass) | none supplied | `decodeCandidateProfile` closed header, nine sections, fixed extents, non-zero quantities |
+| `go-c-abi` | `UNAVAILABLE` | `wildone` (Max Barrass) | none supplied | exact `goIntBits`/`cSizeTBits` in {32,64} |
+| `native-geometry` | `UNAVAILABLE` | `wildone` (Max Barrass) | none supplied | `decodeNativeGeometry` roster, array extents, canonical quantities, `body_bytes = representationBytes`, `requests = terminalCalls + 1` |
+| `constructors` | `UNAVAILABLE` | `wildone` (Max Barrass) | none supplied | closed custody record |
+| `windows-inputs` | `UNAVAILABLE` | `wildone` (Max Barrass) | none supplied | closed custody record |
+| `matching-host-ownership` | `UNAVAILABLE` | `wildone` (Max Barrass) | none supplied | closed custody record |
+| `admission` | `UNAVAILABLE` | `wildone` (Max Barrass) | none supplied | closed custody record |
+| `core-integration` | `UNAVAILABLE` | `wildone` (Max Barrass) | none supplied | closed custody record |
+
+Owner assignment: every role is assigned to `wildone` (Max Barrass,
+`max.barrass@gmail.com`) by the local owner instruction. Assignment is not
+evidence and does not change any group state or authorize execution.
 
 Disposition: `NOT_READY_NOT_ADMITTED`. No target execution is authorized.
 

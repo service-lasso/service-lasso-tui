@@ -72,6 +72,13 @@ int sl_core_initial_entry_matches_original(
 long sl_core_initial_entry_handoff(struct sl_core_initial_entry *destination,
                                    struct sl_core_initial_entry *source);
 
+/* Calls the native owner only after the same record passes validation. The
+ * callback receives the validated record; it never receives a raw path,
+ * environment value, lease ID, or caller-supplied image as authority. */
+typedef long (*sl_core_owned_entry_fn)(const struct sl_core_initial_entry *entry);
+long sl_core_initial_entry_owned(const struct sl_core_initial_entry *entry,
+                                 sl_core_owned_entry_fn owned);
+
 #ifdef __cplusplus
 }
 #endif

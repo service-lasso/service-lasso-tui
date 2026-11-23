@@ -63,7 +63,6 @@ func runPublicCommand(startup *startupOccurrence, receiver *lifetime.Receiver, p
 	configPath := startup.Flags.String("connections", "", "connection profile configuration file")
 	profile := startup.Flags.String("profile", "", "configured connection profile")
 	tokenEnv := startup.Flags.String("token-env", "", "credential environment variable name")
-	compatV1 := startup.Flags.Bool("compat-v1", false, "use the explicit legacy operator/v1 compatibility interface")
 	startup.ParseFailure = startup.Flags.Parse(publicTail)
 	if startup.ParseFailure != nil {
 		startup.Failure = startup.ParseFailure
@@ -72,9 +71,6 @@ func runPublicCommand(startup *startupOccurrence, receiver *lifetime.Receiver, p
 		return startup.Status
 	}
 	resolve := api.ResolveOperatorConnections
-	if *compatV1 {
-		resolve = api.ResolveConnections
-	}
 	startup.Manager, startup.Client, startup.ResolveFailure = resolve(api.ConnectionOptions{
 		Receiver: receiver, ConfigPath: *configPath, Profile: *profile, APIURL: *apiURL, TokenEnv: *tokenEnv,
 	})
@@ -86,9 +82,6 @@ func runPublicCommand(startup *startupOccurrence, receiver *lifetime.Receiver, p
 		return startup.Status
 	}
 	var model tea.Model = app.NewOperatorWithConnections(startup.Client, startup.Manager, startup.Context)
-	if *compatV1 {
-		model = app.NewWithConnections(startup.Client, startup.Manager, startup.Context)
-	}
 	startup.Initial = model
 	if terminal == nil {
 		startup.Final, startup.RunFailure = app.RunOwned(model, receiver, tea.WithAltScreen())

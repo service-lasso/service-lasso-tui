@@ -2,7 +2,7 @@ package lifetime
 import ("testing";"strconv")
 // UNRUN: framing observes actual aliases/quantities only, never endpoint authority.
 func TestNativeArgumentsPreservePublicArguments(t *testing.T){
- raw:=[]string{"/installed/service-lasso-tui",NativeArgumentVersion,"19","4","256","3","64","--","--api","https://runtime.example","--compat-v1"}
+ raw:=[]string{"/installed/service-lasso-tui",NativeArgumentVersion,"19","4","256","3","64","--","--api","https://runtime.example","--profile"}
  receiver:=NewReceiver();o:=&NativeArguments{Raw:raw}
  if err:=receiver.ObserveNativeArguments(o);err!=nil{t.Fatal(err)}
  if o.Descriptor!=19||o.PublicCount!=4||len(o.Public)!=4||o.Public[0]!=raw[0]||o.Public[1]!=raw[8]||o.Public[3]!=raw[10]||o.SecurityLabelBytes!=256||o.TerminalCalls!=3||o.RepresentationBytes!=64{t.Fatal("public argv or native quantity locators changed")}

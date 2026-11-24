@@ -132,7 +132,7 @@ jobs:
       - name: Run ordinary real Core compatibility evidence
         working-directory: tui
         run: |
-          node scripts/run-local-e2e.mjs --core-dir (Join-Path $env:GITHUB_WORKSPACE 'core-input') --expected-core-revision $env:CORE_REVISION --suite compat --output-dir $env:TUI_E2E_OUTPUT --npm-cli $env:TUI_E2E_NPM_CLI --python $env:TUI_E2E_PYTHON
+          node scripts/run-local-e2e.mjs --core-dir (Join-Path $env:GITHUB_WORKSPACE 'core-input') --expected-core-revision $env:CORE_REVISION --suite v2 --output-dir $env:TUI_E2E_OUTPUT --npm-cli $env:TUI_E2E_NPM_CLI --python $env:TUI_E2E_PYTHON
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Retain closed scoped summary only
         if: always()

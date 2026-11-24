@@ -29,7 +29,8 @@ class NativeOwnerBoundaries(unittest.TestCase):
         child=SimpleNamespace(pid=os.getpid(),stdout=Stream())
         args=SimpleNamespace(node="fixture-node",runtime_script="fixture-script",root="fixture-root",core_commit="a"*40,invalid_ready_receipt=False,runtime_ready_mode=None,shutdown_pipe_failure=False)
         retained=[]
-        with patch.object(module.subprocess,"Popen",return_value=child):
-            with self.assertRaises(module.RuntimeAcquisitionFailure): module.start_runtime(args,retained.append)
+        with patch.object(module,"process_birth",return_value={"fixture":"birth"}):
+            with patch.object(module.subprocess,"Popen",return_value=child):
+                with self.assertRaises(module.RuntimeAcquisitionFailure): module.start_runtime(args,retained.append)
         self.assertEqual(retained,[child]);child.tui28_reader.join()
 if __name__=="__main__":unittest.main()

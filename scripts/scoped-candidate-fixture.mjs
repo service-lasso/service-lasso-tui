@@ -1,6 +1,6 @@
 // Production-shaped fixture bytes prove source boundary consistency only. They
 // never constitute native execution, actual publication or catalog admission.
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { SCOPE, CORE_COMMIT, PUBLIC_RECEIPTS, hash } from "./scoped-native-contract.mjs";
@@ -25,7 +25,7 @@ export function artifactZIP(files){
 }
 export async function fixture({nativeVersion=1}={}){
   if(![1,2].includes(nativeVersion))throw new Error('fixture native version');
-  const root=await mkdtemp(path.join(os.tmpdir(),"tui-scoped-fixture-")),native=path.join(root,"native");await mkdir(native);const objects=[];
+  const root=await realpath(await mkdtemp(path.join(os.tmpdir(),"tui-scoped-fixture-"))),native=path.join(root,"native");await mkdir(native);const objects=[];
   const jobs=[{id:100,name:"validate-source",head_sha:SOURCE.commit,run_id:RUN.id,run_attempt:RUN.attempt,status:"completed",conclusion:"success"},{id:103,name:"aggregate",head_sha:SOURCE.commit,run_id:RUN.id,run_attempt:RUN.attempt,status:"completed",conclusion:"success"}];
   for(const [index,platform] of ["win32","linux"].entries()){
     const binary=Buffer.alloc(256);if(platform==="linux"){binary.write("7f454c46",0,"hex");binary[4]=2;binary[5]=1;binary.writeUInt16LE(62,18);}else{binary.write("MZ");binary.writeUInt32LE(64,60);binary.writeUInt32LE(0x00004550,64);binary.writeUInt16LE(0x8664,68);binary.writeUInt16LE(0x20b,88);}

@@ -2,6 +2,13 @@
 
 Status: source review only. Not independent ROOT, qualification, or GA.
 
+Current status (24 November 2026): the v2 code-gap findings below were addressed
+in Core #1945-#1960 and the follow-up mutable-fixture work. The mutable harness
+passes against one Core instance with CLI preview/execute/readback/stop and TUI
+detail/availability/preview. The sections below are retained as historical review
+context; the remaining non-code blockers are authentic production originals and
+independent admission/ROOT/GA.
+
 ## Scope
 
 Reviewed the Core v2 contract/routes, CLI v2 client/commands, TUI v2
@@ -15,8 +22,10 @@ client/probe, and the cross-client acceptance harness.
 - Cross-client probe passes: one Core instance serves CLI discovery/services and
   the TUI v2 probe with the same discovery revision.
 - V1 lifecycle HTTP routes and v1 TUI/CLI product paths are removed.
+- Mutable cross-client harness passes with the admitted local-disposable fixture.
+- v2 service and context auth preserve MCP denial when OAuth is configured.
 
-## Gaps
+## Historical gaps (addressed in current develop)
 
 ### Critical: v2 service revisions are placeholders
 

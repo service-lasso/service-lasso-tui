@@ -149,7 +149,7 @@ class ReceiptTests(unittest.TestCase):
         self.assertNotEqual(environment["SERVICE_LASSO_API_TOKEN"], "host-credential")
         self.assertNotIn("UNRELATED_HOST_VALUE", environment)
         self.assertNotIn(probe_module.INERT_PROBE_TOKEN, output.getvalue())
-        self.assertEqual(observed_waits, [("Service Lasso TUI", "Runtime API unavailable", "Press r to retry")])
+        self.assertEqual(observed_waits, [("Service Lasso  operator/v2", "Runtime API unavailable")])
 
     def test_unavailable_still_waiting_is_bounded_before_keyboard_input(self):
         output = io.StringIO()
@@ -181,7 +181,7 @@ class ReceiptTests(unittest.TestCase):
             result = probe_module.discriminate_constructor_then_probe(
                 "candidate.exe", "unavailable", "http://127.0.0.1:1", None, None, None, None, None,
                 pty_process=FakePty,
-                wait=lambda *_args: "Service Lasso TUI Runtime API unavailable Press r to retry",
+                wait=lambda *_args: "Service Lasso  operator/v2 Runtime API unavailable",
                 backend=None,
                 source_commit=self.source_commit,
                 expected_binary_sha256=self.binary_sha256,
@@ -362,7 +362,7 @@ class ReceiptTests(unittest.TestCase):
             result = self.run_probe(
                 "candidate.exe", "unavailable", "http://127.0.0.1:1", None, None, None, None, None,
                 pty_process=FakePty,
-                wait=lambda *_args: "Service Lasso TUI Runtime API unavailable Press r to retry",
+                wait=lambda *_args: "Service Lasso  operator/v2 Runtime API unavailable",
                 backend=None,
             )
         self.assertEqual(result, 0)

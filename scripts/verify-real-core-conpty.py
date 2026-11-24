@@ -90,7 +90,7 @@ def _probe_attempt(executable, mode, api_url, observation):
         process = PtyProcess.spawn([executable], cwd=os.path.dirname(executable), env=child_environment(api_url), dimensions=(40, 120), backend=Backend.ConPTY)
         stage = "startup"
         expected = "Runtime identity:" if mode == "connected" else "Runtime API unavailable"
-        if not wait(process, ("Service Lasso TUI", "q quit", expected), 20):
+        if not wait(process, ("Service Lasso  operator/v2", "q quit", expected), 20):
             return fail_attempt(stage)
         if mode == "connected":
             stage = "navigation"

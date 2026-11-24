@@ -311,7 +311,7 @@ def _probe_attempt(executable, mode, api_url, ready_file, reconnect_file, shutdo
         candidate_identity = held_candidate.receipt
         environment = constrained_child_environment(api_url, startup_probe_nonce, term="xterm-256color")
         process = pty_process.spawn([executable], cwd=os.path.dirname(executable), env=environment, dimensions=(40, 120), backend=backend)
-        expected = ("Service Lasso TUI", "Runtime API unavailable", "Press r to retry")
+        expected = ("Service Lasso  operator/v2", "Runtime API unavailable")
         stage = "startup"
         if not wait(process, expected, 20, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, startup_probe_nonce, candidate_identity):
             return fail_probe(stage, outcome_receipt=receipt(stage, "timeout", "timed_out", candidate_identity=candidate_identity))
@@ -355,7 +355,7 @@ def _probe_attempt(executable, mode, api_url, ready_file, reconnect_file, shutdo
         # Capture a screen redraw after the actual ConPTY resize. The expected
         # contextual-help screen proves the candidate kept its current view.
         stage = "resize-observation"; process.setwinsize(24, 50)
-        if not wait(process, ("Service Lasso TUI", "n narrow", "r reconnect"), 5, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, startup_probe_nonce, candidate_identity):
+        if not wait(process, ("Service Lasso  operator/v2", "n next", "r refresh"), 5, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, startup_probe_nonce, candidate_identity):
             return fail_probe(stage, outcome_receipt=receipt(stage, "timeout", "timed_out", candidate_identity=candidate_identity))
         narrow_resize = "help-screen-rendered-after-50-columns"
         stage = "exit"; process.write("q")

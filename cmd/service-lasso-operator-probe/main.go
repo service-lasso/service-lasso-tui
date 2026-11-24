@@ -29,5 +29,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(4)
 	}
-	fmt.Printf("%s %d\n", discovery.MetadataRevision, len(services.Rows))
+	binding, err := client.OperatorContext(ctx)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(5)
+	}
+	fmt.Printf("%s %d %t\n", discovery.MetadataRevision, len(services.Rows), binding.Valid())
 }

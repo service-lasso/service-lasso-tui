@@ -8,7 +8,7 @@ on:
         description: Exact reviewed Core develop revision
         required: true
 env:
-  CORE_REVISION: ${{ inputs.core_revision || 'f32270731ff42f2a2f6dbcbc02f188b3fdd8813b' }}
+  CORE_REVISION: ${{ inputs.core_revision || '47fa280da53f48aa4615d19be64eda792c2723ec' }}
 jobs:
   source-contracts:
     runs-on: ubuntu-latest

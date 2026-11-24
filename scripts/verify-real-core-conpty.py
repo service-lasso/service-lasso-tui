@@ -87,7 +87,7 @@ def _probe_attempt(executable, mode, api_url, observation):
     process = None
     stage = "launch"
     try:
-        process = PtyProcess.spawn([executable, "--compat-v1"], cwd=os.path.dirname(executable), env=child_environment(api_url), dimensions=(40, 120), backend=Backend.ConPTY)
+        process = PtyProcess.spawn([executable], cwd=os.path.dirname(executable), env=child_environment(api_url), dimensions=(40, 120), backend=Backend.ConPTY)
         stage = "startup"
         expected = "Runtime identity:" if mode == "connected" else "Runtime API unavailable"
         if not wait(process, ("Service Lasso TUI", "q quit", expected), 20):

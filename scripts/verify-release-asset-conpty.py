@@ -210,7 +210,7 @@ def direct_constructor_assertion(executable, candidate_identity, runner=subproce
         return None
     environment = constrained_child_environment("://invalid", nonce)
     try:
-        completed = runner([executable, "--compat-v1"], cwd=os.path.dirname(executable), env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=5, check=False)
+        completed = runner([executable], cwd=os.path.dirname(executable), env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=5, check=False)
         terminal_text = completed.stderr.decode("utf-8", "replace") if isinstance(completed.stderr, bytes) else ""
         frame = STARTUP_MARKER_PATTERN.fullmatch(terminal_text)
         boundary = startup_boundary_from_terminal_text(terminal_text, nonce, candidate_identity)
@@ -310,7 +310,7 @@ def _probe_attempt(executable, mode, api_url, ready_file, reconnect_file, shutdo
             executable = held_candidate.path
         candidate_identity = held_candidate.receipt
         environment = constrained_child_environment(api_url, startup_probe_nonce, term="xterm-256color")
-        process = pty_process.spawn([executable, "--compat-v1"], cwd=os.path.dirname(executable), env=environment, dimensions=(40, 120), backend=backend)
+        process = pty_process.spawn([executable], cwd=os.path.dirname(executable), env=environment, dimensions=(40, 120), backend=backend)
         expected = ("Service Lasso TUI", "Runtime API unavailable", "Press r to retry")
         stage = "startup"
         if not wait(process, expected, 20, shutdown_request_file, shutdown_acknowledgement_file, shutdown_token, startup_probe_nonce, candidate_identity):

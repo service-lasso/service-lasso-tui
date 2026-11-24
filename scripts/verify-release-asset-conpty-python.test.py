@@ -121,7 +121,7 @@ class ReceiptTests(unittest.TestCase):
         with patch.dict(os.environ, {"SERVICE_LASSO_API_TOKEN": "host-credential", "UNRELATED_HOST_VALUE": "host-only"}):
             result = probe_module.direct_constructor_assertion("candidate.exe", {"sourceCommit": self.source_commit, "binarySHA256": self.binary_sha256}, runner=runner, nonce=nonce)
         self.assertEqual(result, {"exit": "exit_code_2", "startupBoundary": "api_url_invalid", "candidateIdentity": {"sourceCommit": self.source_commit, "binarySHA256": self.binary_sha256}})
-        self.assertEqual(observed["args"], ["candidate.exe", "--compat-v1"])
+        self.assertEqual(observed["args"], ["candidate.exe"])
         self.assertEqual(observed["environment"]["SERVICE_LASSO_API_URL"], "://invalid")
         self.assertEqual(observed["environment"]["SERVICE_LASSO_API_TOKEN"], probe_module.INERT_PROBE_TOKEN)
         self.assertNotEqual(observed["environment"]["SERVICE_LASSO_API_TOKEN"], "host-credential")
@@ -366,7 +366,7 @@ class ReceiptTests(unittest.TestCase):
                 backend=None,
             )
         self.assertEqual(result, 0)
-        self.assertEqual(FakePty.spawned[0][0], [os.path.abspath("candidate.exe"), "--compat-v1"])
+        self.assertEqual(FakePty.spawned[0][0], [os.path.abspath("candidate.exe")])
 
     def test_actual_main_requires_both_identity_arguments_before_constructor_entry(self):
         base = [SCRIPT, "--executable", "candidate.exe", "--mode", "reconnect", "--api-url", "http://127.0.0.1:1"]
@@ -414,7 +414,7 @@ class ReceiptTests(unittest.TestCase):
                         else:
                             result = self.run_probe("candidate.exe", helper_mode, "http://127.0.0.1:1", os.path.join(root, "ready"), "reconnect", None, None, None, pty_process=pty, wait=lambda *_a: "rendered", wait_file=lambda *_a: True, backend=None)
                     payload = json.loads(output.getvalue())
-                    self.assertEqual(launches, [[os.path.abspath("candidate.exe") if helper_mode in ("unavailable", "reconnect") else "candidate.exe", "--compat-v1"]])
+                    self.assertEqual(launches, [[os.path.abspath("candidate.exe") if helper_mode in ("unavailable", "reconnect") else "candidate.exe"]])
                     self.assertTrue(terminal.wait_observed)
                     self.assertEqual(result, 0 if reason == "completed" else 1)
                     self.assertEqual(payload["receipt"]["closedReason"], reason)

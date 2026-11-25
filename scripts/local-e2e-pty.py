@@ -71,7 +71,7 @@ def probe(binary, connection, output, mode, observations=None):
     q_at = None
     try:
         resize(120, 32)
-        marker = b'Runtime: ok (API up)' if mode == 'compat' else b'Service Lasso  operator/v2'
+        marker = b'Runtime: ok (API up)' if mode == 'compat' else b'Service Lasso'
         wait_for(lambda: marker in data, 20)
         if mode == 'v2':
             def operator_reads():

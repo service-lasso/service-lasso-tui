@@ -15,6 +15,9 @@ var (
 	dashboardSelect = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("87"))
 	dashboardBar    = lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Background(lipgloss.Color("236"))
 	dashboardBorder = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	dashboardGood   = lipgloss.NewStyle().Foreground(lipgloss.Color("114"))
+	dashboardWarn   = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	dashboardMuted  = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 )
 
 func (m operatorModel) dashboardEnabled() bool {
@@ -113,12 +116,37 @@ func (m operatorModel) dashboardDetailRows(mainWidth int) []string {
 	return lines
 }
 
+func (m operatorModel) dashboardSummary(mainWidth int) string {
+	services := m.overviewServices()
+	running, stopped, degraded := 0, 0, 0
+	for _, service := range services {
+		switch service.Running {
+		case "yes":
+			running++
+		case "no":
+			stopped++
+		}
+		if service.HealthStatus == "unhealthy" {
+			degraded++
+		}
+	}
+	line := fmt.Sprintf(" %d services  ·  %d running  ·  %d stopped  ·  %d degraded", len(services), running, stopped, degraded)
+	if degraded > 0 {
+		return dashboardWarn.Render(padLine(line, mainWidth))
+	}
+	if stopped > 0 {
+		return dashboardMuted.Render(padLine(line, mainWidth))
+	}
+	return dashboardGood.Render(padLine(line, mainWidth))
+}
+
 func (m operatorModel) dashboardRows(mainWidth int) []string {
 	var lines []string
 	if m.journey == "detail" {
 		return m.dashboardDetailRows(mainWidth)
 	}
 	if m.journey == "overview" {
+		lines = append(lines, m.dashboardSummary(mainWidth), "")
 		header := fmt.Sprintf("%-22s %-8s %-12s %-10s %-10s", "SERVICE", "RUNNING", "HEALTH", "UPDATES", "FAVORITE")
 		lines = append(lines, dashboardMeta.Render(padLine(header, mainWidth)))
 		for i, service := range m.overviewServices() {

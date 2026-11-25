@@ -89,7 +89,7 @@ func (m operatorModel) dashboardDetailRows(mainWidth int) []string {
 	}
 	r := d.Summary
 	head := fmt.Sprintf("%s  [%s]  running=%s  health=%s  update=%s", r.DisplayName, r.ServiceID, r.Running, r.HealthStatus, r.UpdateStatus)
-	lines := []string{dashboardTitle.Render(padLine(head, mainWidth)), "", dashboardMeta.Render(" Overview   Dependencies   Endpoints   Variables   Config   Logs   Setup   Actions"), ""}
+	lines := []string{dashboardTitle.Render(padLine(head, mainWidth)), "", dashboardMeta.Render(" Overview"), ""}
 	lines = append(lines, padLine(" Provider: "+d.Provider.Role+" · "+operatorReason(d.Provider.Availability), mainWidth), "")
 	if len(d.Dependencies) > 0 {
 		lines = append(lines, dashboardMeta.Render(" Dependencies"))
@@ -109,7 +109,7 @@ func (m operatorModel) dashboardDetailRows(mainWidth int) []string {
 			lines = append(lines, padLine(fmt.Sprintf("  %s  %s  port %s  %s", ep.Label, ep.Protocol, port, operatorReason(ep.Availability)), mainWidth))
 		}
 	}
-	lines = append(lines, "", dashboardMeta.Render(" Actions"), "  s start   S stop   r restart   i install   c config   L reload   esc back")
+	lines = append(lines, "", dashboardMeta.Render(" Actions"), "  enter/e choose action   r refresh   esc back")
 	return lines
 }
 

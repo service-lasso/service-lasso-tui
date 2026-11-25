@@ -1,3 +1,7 @@
+## Next design objective: Service Admin parity TUI (2026-11-25)
+
+Proposed, not active: `docs/serviceadmin-parity-design.md`. Needs a GitHub issue, spec mapping and capability-matrix rows before implementation. Framework stays Go + Bubble Tea (`docs/framework-decision.md`). Backlog entry: `.governance/project/BACKLOG.md`.
+
 ## Issue 37 Linux acquisition
 
 Intent: .governance/project/TUI37-LINUX-ACQUISITION.md. Bounded executor source; authentic native inputs/entry remain unresolved. Windows deferred; current Linux session owns normal develop integration; release owner-only.

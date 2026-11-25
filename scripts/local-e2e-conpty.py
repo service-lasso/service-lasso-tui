@@ -170,6 +170,8 @@ def run_probe(binary, connection, output, mode, observations, raw_handle,
                     return []
                 return [row for row in rows if row.get('method') == 'GET' and str(row.get('pathname', '')).startswith('/api/operator/v2/') and row.get('statusCode') == 200]
             wait_for(lambda: len(operator_reads()) >= 1, 10)
+            key('\x1b[C')
+            wait_for(lambda: any(str(row.get('pathname', '')).endswith('/graph') for row in operator_reads()), 10)
         ready = True
         events.append({'readyAtSeconds': clock() - started, 'inputMode': 'ConPTY',
                        'posixICANONApplicable': False})

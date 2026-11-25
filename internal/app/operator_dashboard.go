@@ -57,13 +57,20 @@ func (m operatorModel) dashboardSidebar(width, height int) []string {
 		{"Security", "metadata"}, {"Settings", "metadata"}, {"Help Center", "overview"},
 	}
 	lines := []string{dashboardMeta.Render(" SERVICE ADMIN"), ""}
+	selected := -1
+	for i, item := range items {
+		if item.journey == m.journey {
+			selected = i
+			break
+		}
+	}
 	for i, item := range items {
 		marker := "  "
-		if item.journey == m.journey {
+		if i == selected {
 			marker = "▌ "
 		}
 		label := marker + item.label
-		if i < len(items) && item.journey == m.journey {
+		if i == selected {
 			lines = append(lines, dashboardSelect.Render(padLine(label, width)))
 		} else {
 			lines = append(lines, padLine(label, width))

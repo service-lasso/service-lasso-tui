@@ -64,6 +64,53 @@ func main() {
 		fmt.Printf("detail %s %s\n", detail.Summary.ServiceID, detail.Summary.DefinitionRevision)
 		fmt.Printf("availability %s %t\n", availability.ServiceID, availability.Availability.Available)
 		fmt.Printf("preview %s %s\n", preview.ServiceID, preview.PlanID)
+		if os.Getenv("SERVICE_LASSO_PROBE_MUTATE") == "1" {
+			binding, err := client.OperatorContext(ctx)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(9)
+			}
+			action := os.Getenv("SERVICE_LASSO_PROBE_ACTION")
+			if action == "" {
+				action = "service_start"
+			}
+			mutationPreview, err := client.OperatorPreview(ctx, api.OperatorPreviewRequest{
+				ServiceID: serviceID, ActionID: action,
+				DefinitionRevision: revision, ExpectedRevision: revision,
+				Input: json.RawMessage(`{}`),
+			})
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(10)
+			}
+			request := api.OperatorExecuteRequest{PlanID: mutationPreview.PlanID, IdempotencyKey: "tui-probe-key-000001", ExpectedRevision: mutationPreview.ExpectedRevision}
+			if mutationPreview.Confirmation.Required {
+				request.ConfirmationID = mutationPreview.Confirmation.ID
+				request.ConfirmationResponse = mutationPreview.Confirmation.PhraseKey
+			}
+			submission, err := client.OperatorExecute(ctx, request, mutationPreview, binding, api.OperatorExecutionSource{Input: json.RawMessage(`{}`)})
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(11)
+			}
+			operation := submission.Operation
+			readback, err := client.OperatorOperation(ctx, operation.OperationID)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(12)
+			}
+			cancel := "unsupported"
+			if readback.Operation.CancellationSupported && readback.Operation.Outcome == nil {
+				response, err := client.OperatorCancel(ctx, readback.Operation)
+				if err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					os.Exit(13)
+				}
+				cancel = response.Status
+			}
+			fmt.Printf("execute %s %s %s\n", submission.Kind, operation.OperationID, readback.Operation.Status)
+			fmt.Printf("cancel %s\n", cancel)
+		}
 	}
 
 }

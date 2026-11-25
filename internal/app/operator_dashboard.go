@@ -247,7 +247,7 @@ func (m operatorModel) dashboardView() string {
 	if m.width < 110 {
 		sidebarWidth = 20
 	}
-	mainWidth := m.width - sidebarWidth
+	mainWidth := m.width - sidebarWidth - 1
 	if mainWidth < 25 {
 		return m.dashboardHeader()
 	}
@@ -267,7 +267,7 @@ func (m operatorModel) dashboardView() string {
 
 	out := []string{m.dashboardHeader()}
 	for i := 0; i < bodyHeight; i++ {
-		out = append(out, padLine(sidebar[i], sidebarWidth)+padLine(main[i], mainWidth))
+		out = append(out, padLine(sidebar[i], sidebarWidth)+" "+padLine(main[i], mainWidth))
 	}
 	footer := " ←/→ views   ↑/↓ select   enter open   r refresh   / filter   ? help   q quit"
 	out = append(out, dashboardBar.Render(padLine(footer, m.width)))

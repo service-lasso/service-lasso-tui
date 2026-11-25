@@ -121,7 +121,8 @@ def probe(binary, connection, output, mode, observations=None):
             key(b'r')
             wait_for(lambda: counts() is not None and all(after > before for after, before in zip(counts(), prior)), 8)
             events.append({'reconnectReadCountsBefore': prior, 'reconnectReadCountsAfter': counts()})
-        resize(80, 24)
+        if os.environ.get('TUI_E2E_NO_SHRINK') != '1':
+            resize(80, 24)
         collect(time.monotonic() + .2)
         q_at = time.monotonic()
         key(b'q')

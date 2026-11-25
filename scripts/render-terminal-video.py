@@ -4,7 +4,7 @@ import argparse, base64, json, os, pathlib, subprocess, tempfile
 from PIL import Image, ImageDraw, ImageFont
 
 COLS, ROWS = 120, 32
-CELL_W, CELL_H = 9, 18
+CELL_W, CELL_H = 10, 20
 FPS = 10
 DEFAULT_FG = (220, 225, 235)
 DEFAULT_BG = (16, 18, 24)
@@ -128,7 +128,7 @@ def render(screen, font, path):
             if bg is not None:
                 draw.rectangle([left, top, left + CELL_W - 1, top + CELL_H - 1], fill=bg)
             if ch != " ":
-                draw.text((left + 4, top + 1), ch, font=font, fill=fg or DEFAULT_FG)
+                draw.text((left + 3, top + 3), ch, font=font, fill=fg or DEFAULT_FG)
     image.save(path)
 
 def main():
@@ -153,7 +153,7 @@ def main():
     start = max(0.0, first_content - 0.35)
     end = chunks[-1]["t"] + 2.0
     duration = max(0.2, end - start)
-    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 14)
+    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 13)
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     stem = output / "tui-session"

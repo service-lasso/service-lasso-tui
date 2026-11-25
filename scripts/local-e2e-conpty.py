@@ -163,7 +163,13 @@ def run_probe(binary, connection, output, mode, observations, raw_handle,
         marker = b'Runtime: ok (API up)' if mode == 'compat' else b'Service Lasso  operator/v2'
         wait_for(lambda: marker in data, 20)
         if mode == 'v2':
-            wait_for(lambda: b'Error:' in data, 10)
+            def operator_reads():
+                try:
+                    rows = json.loads(observations.read_text())
+                except (OSError, ValueError):
+                    return []
+                return [row for row in rows if row.get('method') == 'GET' and str(row.get('pathname', '')).startswith('/api/operator/v2/') and row.get('statusCode') == 200]
+            wait_for(lambda: len(operator_reads()) >= 1, 10)
         ready = True
         events.append({'readyAtSeconds': clock() - started, 'inputMode': 'ConPTY',
                        'posixICANONApplicable': False})
@@ -249,8 +255,8 @@ def run_probe(binary, connection, output, mode, observations, raw_handle,
         write_prepared(raw_handle, raw, data)
     leaked = connection['token'].encode() in data or connection['token'].encode() in terminal_text(data)
     result = {'schemaVersion': 1, 'stage': 'terminal', 'mode': mode, 'transport': 'ConPTY',
-              'status': 'failed' if failure or overflow or leaked or not reaped or status != 0 or forced else ('blocked' if mode == 'v2' else 'passed'),
-              'reason': failure or ('operator-v2-functional-journeys-not-qualified' if mode == 'v2' else None),
+              'status': 'failed' if failure or overflow or leaked or not reaped or status != 0 or forced else 'passed',
+              'reason': failure,
               'apiUnavailable': b'404 Not Found' in data, 'readyBeforeKeys': ready,
               'helpStateObserved': help_state, 'dashboardRestored': dashboard_returned,
               'actualOwnedWait': reaped, 'readerCancellation': reader_cancel, 'socketCleanup': sockets_closed, 'readerJoined': reader_joined, 'exitCode': status, 'forcedCleanup': forced,

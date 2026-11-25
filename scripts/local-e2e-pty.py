@@ -73,7 +73,15 @@ def probe(binary, connection, output, mode, observations=None):
         marker = b'Runtime: ok (API up)' if mode == 'compat' else b'Service Lasso  operator/v2'
         wait_for(lambda: marker in data, 20)
         if mode == 'v2':
-            wait_for(lambda: b'Error:' in data or b'Connecting to authenticated operator API...' not in data, 10)
+            def operator_reads():
+                if observations is None:
+                    raise RuntimeError('actual Core request observations required for v2')
+                try:
+                    rows = json.loads(observations.read_text())
+                except (OSError, ValueError):
+                    return []
+                return [row for row in rows if row.get('method') == 'GET' and str(row.get('pathname', '')).startswith('/api/operator/v2/') and row.get('statusCode') == 200]
+            wait_for(lambda: len(operator_reads()) >= 1, 10)
         ready = True
         canonical = bool(termios.tcgetattr(master)[3] & termios.ICANON)
         events.append({'readyAtSeconds': time.monotonic() - started, 'ICANON': canonical})
@@ -136,8 +144,8 @@ def probe(binary, connection, output, mode, observations=None):
     leaked = connection['token'].encode() in data
     unavailable = b'404 Not Found' in data
     result = {'schemaVersion': 1, 'stage': 'terminal', 'mode': mode,
-        'status': 'failed' if failure or overflow or leaked or (not reaped or os.waitstatus_to_exitcode(status) != 0) else ('blocked' if mode == 'v2' else 'passed'),
-        'captureOverflow': overflow, 'reason': failure or ('operator-v2-functional-journeys-not-qualified' if mode == 'v2' else None),
+        'status': 'failed' if failure or overflow or leaked or (not reaped or os.waitstatus_to_exitcode(status) != 0) else 'passed',
+        'captureOverflow': overflow, 'reason': failure,
         'apiUnavailable': unavailable, 'readyBeforeKeys': ready,
         'helpStateObserved': help_state, 'dashboardRestored': dashboard_returned,
         'exitCode': os.waitstatus_to_exitcode(status) if reaped else None, 'interruptedForCleanup': interrupted,

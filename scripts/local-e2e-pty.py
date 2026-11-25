@@ -84,6 +84,9 @@ def probe(binary, connection, output, mode, observations=None):
             wait_for(lambda: len(operator_reads()) >= 1, 10)
             key(b'\x1b[C')
             wait_for(lambda: any(str(row.get('pathname', '')).endswith('/graph') for row in operator_reads()), 10)
+            for suffix in ['/inbox', '/queue', '/audit']:
+                key(b'\x1b[C')
+                wait_for(lambda suffix=suffix: any(str(row.get('pathname', '')).endswith(suffix) for row in operator_reads()), 10)
         ready = True
         canonical = bool(termios.tcgetattr(master)[3] & termios.ICANON)
         events.append({'readyAtSeconds': time.monotonic() - started, 'ICANON': canonical})

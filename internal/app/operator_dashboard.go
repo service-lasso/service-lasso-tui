@@ -194,6 +194,27 @@ func (m operatorModel) dashboardRows(mainWidth int) []string {
 	return lines
 }
 
+func (m operatorModel) dashboardNotices() []string {
+	var lines []string
+	if m.loading {
+		lines = append(lines, dashboardMeta.Render(" Loading…"))
+	}
+	if m.errorText != "" {
+		lines = append(lines, dashboardWarn.Render(" Error: "+m.errorText))
+	}
+	if m.warning != "" {
+		lines = append(lines, dashboardWarn.Render(" Warning: "+m.warning))
+	}
+	if m.custodyWarning != "" {
+		lines = append(lines, dashboardWarn.Render(" Storage: "+m.custodyWarning))
+	}
+	if m.operation != nil {
+		op := m.operation.Operation
+		lines = append(lines, dashboardMeta.Render(fmt.Sprintf(" Operation %s  %s/%s", op.OperationID, op.Status, op.Phase)))
+	}
+	return lines
+}
+
 func (m operatorModel) dashboardView() string {
 	sidebarWidth := 24
 	if m.width < 110 {

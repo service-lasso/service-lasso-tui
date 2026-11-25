@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	tuiTitleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("87"))
+	tuiTitleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("87")).Background(lipgloss.Color("24"))
 	tuiMetaStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("109"))
 	tuiSelectedStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("87"))
 	tuiFooterStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Background(lipgloss.Color("236"))

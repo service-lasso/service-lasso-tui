@@ -215,35 +215,59 @@ func (m operatorModel) dashboardNotices() []string {
 	return lines
 }
 
+func dashboardPanel(title string, content []string, width, height int) []string {
+	if height < 3 {
+		height = 3
+	}
+	inner := width - 2
+	if inner < 1 {
+		inner = 1
+	}
+	label := dashboardTitle.Render(" " + title + " ")
+	used := ansi.StringWidth(label)
+	line := "╭─" + label
+	if pad := inner - used - 1; pad > 0 {
+		line += strings.Repeat("─", pad)
+	}
+	line += "╮"
+	out := []string{line}
+	for i := 0; i < height-2; i++ {
+		text := ""
+		if i < len(content) {
+			text = content[i]
+		}
+		out = append(out, "│"+padLine(text, inner)+"│")
+	}
+	out = append(out, "╰"+strings.Repeat("─", inner)+"╯")
+	return out
+}
+
 func (m operatorModel) dashboardView() string {
 	sidebarWidth := 24
 	if m.width < 110 {
 		sidebarWidth = 20
 	}
-	mainWidth := m.width - sidebarWidth - 3
-	if mainWidth < 20 {
+	mainWidth := m.width - sidebarWidth
+	if mainWidth < 25 {
 		return m.dashboardHeader()
 	}
 	bodyHeight := m.height - 2
-	if bodyHeight < 1 {
+	if bodyHeight < 5 {
 		return m.dashboardHeader()
 	}
-	sidebar := m.dashboardSidebar(sidebarWidth, bodyHeight)
-	rows := m.dashboardRows(mainWidth)
-	if len(rows) > bodyHeight-3 {
-		rows = rows[:bodyHeight-3]
+
+	sidebar := dashboardPanel("NAV", m.dashboardSidebar(sidebarWidth-2, bodyHeight-2), sidebarWidth, bodyHeight)
+	content := []string{
+		dashboardMeta.Render(" " + m.snapshotStatus()),
 	}
-	main := []string{dashboardTitle.Render(" " + strings.ToUpper(m.journey)), dashboardMeta.Render(" " + m.snapshotStatus()), ""}
-	main = append(main, rows...)
-	for len(main) < bodyHeight {
-		main = append(main, "")
-	}
-	var out []string
-	out = append(out, m.dashboardHeader())
+	content = append(content, m.dashboardNotices()...)
+	content = append(content, "")
+	content = append(content, m.dashboardRows(mainWidth-4)...)
+	main := dashboardPanel(strings.ToUpper(m.journey), content, mainWidth, bodyHeight)
+
+	out := []string{m.dashboardHeader()}
 	for i := 0; i < bodyHeight; i++ {
-		left := padLine(sidebar[i], sidebarWidth)
-		right := padLine(main[i], mainWidth)
-		out = append(out, left+dashboardBorder.Render(" │ ")+right)
+		out = append(out, padLine(sidebar[i], sidebarWidth)+padLine(main[i], mainWidth))
 	}
 	footer := " ←/→ views   ↑/↓ select   enter open   r refresh   / filter   ? help   q quit"
 	out = append(out, dashboardBar.Render(padLine(footer, m.width)))

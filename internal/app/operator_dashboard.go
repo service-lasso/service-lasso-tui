@@ -92,18 +92,25 @@ func (m operatorModel) dashboardDetailRows(mainWidth int) []string {
 	}
 	r := d.Summary
 	head := fmt.Sprintf("%s  [%s]  running=%s  health=%s  update=%s", r.DisplayName, r.ServiceID, r.Running, r.HealthStatus, r.UpdateStatus)
-	lines := []string{dashboardTitle.Render(padLine(head, mainWidth)), "", dashboardMeta.Render(" Overview"), ""}
-	lines = append(lines, padLine(" Provider: "+d.Provider.Role+" · "+operatorReason(d.Provider.Availability), mainWidth), "")
-	if len(d.Dependencies) > 0 {
-		lines = append(lines, dashboardMeta.Render(" Dependencies"))
+	tabs := []string{"Overview", "Dependencies", "Endpoints"}
+	for i := range tabs {
+		if i == m.detailTab {
+			tabs[i] = "[" + tabs[i] + "]"
+		}
+	}
+	lines := []string{dashboardTitle.Render(padLine(head, mainWidth)), "", dashboardMeta.Render(" " + strings.Join(tabs, "   ")), ""}
+	switch m.detailTab {
+	case 1:
+		if len(d.Dependencies) == 0 {
+			lines = append(lines, "  No dependencies reported.")
+		}
 		for _, edge := range d.Dependencies {
 			lines = append(lines, padLine(fmt.Sprintf("  %s → %s  [%s %s]", edge.FromServiceID, edge.ToServiceID, edge.Kind, edge.State), mainWidth))
 		}
-	} else {
-		lines = append(lines, "  No dependencies reported.")
-	}
-	if len(d.Endpoints) > 0 {
-		lines = append(lines, "", dashboardMeta.Render(" Endpoints"))
+	case 2:
+		if len(d.Endpoints) == 0 {
+			lines = append(lines, "  No endpoints reported.")
+		}
 		for _, ep := range d.Endpoints {
 			port := "—"
 			if ep.Port != nil {
@@ -111,8 +118,10 @@ func (m operatorModel) dashboardDetailRows(mainWidth int) []string {
 			}
 			lines = append(lines, padLine(fmt.Sprintf("  %s  %s  port %s  %s", ep.Label, ep.Protocol, port, operatorReason(ep.Availability)), mainWidth))
 		}
+	default:
+		lines = append(lines, padLine(" Provider: "+d.Provider.Role+" · "+operatorReason(d.Provider.Availability), mainWidth), "")
+		lines = append(lines, dashboardMeta.Render(" Actions"), "  → Lifecycle to choose a service action   1/2/3 tabs   r refresh   esc back")
 	}
-	lines = append(lines, "", dashboardMeta.Render(" Actions"), "  → Lifecycle to choose a service action   r refresh   esc back")
 	return lines
 }
 

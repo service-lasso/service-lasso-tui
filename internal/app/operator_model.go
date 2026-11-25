@@ -113,6 +113,7 @@ type operatorModel struct {
 	discovery                                 *api.OperatorDiscovery
 	binding                                   api.OperatorContext
 	service, journey                          string
+	detailTab                                 int
 	filters                                   map[string]string
 	logSearch                                 string
 	logSearchDraft                            *operatorDraft

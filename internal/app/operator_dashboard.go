@@ -82,8 +82,42 @@ func (m operatorModel) dashboardSidebar(width, height int) []string {
 	return lines[:height]
 }
 
+func (m operatorModel) dashboardDetailRows(mainWidth int) []string {
+	d := m.detail
+	if d == nil {
+		return []string{"", "  Loading service detail…"}
+	}
+	r := d.Summary
+	head := fmt.Sprintf("%s  [%s]  running=%s  health=%s  update=%s", r.DisplayName, r.ServiceID, r.Running, r.HealthStatus, r.UpdateStatus)
+	lines := []string{dashboardTitle.Render(padLine(head, mainWidth)), "", dashboardMeta.Render(" Overview   Dependencies   Endpoints   Variables   Config   Logs   Setup   Actions"), ""}
+	lines = append(lines, padLine(" Provider: "+d.Provider.Role+" · "+operatorReason(d.Provider.Availability), mainWidth), "")
+	if len(d.Dependencies) > 0 {
+		lines = append(lines, dashboardMeta.Render(" Dependencies"))
+		for _, edge := range d.Dependencies {
+			lines = append(lines, padLine(fmt.Sprintf("  %s → %s  [%s %s]", edge.FromServiceID, edge.ToServiceID, edge.Kind, edge.State), mainWidth))
+		}
+	} else {
+		lines = append(lines, "  No dependencies reported.")
+	}
+	if len(d.Endpoints) > 0 {
+		lines = append(lines, "", dashboardMeta.Render(" Endpoints"))
+		for _, ep := range d.Endpoints {
+			port := "—"
+			if ep.Port != nil {
+				port = fmt.Sprintf("%d", *ep.Port)
+			}
+			lines = append(lines, padLine(fmt.Sprintf("  %s  %s  port %s  %s", ep.Label, ep.Protocol, port, operatorReason(ep.Availability)), mainWidth))
+		}
+	}
+	lines = append(lines, "", dashboardMeta.Render(" Actions"), "  s start   S stop   r restart   i install   c config   L reload   esc back")
+	return lines
+}
+
 func (m operatorModel) dashboardRows(mainWidth int) []string {
 	var lines []string
+	if m.journey == "detail" {
+		return m.dashboardDetailRows(mainWidth)
+	}
 	if m.journey == "overview" {
 		header := fmt.Sprintf("%-22s %-8s %-12s %-10s %-10s", "SERVICE", "RUNNING", "HEALTH", "UPDATES", "FAVORITE")
 		lines = append(lines, dashboardMeta.Render(padLine(header, mainWidth)))

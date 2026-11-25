@@ -317,6 +317,9 @@ func (m operatorModel) formStatus() (string, bool) {
 }
 func (m operatorModel) rowCount() int { return len(m.displayRows()) }
 func (m operatorModel) View() string {
+	if m.dashboardEnabled() {
+		return m.dashboardView()
+	}
 	focusLine := -1
 	editorLine := -1
 	custodyLine := -1

@@ -1,0 +1,148 @@
+package app
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+)
+
+var (
+	dashboardTitle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("87"))
+	dashboardMeta   = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	dashboardSelect = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("87"))
+	dashboardBar    = lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Background(lipgloss.Color("236"))
+	dashboardBorder = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+)
+
+func (m operatorModel) dashboardEnabled() bool {
+	return tuiColorEnabled() && m.width >= 80 && m.height >= 20 && !m.draft.Dirty && m.draft.Preview == nil && !m.draft.Sent
+}
+
+func padLine(text string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	text = ansi.Truncate(text, width, "…")
+	if w := ansi.StringWidth(text); w < width {
+		text += strings.Repeat(" ", width-w)
+	}
+	return text
+}
+
+func (m operatorModel) dashboardHeader() string {
+	status := "connecting"
+	if m.discovery != nil {
+		status = "connected"
+	}
+	if m.loading {
+		status = "loading"
+	}
+	left := " Service Lasso  Service Admin"
+	right := status
+	gap := m.width - ansi.StringWidth(left) - ansi.StringWidth(right) - 2
+	if gap < 1 {
+		gap = 1
+	}
+	return dashboardTitle.Render(padLine(left+strings.Repeat(" ", gap)+right+" ", m.width))
+}
+
+func (m operatorModel) dashboardSidebar(width, height int) []string {
+	items := []struct{ label, journey string }{
+		{"Dashboard", "overview"}, {"Services", "overview"}, {"Dependencies", "graph"},
+		{"Logs", "logs"}, {"Inbox", "inbox"}, {"Runtime", "detail"},
+		{"Installed", "detail"}, {"Variables", "variables"}, {"Network", "endpoints"},
+		{"Security", "metadata"}, {"Settings", "metadata"}, {"Help Center", "overview"},
+	}
+	lines := []string{dashboardMeta.Render(" SERVICE ADMIN"), ""}
+	for i, item := range items {
+		marker := "  "
+		if item.journey == m.journey {
+			marker = "▌ "
+		}
+		label := marker + item.label
+		if i < len(items) && item.journey == m.journey {
+			lines = append(lines, dashboardSelect.Render(padLine(label, width)))
+		} else {
+			lines = append(lines, padLine(label, width))
+		}
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return lines[:height]
+}
+
+func (m operatorModel) dashboardRows(mainWidth int) []string {
+	var lines []string
+	if m.journey == "overview" {
+		header := fmt.Sprintf("%-22s %-8s %-12s %-10s %-10s", "SERVICE", "RUNNING", "HEALTH", "UPDATES", "FAVORITE")
+		lines = append(lines, dashboardMeta.Render(padLine(header, mainWidth)))
+		for i, service := range m.overviewServices() {
+			name := "@" + service.ServiceID
+			row := fmt.Sprintf("%-22s %-8s %-12s %-10s %-10s", name, service.Running, service.HealthStatus, service.UpdateStatus, m.favoriteLabel(service.ServiceID, service.Generation))
+			row = padLine(row, mainWidth)
+			if i == m.row {
+				lines = append(lines, dashboardSelect.Render(row))
+			} else {
+				lines = append(lines, row)
+			}
+		}
+		if len(m.overviewServices()) == 0 {
+			lines = append(lines, "", "  No services discovered for this runtime.")
+		}
+	} else {
+		for i, row := range m.rowLines() {
+			row = padLine("  "+row, mainWidth)
+			if i == m.row {
+				row = dashboardSelect.Render(row)
+			}
+			lines = append(lines, row)
+		}
+		if len(lines) == 0 {
+			lines = append(lines, "", "  No data loaded for this view.")
+		}
+	}
+	return lines
+}
+
+func (m operatorModel) dashboardView() string {
+	sidebarWidth := 24
+	if m.width < 110 {
+		sidebarWidth = 20
+	}
+	mainWidth := m.width - sidebarWidth - 3
+	if mainWidth < 20 {
+		return m.dashboardHeader()
+	}
+	bodyHeight := m.height - 2
+	if bodyHeight < 1 {
+		return m.dashboardHeader()
+	}
+	sidebar := m.dashboardSidebar(sidebarWidth, bodyHeight)
+	rows := m.dashboardRows(mainWidth)
+	if len(rows) > bodyHeight-3 {
+		rows = rows[:bodyHeight-3]
+	}
+	main := []string{dashboardTitle.Render(" " + strings.ToUpper(m.journey)), dashboardMeta.Render(" " + m.snapshotStatus()), ""}
+	main = append(main, rows...)
+	for len(main) < bodyHeight {
+		main = append(main, "")
+	}
+	var out []string
+	out = append(out, m.dashboardHeader())
+	for i := 0; i < bodyHeight; i++ {
+		left := padLine(sidebar[i], sidebarWidth)
+		right := padLine(main[i], mainWidth)
+		out = append(out, left+dashboardBorder.Render(" │ ")+right)
+	}
+	footer := " ←/→ views   ↑/↓ select   enter open   r refresh   / filter   ? help   q quit"
+	out = append(out, dashboardBar.Render(padLine(footer, m.width)))
+	return strings.Join(out, "\n")
+}
+
+// Keep imports used by the dashboard in one place; this also documents that
+// no favicon or URL is synthesized by the renderer.
+var _ = strconv.Itoa

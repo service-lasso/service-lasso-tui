@@ -100,6 +100,7 @@ def apply_chunk(screen, row, col, raw, fg=None, bg=None):
             col = 0
         elif ch == "\n":
             row += 1
+            col = 0
             if row >= ROWS:
                 screen.pop(0)
                 screen.append([(" ", None, None)] * COLS)

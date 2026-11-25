@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Drive the real TUI through the implemented feature surface using tmux."""
 import argparse, base64, json, os, pathlib, subprocess, sys, time
+from PIL import Image, ImageDraw, ImageFont
 
 def main():
     parser = argparse.ArgumentParser()
@@ -17,7 +18,7 @@ def main():
 
     def run(*a): return subprocess.run([*tmux, *a], check=True, text=True, capture_output=True)
     def capture():
-        text = run('capture-pane', '-p', '-e', '-t', session).stdout
+        text = run('capture-pane', '-p', '-t', session).stdout
         return text
     def send(*keys):
         run('send-keys', '-t', session, *keys)
@@ -30,10 +31,23 @@ def main():
             time.sleep(.1)
         raise RuntimeError(f'missing {needle!r}\n{last}')
 
-    chunks = []; started = time.monotonic()
-    def record(delay=1.2):
-        raw = ('\x1b[2J\x1b[H' + capture()).encode()
+    chunks = []; screens = []; started = time.monotonic()
+    screen_dir = out / 'screens'; screen_dir.mkdir(exist_ok=True)
+    def screenshot(label, text):
+        lines = text.rstrip('\n').split('\n')[:32]
+        image = Image.new('RGB', (120 * 10, 32 * 20), (16, 18, 24))
+        draw = ImageDraw.Draw(image)
+        font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf', 13)
+        for y, line in enumerate(lines):
+            draw.text((3, y * 20 + 3), line[:120], font=font, fill=(220, 225, 235))
+        path = screen_dir / f'{len(screens)+1:02d}-{label}.png'
+        image.save(path)
+        screens.append(str(path.relative_to(out)))
+    def record(label, delay=1.2):
+        text = capture()
+        raw = ('\x1b[2J\x1b[H' + text).encode()
         chunks.append({'t': time.monotonic() - started, 'data': base64.b64encode(raw).decode()})
+        screenshot(label, text)
         time.sleep(delay)
 
     failures = []; seen = []
@@ -42,13 +56,13 @@ def main():
             'env', 'TERM=xterm-256color', f'SERVICE_LASSO_API_TOKEN={args.token}',
             args.binary, '--api', args.url)
         view = wait_for('Service Lasso');
-        view = wait_for('@demo-api', 15); record()
+        view = wait_for('@demo-api', 15); record('dashboard')
         for needle in ['SERVICE ADMIN', 'services', '@demo-api', 'RUNNING']:
             if needle not in view: failures.append(f'overview missing {needle}')
 
-        send('Enter'); view = wait_for('DETAIL'); record()
+        send('Enter'); view = wait_for('DETAIL'); record('detail')
         for tab, needle in [('2','[Dependencies]'), ('3','[Endpoints]')]:
-            send(tab); view = wait_for(needle); record(1.0)
+            send(tab); view = wait_for(needle); record(needle.strip('[]').lower(), 1.0)
             seen.append(needle)
 
         # Walk the implemented journey rail and collect every screen title.
@@ -56,7 +70,7 @@ def main():
         for _ in range(12):
             send('Right'); time.sleep(.25); view = capture()
             for title in list(titles):
-                if title in view: titles.remove(title); seen.append(title); record(.8)
+                if title in view: titles.remove(title); seen.append(title); record(title.lower(), .8)
             if not titles: break
         if titles: failures.append('journeys not reached: ' + ','.join(sorted(titles)))
 
@@ -67,14 +81,14 @@ def main():
         if 'LIFECYCLE' not in view: failures.append('lifecycle screen not reachable')
         else:
             send('Down','Down','Down','Enter'); wait_for('Draft:')
-            send('Enter'); wait_for('Confirmation phrase:'); record(1.5); seen.append('PREVIEW')
+            send('Enter'); wait_for('Confirmation phrase:'); record('preview', 2.5); seen.append('PREVIEW')
 
         send('q'); time.sleep(.5)
         result = {'ok': not failures, 'failures': failures, 'seen': seen,
-                  'chunks': len(chunks), 'duration': time.monotonic() - started}
+                  'screens': screens, 'chunks': len(chunks), 'duration': time.monotonic() - started}
     except Exception as error:
         result = {'ok': False, 'failures': failures + [str(error)], 'seen': seen,
-                  'chunks': len(chunks), 'duration': time.monotonic() - started}
+                  'screens': screens, 'chunks': len(chunks), 'duration': time.monotonic() - started}
     finally:
         subprocess.run([*tmux, 'kill-server'], capture_output=True)
         (out / 'terminal.chunks.jsonl').write_text(''.join(json.dumps(c) + '\n' for c in chunks))

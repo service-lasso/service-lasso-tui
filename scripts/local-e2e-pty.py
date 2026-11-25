@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Ordinary POSIX terminal proof; neither native custody nor release qualification."""
-import argparse, errno, fcntl, json, os, pathlib, pty, select, signal, struct, termios, time
+import argparse, base64, errno, fcntl, json, os, pathlib, pty, select, signal, struct, termios, time
 
 
 def probe(binary, connection, output, mode, observations=None):
@@ -16,7 +16,7 @@ def probe(binary, connection, output, mode, observations=None):
         os.execve(argv[0], argv, {'PATH': '/usr/bin:/bin', 'TERM': 'xterm-256color',
             'LANG': 'C.UTF-8', 'XDG_CONFIG_HOME': str(config),
             'SERVICE_LASSO_API_TOKEN': connection['token']})
-    data, events = bytearray(), []
+    data, chunks, events = bytearray(), [], []
     stream_closed, reaped, status, reaped_at = False, False, None, None
     overflow = False
 
@@ -47,6 +47,7 @@ def probe(binary, connection, output, mode, observations=None):
                 if len(data) + len(chunk) > 8 * 1024 * 1024:
                     overflow = True
                 else:
+                    chunks.append({'t': time.monotonic() - started, 'data': base64.b64encode(chunk).decode('ascii')})
                     data.extend(chunk)
 
     def wait_for(predicate, seconds):
@@ -146,6 +147,9 @@ def probe(binary, connection, output, mode, observations=None):
         raw = output / 'terminal.private.ansi'
         raw.write_bytes(data)
         raw.chmod(0o600)
+        chunks_file = output / 'terminal.chunks.jsonl'
+        chunks_file.write_text(''.join(json.dumps(item) + '\n' for item in chunks))
+        chunks_file.chmod(0o600)
     leaked = connection['token'].encode() in data
     unavailable = b'404 Not Found' in data
     result = {'schemaVersion': 1, 'stage': 'terminal', 'mode': mode,

@@ -85,7 +85,18 @@ def main():
     chunks = [json.loads(line) for line in args.chunks.read_text().splitlines() if line.strip()]
     if not chunks:
         raise SystemExit("no terminal chunks")
-    duration = chunks[-1]["t"] + 1.0
+    first_content = None
+    probe_screen, probe_row, probe_col = blank(), 0, 0
+    for chunk in chunks:
+        probe_row, probe_col = apply_chunk(probe_screen, probe_row, probe_col, base64.b64decode(chunk["data"]))
+        if any("Service Lasso" in "".join(line) for line in probe_screen):
+            first_content = chunk["t"]
+            break
+    if first_content is None:
+        first_content = 0.0
+    start = max(0.0, first_content - 0.35)
+    end = chunks[-1]["t"] + 2.0
+    duration = max(0.2, end - start)
     font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 14)
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -93,7 +104,7 @@ def main():
     with tempfile.TemporaryDirectory(dir=output) as frames:
         count = 0
         for index in range(int(duration * FPS) + 1):
-            when = index / FPS
+            when = start + index / FPS
             screen, row, col = blank(), 0, 0
             for chunk in chunks:
                 if chunk["t"] > when:
@@ -103,7 +114,7 @@ def main():
             count = index + 1
         subprocess.run([args.ffmpeg, "-y", "-loglevel", "error", "-framerate", str(FPS), "-i", f"{frames}/frame-%05d.png", "-c:v", "libx264", "-pix_fmt", "yuv420p", f"{stem}.mp4"], check=True)
         subprocess.run([args.ffmpeg, "-y", "-loglevel", "error", "-framerate", str(FPS), "-i", f"{frames}/frame-%05d.png", "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "32", f"{stem}.webm"], check=True)
-    print(json.dumps({"frames": count, "duration": duration, "mp4": f"{stem}.mp4", "webm": f"{stem}.webm"}))
+    print(json.dumps({"frames": count, "start": start, "duration": duration, "mp4": f"{stem}.mp4", "webm": f"{stem}.webm"}))
 
 if __name__ == "__main__":
     main()

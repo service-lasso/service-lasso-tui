@@ -52,7 +52,7 @@ func (m operatorModel) dashboardHeader() string {
 func (m operatorModel) dashboardSidebar(width, height int) []string {
 	items := []struct{ label, journey string }{
 		{"Dashboard", "overview"}, {"Services", "overview"}, {"Dependencies", "graph"},
-		{"Logs", "logs"}, {"Inbox", "inbox"}, {"Runtime", "detail"},
+		{"Logs", "logs"}, {"Inbox", "inbox"}, {"Lifecycle", "lifecycle"}, {"Runtime", "detail"},
 		{"Installed", "detail"}, {"Variables", "variables"}, {"Network", "endpoints"},
 		{"Security", "metadata"}, {"Settings", "metadata"}, {"Help Center", "overview"},
 	}
@@ -109,7 +109,7 @@ func (m operatorModel) dashboardDetailRows(mainWidth int) []string {
 			lines = append(lines, padLine(fmt.Sprintf("  %s  %s  port %s  %s", ep.Label, ep.Protocol, port, operatorReason(ep.Availability)), mainWidth))
 		}
 	}
-	lines = append(lines, "", dashboardMeta.Render(" Actions"), "  enter/e choose action   r refresh   esc back")
+	lines = append(lines, "", dashboardMeta.Render(" Actions"), "  → Lifecycle to choose a service action   r refresh   esc back")
 	return lines
 }
 

@@ -113,6 +113,9 @@ func operatorCapabilityAdmission(discovery *api.OperatorDiscovery, capability st
 	return false, "unsupported_capability"
 }
 func (m *operatorModel) readJourneyAvailable(name string) bool {
+	if name == "lifecycle" {
+		return m.discovery != nil && m.service != ""
+	}
 	capability := operatorReadCapability(name)
 	if capability == "" {
 		return false

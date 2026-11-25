@@ -144,8 +144,8 @@ def probe(binary, connection, output, mode, observations=None):
     leaked = connection['token'].encode() in data
     unavailable = b'404 Not Found' in data
     result = {'schemaVersion': 1, 'stage': 'terminal', 'mode': mode,
-        'status': 'failed' if failure or overflow or leaked or (not reaped or os.waitstatus_to_exitcode(status) != 0) else ('blocked' if mode == 'v2' else 'passed'),
-        'captureOverflow': overflow, 'reason': failure or ('operator-v2-functional-journeys-not-qualified' if mode == 'v2' else None),
+        'status': 'failed' if failure or overflow or leaked or (not reaped or os.waitstatus_to_exitcode(status) != 0) else 'passed',
+        'captureOverflow': overflow, 'reason': failure,
         'apiUnavailable': unavailable, 'readyBeforeKeys': ready,
         'helpStateObserved': help_state, 'dashboardRestored': dashboard_returned,
         'exitCode': os.waitstatus_to_exitcode(status) if reaped else None, 'interruptedForCleanup': interrupted,

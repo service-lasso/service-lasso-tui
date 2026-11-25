@@ -156,11 +156,19 @@ func (m operatorModel) dashboardRows(mainWidth int) []string {
 	}
 	if m.journey == "overview" {
 		lines = append(lines, m.dashboardSummary(mainWidth), "")
-		header := fmt.Sprintf("%-22s %-8s %-12s %-10s %-10s", "SERVICE", "RUNNING", "HEALTH", "UPDATES", "FAVORITE")
+		header := fmt.Sprintf("  %-22s %-8s %-12s %-10s %-10s", "SERVICE", "RUNNING", "HEALTH", "UPDATES", "FAVORITE")
 		lines = append(lines, dashboardMeta.Render(padLine(header, mainWidth)))
 		for i, service := range m.overviewServices() {
 			name := "@" + service.ServiceID
-			row := fmt.Sprintf("%-22s %-8s %-12s %-10s %-10s", name, service.Running, service.HealthStatus, service.UpdateStatus, m.favoriteLabel(service.ServiceID, service.Generation))
+			dot := "○ "
+			if service.Running == "yes" && service.HealthStatus == "unhealthy" {
+				dot = dashboardWarn.Render("▲ ")
+			} else if service.Running == "yes" {
+				dot = dashboardGood.Render("● ")
+			} else {
+				dot = dashboardMuted.Render("○ ")
+			}
+			row := fmt.Sprintf("%s%-22s %-8s %-12s %-10s %-10s", dot, name, service.Running, service.HealthStatus, service.UpdateStatus, m.favoriteLabel(service.ServiceID, service.Generation))
 			row = padLine(row, mainWidth)
 			if i == m.row {
 				lines = append(lines, dashboardSelect.Render(row))

@@ -2,11 +2,11 @@
 
 > **Status:** proposed next design objective, recorded 2026-11-25. Not yet mapped to a GitHub issue, an active spec section, or the capability matrix. Nothing here is implemented or validated against a running Core.
 >
-> **Relationship to this repository.** This design was drafted from a read-only review of `lasso-serviceadmin` and `service-lasso` (Core API taken from `origin/develop`) before this repository was reviewed. Where it differs from this repository's recorded decisions and specs, those take precedence:
-> - Section 2 recommends TypeScript + Ink. This repository already selected **Go + Bubble Tea** (`docs/framework-decision.md`), which is this design's stated fallback. Read Section 2 as superseded by that decision.
-> - Section 11's `packages/tui` layout maps onto this repository's `cmd/` and `internal/` layout.
-> - Sections 1.3 and 5 list Core's direct lifecycle routes (`POST /api/services/:id/:action`). This TUI's operator flow uses Core availability, a server-issued preview, an explicit confirmation and durable operation readback (see `README.md` and `.governance/specs/`); that flow stays authoritative.
-> - Per GOV-06, any endpoint in Section 13 that Core lacks must be recorded as an owning Core dependency, not substituted in the client.
+> **Relationship to this repository.** This design was drafted from a read-only review of `lasso-serviceadmin` and `service-lasso`. The implementation contract below has been reconciled with this repository:
+> - The stack is **Go + Bubble Tea + Lip Gloss** per `docs/framework-decision.md` and the existing `cmd/` / `internal/` layout. The TypeScript/Ink proposal is rejected.
+> - Lifecycle actions use operator/v2 discovery, availability, preview, explicit confirmation, execute, and durable readback. Direct Admin lifecycle routes are not a TUI source of truth.
+> - Admin-only routes that are not verified against current Core are Core dependencies, not client fallbacks.
+> - Section 5.1 separates verified routes from dependencies/out-of-scope work.
 >
 > The parts intended for this repository are the Service Admin screen map (Section 5), layout and mockups (Sections 3–4), keymap (Section 6), live-update, error and theming guidance (Sections 7–10), the phased scope (Section 12) and the gap list (Section 13).
 
@@ -76,7 +76,7 @@ Default port: `SERVICE_LASSO_PORT ?? 18080` (`src/index.ts`); packaged/demo stac
 - `PATCH /api/services/:id/meta` `{ favorite }` · `GET /api/services/meta`
 
 **Lifecycle**
-- `POST /api/services/:id/:action` with `{ confirm: boolean }`; Core `LifecycleAction = install | config | setup | start | stop | restart | reload`
+- Legacy/Admin direct lifecycle (`POST /api/services/:id/:action`) is **not used by the TUI**. The TUI uses operator/v2 availability, preview, confirmation, execute, and readback.
 - `POST /api/runtime/actions/startAll | stopAll | reload` (Admin's "restart all" = stopAll then startAll). Core also has `shutdown`, `importService`, `importService/plan`.
 - `GET /api/services/:id/start-trace` (phases: dependency_resolution → port_selection → artifact_acquisition → env_merge → process_spawn → health_check → terminal_outcome)
 
@@ -117,27 +117,26 @@ Default port: `SERVICE_LASSO_PORT ?? 18080` (`src/index.ts`); packaged/demo stac
 
 ---
 
-## 2. Recommended stack
+## 2. Stack
 
-**TypeScript + Ink (React for the terminal) + TanStack Query + Zustand, shipped as a Node 22 package and launched as `service-lasso tui`.**
+**Go + Bubble Tea + Lip Gloss**, matching `docs/framework-decision.md` and the existing TUI modules.
 
 Why:
-- Both repos are 100% TypeScript on Node ≥ 22, and Service Lasso already manages `@node`. No new toolchain, no new language for contributors.
-- Admin's data contract (`types.ts`, `client.ts`, log provider, terminal provider) can be lifted almost verbatim; React Query hooks and Zustand stores carry over because Ink is a React renderer.
-- Same mental model as Admin: one screen component per Admin route, same names, same polling intervals.
-- Windows: Ink runs on Node's raw-mode TTY, which works in Windows Terminal, PowerShell and conhost (ConPTY).
+- It is the recorded repository decision and keeps one Go toolchain for CLI/TUI-adjacent delivery.
+- Single static binary, no Node runtime for the TUI, and the existing terminal ownership work
+  (`coreentry`, `lifetime`, PTY/ConPTY probes) is reusable.
+- Current modules already split client, model, layout, and entry ownership; parity work should
+  extend them rather than introduce a second renderer.
+- Bubble Tea provides the alternate-screen, raw-mode, resize, and Windows terminal behavior the
+  design needs.
 
-Weighed against:
-| Option | For | Against |
-|---|---|---|
-| **TS + Ink** (pick) | Shares types and client code; React model the team knows; one runtime | Full-tree re-render: needs a virtualised log view; Node startup ~150 ms |
-| Go + Bubble Tea / Lip Gloss | Single static `.exe`, excellent Windows support, very fast | Second language; re-declare ~45 KB of types; can't share Admin code |
-| Rust + Ratatui | Fastest, single binary | Steepest learning curve; same duplication issue |
-| TS + OpenTUI | Modern, fast renderer | Bun/Zig native core; Windows support is the least mature of the four |
+Rejected alternatives:
+- **TypeScript + Ink**: violates the recorded framework decision and introduces a second runtime
+  and type surface.
+- **Rust + Ratatui**: fastest, but a third language and no reuse of current terminal ownership code.
+- **TS + OpenTUI**: least mature Windows path and not aligned with this repository.
 
-If a zero-dependency standalone binary becomes a hard requirement later, Go + Bubble Tea is the fallback; the screen map and keymap below carry over unchanged.
-
----
+The screen map, layout, keymap, and polling rules are renderer-neutral and remain the target.
 
 ## 3. Layout
 
@@ -327,6 +326,27 @@ Service names other than `@serviceadmin`, `@node` and `@secretsbroker`, and all 
 
 ---
 
+### 5.1 Endpoint status
+
+**Verified TUI runtime path (operator/v2):** discovery, services, detail, reconciliation context,
+lifecycle availability, preview, execute, operation readback, cancel, graph, variables, endpoints,
+health history, history, logs, inbox, queue, audit, and service metadata. These are the only routes
+used for TUI reads and mutations today. Several return valid empty pages until Core exposes richer
+data; empty is not evidence of Admin parity.
+
+**Missing or not advertised:** config/setup/declared-action/update/removal forms, populated graph,
+and true running-operation cancellation. These require Core work or explicit product decisions
+before they can appear in the TUI.
+
+**Admin-only candidates, not yet verified for this TUI:** `/api/dashboard*`, `/api/metrics`,
+`/api/network`, `/api/dependencies`, `/api/catalog*`, `/api/mcp*`, `/api/telemetry`,
+`/api/service-archives/*`, terminal attach, and Secrets Broker proxy routes. Each needs a route
+contract and an owning Core dependency before it is placed in an MVP phase.
+
+**Rule:** direct `POST /api/services/:id/:action` is not used by this TUI. All lifecycle mutations
+must use the operator/v2 preview/confirmation/readback flow. Admin-only convenience routes are not
+substituted with client-side state.
+
 ## 6. Keybindings
 
 **Global**
@@ -408,55 +428,55 @@ Rules: pause polling for hidden screens; exponential backoff (1→2→4→8 s, c
 - Settings saved to `%APPDATA%\service-lasso\tui.json` / `~/.config/service-lasso/tui.json`.
 
 ## 11. Project structure
+
+Extend the existing TUI repository:
 ```
-packages/tui/                      # suggested: inside service-lasso workspaces (or a new lasso-servicetui repo)
-  package.json                     # bin: service-lasso-tui; Core CLI adds `service-lasso tui`
-  src/
-    cli.tsx                        # args, alt screen, raw mode, render(<App/>)
-    app.tsx                        # router, layout shell, keymap provider
-    api/
-      client.ts                    # fetch wrapper, headers, error normalisation (from Admin client.ts)
-      discovery.ts                 # base URL chain (section 8)
-      auth.ts                      # token/session, /api/runtime/security
-      endpoints.ts                 # typed calls per endpoint
-      types.ts                     # copied from Admin types.ts, later a shared package
-    hooks/                         # React Query hooks, same keys as Admin
-    state/                         # zustand: ui, settings, selection
-    ui/
-      layout/  Sidebar StatusBar Header Split
-      components/  Table StatusPill Tabs Modal Palette Toast KeyHints LogView TerminalPassthrough
-      theme/  tokens dark light highContrast
-    screens/
-      Dashboard Services ServiceDetail/{Overview,Dependencies,Endpoints,Variables,Config,Logs,Terminal,Setup,Access,Secrets}
-      Dependencies Routes Logs Runtime Mcp Installed Variables Network Security
-      Inbox Telemetry Audit  broker/{RamFiles,Secrets,Providers,Topology,Review}
-      Settings Help Login Offline
-    keys/keymap.ts
-  test/                            # ink-testing-library + a fixture HTTP server; reuse Admin stub fixtures
+cmd/service-lasso-tui/        # binary entry, flags, terminal lifecycle
+cmd/service-lasso-operator-probe/
+internal/api/                 # operator/v2 client, types, validation
+internal/app/                 # Bubble Tea model, views, key handling
+internal/coreentry/           # retained native entry boundary
+internal/lifetime/            # process/terminal ownership
+scripts/local-e2e-pty.py      # Linux/macOS terminal proof
+scripts/local-e2e-conpty.py   # Windows ConPTY proof
+scripts/render-terminal-video.py
 ```
+No `packages/tui` Node package and no duplicated TypeScript API client.
 
 ## 12. Phased build plan
-**Phase 0, spike (2–3 days):** Ink shell with sidebar, status bar, discovery, `/api/health`, Services table from `/api/dashboard/services`; verify on Windows Terminal, PowerShell, conhost.
 
-**Phase 1, MVP:**
-- Connection: discovery chain, offline screen, reconnect, loopback local-root, `--token`
-- Dashboard (counts, problem services, favourites, runtime actions)
-- Services table with filter and start/stop/restart/reload/install/config, favourite, open/copy URL, confirmations
-- Service detail: Overview (run status, start trace, recovery/updates summary), Dependencies, Endpoints, Variables (masked)
-- Logs: follow, type switch, search, page older; log dock
-- Runtime screen; command palette; help overlay; dark/light theme
+**Phase 0 — shell and verified reads (already partly present):** connect via discovery, render the
+sidebar/status bar, load services through operator/v2, and prove Linux PTY plus Windows ConPTY
+readiness. Exit: no 404/500 from advertised reads.
 
-**Phase 2:** Config edit via `$EDITOR` with diff and reason, Setup steps, Updates download/install, Recovery doctor, Terminal attach passthrough, Inbox, Audit, Network, Routes, Installed, Variables, Dependencies tree, Startup setting.
+**Phase 1 — MVP operator loop:** dashboard/service table/detail from operator/v2; lifecycle
+availability → preview → confirmation → execute → readback; logs; offline/error states; help and
+command palette. Exit: route-level E2E covers every Phase 1 screen and every lifecycle state against
+a real Core.
 
-**Phase 3:** MCP (confirmations), Security (read), Telemetry, Secrets Broker screens (read-only, no reveal), catalog install, multi-instance picker, high-contrast theme, packaging as a Service Lasso managed tool.
+**Phase 2 — read-only parity:** variables, endpoints, dependencies, network, routes, installed,
+inbox, audit, history, and public graph. Only ship screens whose Core dependency is verified.
+
+**Phase 3 — guarded writes and advanced views:** config, setup, declared actions, updates, removal,
+terminal attach, MCP and security read-only views. Each mutation requires its own preview/confirm
+contract and failure/readback test.
+
+**Phase 4 — broker and parity polish:** Secrets Broker read-only screens, catalog, multi-instance
+picker, themes, high-contrast, packaging.
+
+Every phase needs a screen/state acceptance matrix: loading, empty, stale, unauthorized, offline,
+error, and success. Unit tests alone do not close a phase.
 
 ## 13. Open questions and gaps
+
+Status after reconciliation: the design is directionally valid, but it is not an implementation
+contract until Section 5.1's unverified Admin routes have contracts and the Phase 1 matrix is green.
 1. No push channel in Core (no SSE/WebSocket); all live data is polling. A `GET /api/events` SSE stream would make the TUI and Admin cheaper and snappier.
 2. `/api/logs/read` pages backwards only (`before`/`cursor`); a forward `after` cursor would make tailing exact instead of diffing `totalLines`.
 3. Loopback clients get implicit `local-root`; Admin gates this behind an explicit break-glass step. Should the TUI require `--token` or a confirm, or accept local-root silently?
 4. "Restart all" isn't a Core action; Admin calls stopAll then startAll. Keep that or add `restartAll` in Core?
 5. Admin calls `/api/service-archives/upload|import`, `/api/logs/content`, `/api/inbox/messages/:id` and `/api/services/@secretsbroker/{lifecycle,operations,providers,secrets,sources}/*`; I could not find the first two in Core's `src` on origin/develop (Core has `/api/v1/service-transfers`). Some are stub-only paths; confirm which are live before mapping them.
-6. Where should the TUI live: `packages/tui` in the Core workspace (ships with `service-lasso tui`) or a new repo like Admin?
+6. The TUI lives in this repository. A future Core `service-lasso tui` launcher would be an integration decision, not a new `packages/tui` implementation.
 7. Which Secrets Broker actions are acceptable in a terminal (scrollback and recording risk)? The proposal is read-only with no reveal.
 8. Should the offline screen be allowed to start the runtime itself (`service-lasso start`)?
 9. Local checkout of Core is 67 commits behind origin/develop; endpoints here are from origin/develop.

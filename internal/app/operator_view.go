@@ -14,10 +14,10 @@ import (
 )
 
 var (
-	tuiTitleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("87"))
+	tuiTitleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("87"))
 	tuiMetaStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("109"))
 	tuiSelectedStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("87"))
-	tuiFooterStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	tuiFooterStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Background(lipgloss.Color("236"))
 	tuiErrorStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("203"))
 	tuiWarningStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 )
@@ -28,7 +28,7 @@ func tuiColorEnabled() bool {
 	}
 	return isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd())
 }
-func tuiStyledLines(lines []string) []string {
+func tuiStyledLines(lines []string, width int) []string {
 	if !tuiColorEnabled() {
 		return lines
 	}
@@ -36,7 +36,7 @@ func tuiStyledLines(lines []string) []string {
 	for i, line := range lines {
 		switch {
 		case i == 0:
-			styled[i] = tuiTitleStyle.Render(line)
+			styled[i] = tuiTitleStyle.Width(width).Render("▌ " + line)
 		case i == 1:
 			styled[i] = tuiMetaStyle.Render(line)
 		case strings.HasPrefix(line, "> "):
@@ -46,7 +46,7 @@ func tuiStyledLines(lines []string) []string {
 		case strings.HasPrefix(line, "Retained warning:"), strings.HasPrefix(line, "Storage custody:"), strings.HasPrefix(line, "Original service refresh failed:"):
 			styled[i] = tuiWarningStyle.Render(line)
 		case strings.HasPrefix(line, "←/→"):
-			styled[i] = tuiFooterStyle.Render(line)
+			styled[i] = tuiFooterStyle.Width(width).Render(line)
 		default:
 			styled[i] = line
 		}
@@ -532,6 +532,6 @@ func (m operatorModel) View() string {
 	for i, line := range lines {
 		lines[i] = ansi.Truncate(operatorText(line), m.width, "")
 	}
-	lines = tuiStyledLines(lines)
+	lines = tuiStyledLines(lines, m.width)
 	return strings.Join(lines, "\n")
 }

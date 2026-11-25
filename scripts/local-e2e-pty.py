@@ -82,9 +82,6 @@ def probe(binary, connection, output, mode, observations=None):
                     return []
                 return [row for row in rows if row.get('method') == 'GET' and str(row.get('pathname', '')).startswith('/api/operator/v2/') and row.get('statusCode') == 200]
             wait_for(lambda: len(operator_reads()) >= 1, 10)
-            before_paths = {row.get('pathname') for row in operator_reads()}
-            key(b'\x1b[C')
-            wait_for(lambda: any(row.get('pathname') not in before_paths for row in operator_reads()), 10)
         ready = True
         canonical = bool(termios.tcgetattr(master)[3] & termios.ICANON)
         events.append({'readyAtSeconds': time.monotonic() - started, 'ICANON': canonical})

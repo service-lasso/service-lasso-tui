@@ -39,10 +39,10 @@ while True:
   os._exit(0)
 `,{mode:0o700});
   const connection=path.join(root,'connection.json');await writeFile(connection,JSON.stringify({url:'http://127.0.0.1:12345',token:'synthetic-terminal-fixture-only'}),{mode:0o600});
-  const output=path.join(root,'proof');const driver=path.resolve('scripts/local-e2e-pty.py');
-  const exit=await new Promise((resolve,reject)=>{const child=spawn(process.env.TUI_E2E_TEST_PYTHON??(process.platform==='win32'?'python':'python3'),['-B',driver,'--binary',executable,'--connection-file',connection,'--output',output,'--mode','v2'],{stdio:['ignore','pipe','pipe']});child.on('error',reject);child.on('close',resolve);});
-  assert.equal(exit,2);const result=JSON.parse(await readFile(path.join(output,'result.json')));
-  assert.equal(result.status,'blocked');assert.equal(result.exitCode,0);assert.equal(result.actualWaitpid,true);assert.equal(result.interruptedForCleanup,false);
+  const output=path.join(root,'proof');const observations=path.join(root,'observations.json');await writeFile(observations,JSON.stringify([{method:'GET',pathname:'/api/operator/v2/services',statusCode:200}]));const driver=path.resolve('scripts/local-e2e-pty.py');
+  const exit=await new Promise((resolve,reject)=>{const child=spawn(process.env.TUI_E2E_TEST_PYTHON??(process.platform==='win32'?'python':'python3'),['-B',driver,'--binary',executable,'--connection-file',connection,'--output',output,'--mode','v2','--observations',observations],{stdio:['ignore','pipe','pipe']});child.on('error',reject);child.on('close',resolve);});
+  assert.equal(exit,0);const result=JSON.parse(await readFile(path.join(output,'result.json')));
+  assert.equal(result.status,'passed');assert.equal(result.reason,null);assert.equal(result.exitCode,0);assert.equal(result.actualWaitpid,true);assert.equal(result.interruptedForCleanup,false);
   assert.equal(result.readyBeforeKeys,true);assert.equal(result.tokenLeaked,false);assert.ok(result.qToReapSeconds>=.2);assert.ok(result.qToReapSeconds<2);
   const ready=result.events.find(row=>Object.hasOwn(row,'readyAtSeconds'));const key=result.events.find(row=>row.key==='q');assert.ok(key.atSeconds>=ready.readyAtSeconds);
  }finally{await rm(root,{recursive:true});}

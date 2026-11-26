@@ -1,3 +1,5 @@
+Issue #114: implement SPEC-007 shared operator theme, approved Stack design and honest unavailable telemetry; source tests and disposable Core PTY proof required.
+
 ## Next design objective: Service Admin parity TUI (2026-11-25)
 
 Proposed, not active: `docs/serviceadmin-parity-design.md`. Needs a GitHub issue, spec mapping and capability-matrix rows before implementation. Framework stays Go + Bubble Tea (`docs/framework-decision.md`). Backlog entry: `.governance/project/BACKLOG.md`.

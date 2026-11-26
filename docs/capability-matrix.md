@@ -1,3 +1,5 @@
+Issue #114 / SPEC-007: admitted overview summary, inspector and derived attention observations; shared visual theme across read/form/safety states. Historical latency, uptime, restarts and health strips remain unavailable without a documented admitted contract.
+
 # TUI capability matrix
 
 Current issue1 source unit: fix/1-complete-client-contract, PR33 targeting develop. The default command now selects operator/v2; --compat-v1 explicitly selects the historical adapter. The current dirty source is incomplete and UNRUN. No current compile, source approval, native acceptance, protected publication or GA claim is made. Earlier “implemented/locally tested” wording below describes historical compatibility work only; it is not evidence for this current head.

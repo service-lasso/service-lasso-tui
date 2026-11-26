@@ -137,6 +137,7 @@ def main():
     parser.add_argument("--chunks", type=pathlib.Path, required=True)
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--ffmpeg", default=os.environ.get("FFMPEG", "ffmpeg"))
+    parser.add_argument("--frame-out")
     args = parser.parse_args()
     chunks = [json.loads(line) for line in args.chunks.read_text().splitlines() if line.strip()]
     if not chunks:
@@ -155,6 +156,13 @@ def main():
     end = chunks[-1]["t"] + 2.0
     duration = max(0.2, end - start)
     font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 13)
+    if args.frame_out:
+        screen, row, col, fg, bg = blank(), 0, 0, None, None
+        for chunk in chunks:
+            row, col, fg, bg = apply_chunk(screen, row, col, base64.b64decode(chunk["data"]), fg, bg)
+        render(screen, font, args.frame_out)
+        print(json.dumps({"frame": args.frame_out}))
+        return
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     stem = output / "tui-session"

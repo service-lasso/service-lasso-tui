@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Drive the real TUI through the implemented feature surface using tmux."""
-import argparse, base64, json, os, pathlib, subprocess, sys, time
-from PIL import Image, ImageDraw, ImageFont
+import argparse, base64, json, os, pathlib, subprocess, sys, tempfile, time
 
 def main():
     parser = argparse.ArgumentParser()
@@ -12,13 +11,14 @@ def main():
     parser.add_argument('--ffmpeg', default=os.environ.get('FFMPEG', 'ffmpeg'))
     args = parser.parse_args()
     out = pathlib.Path(args.output).resolve(); out.mkdir(parents=True, exist_ok=True)
+    renderer = pathlib.Path(__file__).with_name('render-terminal-video.py')
     socket = f'tui-e2e-{os.getpid()}'
     session = 'tui'
     tmux = ['tmux', '-L', socket]
 
     def run(*a): return subprocess.run([*tmux, *a], check=True, text=True, capture_output=True)
     def capture():
-        text = run('capture-pane', '-p', '-t', session).stdout
+        text = run('capture-pane', '-p', '-e', '-t', session).stdout
         return text
     def send(*keys):
         run('send-keys', '-t', session, *keys)
@@ -34,14 +34,12 @@ def main():
     chunks = []; screens = []; started = time.monotonic()
     screen_dir = out / 'screens'; screen_dir.mkdir(exist_ok=True)
     def screenshot(label, text):
-        lines = text.rstrip('\n').split('\n')[:32]
-        image = Image.new('RGB', (120 * 10, 32 * 20), (16, 18, 24))
-        draw = ImageDraw.Draw(image)
-        font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf', 13)
-        for y, line in enumerate(lines):
-            draw.text((3, y * 20 + 3), line[:120], font=font, fill=(220, 225, 235))
+        raw = ('\x1b[2J\x1b[H' + text).encode()
+        handle, name = tempfile.mkstemp(dir=out, suffix='.jsonl'); os.close(handle)
+        pathlib.Path(name).write_text(json.dumps({'t': 0, 'data': base64.b64encode(raw).decode()}) + '\n')
         path = screen_dir / f'{len(screens)+1:02d}-{label}.png'
-        image.save(path)
+        subprocess.run([sys.executable, str(renderer), '--chunks', name, '--output', str(out / 'unused'), '--frame-out', str(path)], check=True, capture_output=True)
+        pathlib.Path(name).unlink()
         screens.append(str(path.relative_to(out)))
     def record(label, delay=1.2):
         text = capture()
@@ -57,7 +55,7 @@ def main():
             args.binary, '--api', args.url)
         view = wait_for('Service Lasso');
         view = wait_for('@demo-api', 15); record('dashboard')
-        for needle in ['SERVICE ADMIN', 'services', '@demo-api', 'RUNNING']:
+        for needle in ['SERVICE ADMIN', 'SERVICES', '@demo-api', 'RUNNING']:
             if needle not in view: failures.append(f'overview missing {needle}')
 
         send('Enter'); view = wait_for('DETAIL'); record('detail')
@@ -93,7 +91,6 @@ def main():
         subprocess.run([*tmux, 'kill-server'], capture_output=True)
         (out / 'terminal.chunks.jsonl').write_text(''.join(json.dumps(c) + '\n' for c in chunks))
         (out / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
-        renderer = pathlib.Path(__file__).with_name('render-terminal-video.py')
         subprocess.run([sys.executable, str(renderer), '--chunks', str(out / 'terminal.chunks.jsonl'),
                         '--output', str(out / 'video'), '--ffmpeg', args.ffmpeg], check=False)
     print(json.dumps(result))

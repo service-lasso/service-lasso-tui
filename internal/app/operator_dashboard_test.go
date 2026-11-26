@@ -28,7 +28,7 @@ func TestDashboardShowsRealServicesAndSummary(t *testing.T) {
 	m.services.Rows[0].Running = "yes"
 	m.services.Rows[1].Running = "no"
 	view := m.dashboardView()
-	for _, want := range []string{"SERVICE ADMIN", "Dashboard", "2 services", "1 running", "1 stopped", "@demo-api", "@demo-web", "←/→ views"} {
+	for _, want := range []string{"SERVICE ADMIN", "Dashboard", "1/2 running", "1 stopped", "@demo-api", "@demo-web", "←/→ views"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("dashboard missing %q\n%s", want, view)
 		}

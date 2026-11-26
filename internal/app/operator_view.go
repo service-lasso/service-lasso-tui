@@ -7,19 +7,18 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-isatty"
 	"github.com/service-lasso/service-lasso-tui/internal/api"
 )
 
 var (
-	tuiTitleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("87")).Background(lipgloss.Color("24"))
-	tuiMetaStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("109"))
-	tuiSelectedStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("87"))
-	tuiFooterStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Background(lipgloss.Color("236"))
-	tuiErrorStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("203"))
-	tuiWarningStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	tuiTitleStyle    = operatorBandStyle.Bold(true)
+	tuiMetaStyle     = operatorBaseStyle.Foreground(operatorMuted)
+	tuiSelectedStyle = operatorFocusStyle
+	tuiFooterStyle   = operatorBandStyle
+	tuiErrorStyle    = operatorBaseStyle.Bold(true).Foreground(operatorCoral)
+	tuiWarningStyle  = operatorBaseStyle.Foreground(operatorAmber)
 )
 
 func tuiColorEnabled() bool {
@@ -36,19 +35,19 @@ func tuiStyledLines(lines []string, width int) []string {
 	for i, line := range lines {
 		switch {
 		case i == 0:
-			styled[i] = tuiTitleStyle.Width(width).Render("▌ " + line)
+			styled[i] = tuiTitleStyle.Render(padLine(" SL  "+line, width))
 		case i == 1:
-			styled[i] = tuiMetaStyle.Render(line)
+			styled[i] = tuiMetaStyle.Render(padLine(line, width))
 		case strings.HasPrefix(line, "> "):
-			styled[i] = tuiSelectedStyle.Render(line)
+			styled[i] = tuiSelectedStyle.Render(padLine(line, width))
 		case strings.HasPrefix(line, "Error:"):
-			styled[i] = tuiErrorStyle.Render(line)
+			styled[i] = tuiErrorStyle.Render(padLine(line, width))
 		case strings.HasPrefix(line, "Retained warning:"), strings.HasPrefix(line, "Storage custody:"), strings.HasPrefix(line, "Original service refresh failed:"):
-			styled[i] = tuiWarningStyle.Render(line)
+			styled[i] = tuiWarningStyle.Render(padLine(line, width))
 		case strings.HasPrefix(line, "←/→"):
 			styled[i] = tuiFooterStyle.Width(width).Render(line)
 		default:
-			styled[i] = line
+			styled[i] = operatorBaseStyle.Render(padLine(line, width))
 		}
 	}
 	return styled
@@ -332,7 +331,7 @@ func (m operatorModel) View() string {
 	if m.focus == 0 {
 		focus = "Views"
 	}
-	lines = append(lines, "Focus: "+focus+" (Tab changes focus)")
+	lines = append(lines, "Focus: "+focus+" (Tab changes focus)", ansi.Strip(m.operatorTabs(m.width)))
 	if m.journey == "overview" {
 		mode := "all"
 		if m.favoritesOnly {

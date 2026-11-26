@@ -5,23 +5,22 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
 var (
-	dashboardTitle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("87"))
-	dashboardMeta   = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	dashboardSelect = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("87"))
-	dashboardBar    = lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Background(lipgloss.Color("236"))
-	dashboardBorder = lipgloss.NewStyle().Foreground(lipgloss.Color("67"))
-	dashboardGood   = lipgloss.NewStyle().Foreground(lipgloss.Color("114"))
-	dashboardWarn   = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	dashboardMuted  = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	dashboardTitle  = operatorBandStyle.Bold(true).Foreground(operatorTeal)
+	dashboardMeta   = operatorBaseStyle.Foreground(operatorMuted)
+	dashboardSelect = operatorFocusStyle
+	dashboardBar    = operatorBandStyle
+	dashboardBorder = operatorBaseStyle.Foreground(operatorMuted)
+	dashboardGood   = operatorBaseStyle.Foreground(operatorGreen)
+	dashboardWarn   = operatorBaseStyle.Foreground(operatorAmber)
+	dashboardMuted  = operatorBaseStyle.Foreground(operatorMuted)
 )
 
 func (m operatorModel) dashboardEnabled() bool {
-	return tuiColorEnabled() && m.width >= 80 && m.height >= 20 && !m.draft.Dirty && m.draft.Preview == nil && !m.draft.Sent
+	return false
 }
 
 func padLine(text string, width int) string {

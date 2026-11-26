@@ -6,8 +6,11 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/service-lasso/service-lasso-tui/internal/api"
 )
+
+const operatorStackMinWidth, operatorStackMinHeight = 60, 18
 
 // operatorStackView is strictly a presentation of the admitted overview page.
 // All selection consumers use overviewServices in its original order.
@@ -79,8 +82,30 @@ func (m operatorModel) operatorStackView() string {
 	if m.focus == 0 {
 		focus = "Views"
 	}
-	lines := []string{m.operatorConnectionHeader(inner), operatorRender(operatorBaseStyle.Foreground(operatorMuted), padLine(" "+m.overviewReadAge(time.Now())+" · "+m.overviewMonitorMode()+" · "+operatorText(state), inner)), m.operatorTabs(inner)}
-	if m.height >= 24 && w >= 110 {
+	age := m.overviewReadAge(time.Now())
+	if w < 80 {
+		age = strings.ReplaceAll(age, "read age unavailable", "age unavailable")
+		if current {
+			state = "current"
+			if !m.services.Complete {
+				state = "partial · n next"
+			}
+			if m.services.Truncated {
+				state = "truncated"
+			}
+			if m.services.Stale || operatorSnapshotExpired(m.services.Expiry, time.Now()) {
+				state = "stale · refresh"
+			}
+		}
+		if m.loading {
+			state = "Loading · " + state
+		}
+		if m.errorText != "" {
+			state = "Read failed · " + state
+		}
+	}
+	lines := []string{m.operatorConnectionHeader(inner), operatorRender(operatorBaseStyle.Foreground(operatorMuted), padLine(" "+age+" · "+m.overviewMonitorMode()+" · "+operatorText(state), inner)), m.operatorTabs(inner)}
+	if m.height >= 26 && w >= 110 {
 		lines = append(lines, "")
 	}
 	values := []string{"Unavailable", "Unavailable", "None known", "Unavailable"}
@@ -99,6 +124,13 @@ func (m operatorModel) operatorStackView() string {
 			values[1] = fmt.Sprintf("%d services", attention)
 		}
 	}
+	if w < 80 {
+		labels = []string{"HEALTH", "ATTENTION", "OPERATION", "UPTIME"}
+		if current {
+			values[0] = fmt.Sprintf("%d / %d", healthy, len(services))
+			values[1] = fmt.Sprintf("%d services", attention)
+		}
+	}
 	colors := []lipgloss.Color{operatorGreen, operatorCoral, operatorTeal, operatorMuted}
 	for line := 0; line < 2; line++ {
 		row := ""
@@ -114,20 +146,29 @@ func (m operatorModel) operatorStackView() string {
 			if i > 0 {
 				row += " "
 			}
-			style := operatorBaseStyle.Foreground(colors[i])
-			row += operatorRender(style, padLine("▌ "+text, tw))
+			style := operatorBaseStyle.Foreground(operatorMuted)
+			prefix := "▌ "
+			if line == 1 {
+				style = style.Foreground(colors[i]).Bold(true)
+				prefix = "  "
+			}
+			row += operatorRender(style, padLine(prefix+text, tw))
 		}
 		lines = append(lines, row)
 	}
-	if w >= 110 {
+	if w >= 110 && m.height >= 24 {
 		lines = append(lines, "")
 	}
 	// Reserve a separate attention panel, footer and gaps before sizing the list.
-	feedHeight := 4
+	feedHeight := min(6, max(4, len(attentionRows)+2))
 	if m.height < 24 || w < 110 {
 		feedHeight = 3
 	}
 	bodyHeight := m.height - len(lines) - feedHeight - 3
+	// Tall canvases should not stretch a small observation into empty panels.
+	if w >= 110 {
+		bodyHeight = min(bodyHeight, max(10, len(services)+3))
+	}
 	if bodyHeight < 3 {
 		bodyHeight = 3
 	}
@@ -146,10 +187,7 @@ func (m operatorModel) operatorStackView() string {
 		if i == m.row {
 			marker = "> "
 		}
-		nameWidth := leftWidth - 19
-		if nameWidth < 8 {
-			nameWidth = 8
-		}
+		nameWidth := max(8, (leftWidth-5)*60/100)
 		listRows = append(listRows, marker+padLine(operatorText(s.ServiceID), nameWidth)+"  "+stackObservedStatus(s))
 	}
 	selected := m.row
@@ -172,11 +210,39 @@ func (m operatorModel) operatorStackView() string {
 			listRows = []string{"Waiting for a current observation."}
 		}
 	}
+	// Keep column labels fixed while the selected observation scrolls.
+	columnHeader := m.focus == 1 && listHeight >= 5
 	visible := listHeight - 2
-	start := operatorVisibleStart(m.row, len(listRows), visible)
-	list := operatorPane(title, listRows[start:], leftWidth, listHeight, selected-start, operatorMuted)
+	if columnHeader {
+		visible--
+	}
+	start := operatorVisibleStart(selected, len(listRows), visible)
+	paneHeight := listHeight
+	if columnHeader {
+		paneHeight--
+	}
+	list := operatorPane(title, listRows[start:], leftWidth, paneHeight, selected-start, operatorMuted)
+	if m.focus == 1 {
+		for j := 0; j < visible && start+j < len(services); j++ {
+			i := start + j
+			s := services[i]
+			style := operatorBaseStyle
+			marker := "  "
+			if i == m.row {
+				style = operatorFocusStyle
+				marker = "> "
+			}
+			prefix := " " + marker + padLine(operatorText(s.ServiceID), max(8, (leftWidth-5)*60/100)) + "  "
+			tail := padLine(stackObservedStatus(s), leftWidth-ansi.StringWidth(prefix))
+			list[1+j] = operatorRender(style, prefix) + operatorRender(style.Foreground(stackStatusColor(s)), tail)
+		}
+	}
+	if columnHeader {
+		header := "   " + padLine("NAME", max(8, (leftWidth-5)*60/100)) + "  STATE"
+		list = append(list[:1], append([]string{operatorRender(operatorBaseStyle.Foreground(operatorMuted), padLine(header, leftWidth))}, list[1:]...)...)
+	}
 	footer := fmt.Sprintf(" running %d · stopped %d · unknown %d", running, stopped, unknown)
-	list[len(list)-1] = operatorRender(operatorBaseStyle.Foreground(operatorMuted), padLine(footer, leftWidth))
+	list[len(list)-1] = operatorRender(operatorBandStyle.Foreground(operatorMuted), padLine(footer, leftWidth))
 	inspector := []string{"No selected service observation."}
 	inspectorTitle := "INSPECTOR"
 	if m.focus == 1 && m.row >= 0 && m.row < len(services) {
@@ -188,7 +254,7 @@ func (m operatorModel) operatorStackView() string {
 		inspector = []string{"Focus: Views", "↑↓ select a declared view", "Enter opens · Tab returns to services", "Unavailable views retain API admission."}
 	}
 	if !wide && m.focus == 1 && m.row >= 0 && m.row < len(services) {
-		inspector = []string{inspector[0], inspector[1], "Latency / health history / uptime / restarts: unavailable"}
+		inspector = []string{inspector[0], inspector[1], "Latency / history / uptime / restarts: unavailable"}
 	}
 	// Keep unavailable telemetry explicit at compact heights too.
 	if len(inspector) > inspectorHeight-1 && inspectorHeight >= 4 {
@@ -217,16 +283,42 @@ func (m operatorModel) operatorStackView() string {
 		attentionRows = append(attentionRows[:feedHeight-2], attentionRows[len(attentionRows)-1])
 	}
 	lines = append(lines, operatorPane(fmt.Sprintf("NEEDS ATTENTION · %d services · unverified %d", attention, unverified), attentionRows, inner, feedHeight, -1, operatorCoral)...)
-	lines = append(lines, operatorRender(operatorBandStyle, padLine(" ↑↓ Select  Enter Inspect  ←→ Views  Tab Focus  r Refresh  f Filter", inner)))
-	lines = append(lines, operatorRender(operatorBaseStyle.Foreground(operatorMuted), padLine(" Focus: "+focus+" · filter: "+m.filter()+" · n next page · q Quit", inner)))
+	// Keep recovery commands at the physical bottom without separating data
+	// from its attention feed on a tall terminal.
+	for len(lines) < m.height-2 {
+		lines = append(lines, "")
+	}
+	keys := " ↑↓ Select  Enter Inspect  ←→ Views  Tab Focus  r Refresh  f Filter"
+	if w < 80 {
+		keys = " ↑↓ Select  Enter Inspect  Tab Focus  r Refresh"
+	}
+	lines = append(lines, operatorRender(operatorBandStyle, padLine(keys, inner)))
+	recovery := " Focus: " + focus + " · filter: " + m.filter() + " · n next · f filter · q Quit"
+	if w < 80 {
+		recovery = " " + focus + " · " + m.filter() + " · n Next · f Filter · q Quit"
+	}
+	lines = append(lines, operatorRender(operatorBaseStyle.Foreground(operatorMuted), padLine(recovery, inner)))
 	if len(lines) > m.height {
 		lines = lines[:m.height]
 	}
 	// Apply outer canvas gutters only after all cell-bounded surfaces are composed.
 	for i, line := range lines {
-		lines[i] = operatorRender(operatorCanvasStyle, strings.Repeat(" ", gutter)+padLine(line, inner)+strings.Repeat(" ", gutter))
+		lines[i] = operatorRender(operatorCanvasStyle, strings.Repeat(" ", gutter)) + padLine(line, inner) + operatorRender(operatorCanvasStyle, strings.Repeat(" ", gutter))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func stackStatusColor(s api.OperatorService) lipgloss.Color {
+	if s.Running == "no" {
+		return operatorCoral
+	}
+	if s.HealthStatus == "unhealthy" {
+		return operatorAmber
+	}
+	if s.HealthStatus == "healthy" {
+		return operatorGreen
+	}
+	return operatorMuted
 }
 
 func stackObservedStatus(s api.OperatorService) string {

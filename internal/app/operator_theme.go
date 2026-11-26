@@ -24,6 +24,7 @@ var (
 	operatorBaseStyle   = lipgloss.NewStyle().Foreground(operatorTextColor).Background(operatorSurface)
 	operatorCanvasStyle = lipgloss.NewStyle().Foreground(operatorTextColor).Background(operatorCanvas)
 	operatorBandStyle   = lipgloss.NewStyle().Foreground(operatorTextColor).Background(operatorBand)
+	operatorBrandStyle  = lipgloss.NewStyle().Bold(true).Foreground(operatorCanvas).Background(operatorTeal)
 	operatorFocusStyle  = lipgloss.NewStyle().Bold(true).Foreground(operatorTeal).Background(lipgloss.Color("#1B4650"))
 )
 
@@ -78,7 +79,7 @@ func (m operatorModel) operatorTabs(width int) string {
 			break
 		}
 		if i == selected {
-			label = operatorRender(operatorFocusStyle, label)
+			label = operatorRender(operatorBrandStyle, label)
 		}
 		parts = append(parts, label)
 	}
@@ -100,7 +101,10 @@ func (m operatorModel) operatorConnectionHeader(width int) string {
 	if profile == "" {
 		profile = "default"
 	}
-	return operatorRender(operatorBandStyle.Bold(true), padLine(fmt.Sprintf(" SL  Service Lasso  operator/v2 · %s · %s", profile, status), width))
+	if width < 78 {
+		return operatorRender(operatorBrandStyle, " SL ") + operatorRender(operatorBandStyle.Bold(true), padLine(fmt.Sprintf(" Service Lasso · %s · %s", profile, status), width-4))
+	}
+	return operatorRender(operatorBrandStyle, " SL ") + operatorRender(operatorBandStyle.Bold(true), padLine(fmt.Sprintf(" Service Lasso  operator/v2 · %s · %s", profile, status), width-4))
 }
 
 // Read receipt age is a local successful observation, never probe latency,

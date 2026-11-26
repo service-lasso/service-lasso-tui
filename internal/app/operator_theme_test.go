@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/service-lasso/service-lasso-tui/internal/api"
 )
@@ -223,5 +224,88 @@ func TestOperatorThemeOnlyAdvertisesAdmittedCancellation(t *testing.T) {
 	m.draft.Dirty = true
 	if strings.Contains(m.View(), "x clear settled") {
 		t.Fatal("clear hint shown while a draft owns the keyboard")
+	}
+}
+
+func TestOperatorResponsiveStackMatrix(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	for _, size := range [][2]int{{60, 18}, {80, 24}, {100, 28}, {112, 33}, {120, 32}, {160, 45}, {200, 20}} {
+		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
+			m := stackFixture()
+			m.width, m.height = size[0], size[1]
+			for i := 0; i < 35; i++ {
+				m.services.Rows = append(m.services.Rows, operatorJourneyService(fmt.Sprintf("service-%02d", i)))
+			}
+			updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnd})
+			m = updated.(operatorModel)
+			view := m.View()
+			for _, want := range []string{"[Stack]", "> service-34", "ID: service-34", "Incident history unavailable", "q Quit", "unavailable"} {
+				if !strings.Contains(view, want) {
+					t.Fatalf("missing %q\n%s", want, view)
+				}
+			}
+			if strings.Contains(view, "\x1b") {
+				t.Fatal("monochrome escaped")
+			}
+			rows := strings.Split(view, "\n")
+			if len(rows) > m.height {
+				t.Fatal("height overflow")
+			}
+			for _, row := range rows {
+				if ansi.StringWidth(row) > m.width {
+					t.Fatalf("width overflow %q", row)
+				}
+			}
+			updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			opened := updated.(operatorModel)
+			if opened.service != "service-34" || opened.journey != "detail" {
+				t.Fatal("Enter selected a different observation")
+			}
+			m.errorText = "Source unavailable"
+			m.services.Stale = true
+			view = m.View()
+			for _, want := range []string{"READ FAILED", "Read failed", "Error: Source unavailable", "q Quit"} {
+				if !strings.Contains(view, want) {
+					t.Fatalf("lost failure/recovery %q\n%s", want, view)
+				}
+			}
+		})
+	}
+}
+
+func TestOperatorTallStackKeepsAttentionNearObservation(t *testing.T) {
+	m := stackFixture()
+	m.width, m.height = 160, 45
+	view := ansi.Strip(m.View())
+	rows := strings.Split(view, "\n")
+	attention := -1
+	for i, row := range rows {
+		if strings.Contains(row, "NEEDS ATTENTION ·") {
+			attention = i
+			break
+		}
+	}
+	if attention < 0 || attention > 20 {
+		t.Fatalf("attention separated from small observation at row %d\n%s", attention, view)
+	}
+	if !strings.Contains(view, "NAME") || !strings.Contains(view, "STATE") {
+		t.Fatal("missing service column headings")
+	}
+}
+
+func TestOperatorResponsiveSemanticStatusAndBottomRecovery(t *testing.T) {
+	for _, test := range []struct {
+		running, health string
+		want            lipgloss.Color
+	}{{"no", "healthy", operatorCoral}, {"yes", "unhealthy", operatorAmber}, {"yes", "healthy", operatorGreen}, {"yes", "unknown", operatorMuted}} {
+		if got := stackStatusColor(api.OperatorService{Running: test.running, HealthStatus: test.health}); got != test.want {
+			t.Fatalf("wrong status color %s/%s", test.running, test.health)
+		}
+	}
+	m := stackFixture()
+	m.width, m.height = 160, 45
+	rows := strings.Split(ansi.Strip(m.View()), "\n")
+	if len(rows) != m.height || !strings.Contains(rows[m.height-1], "q Quit") || !strings.Contains(rows[m.height-2], "Enter Inspect") {
+		t.Fatal("recovery keys not at terminal bottom")
 	}
 }

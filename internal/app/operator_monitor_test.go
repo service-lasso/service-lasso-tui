@@ -31,7 +31,7 @@ func TestOperatorMonitorEligibilityAndSingleFlight(t *testing.T) {
 		name   string
 		change func(*operatorModel)
 	}{
-		{"small viewport", func(m *operatorModel) { m.width = 60 }},
+		{"small viewport", func(m *operatorModel) { m.width = 59 }},
 		{"paused", func(m *operatorModel) { m.overviewPaused = true }},
 		{"favorites-only", func(m *operatorModel) { m.favoritesOnly = true }},
 		{"view focus", func(m *operatorModel) { m.focus = 0 }},

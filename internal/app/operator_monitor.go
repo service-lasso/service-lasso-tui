@@ -11,7 +11,7 @@ const overviewRefreshInterval = 5 * time.Second
 // Refresh only a whole first page. Never replace a manually accumulated page,
 // interrupt a foreground read/editor, or share an operation's polling lifetime.
 func (m operatorModel) overviewMonitorEligible() bool {
-	if m.width < 80 || m.height < 20 || m.journey != "overview" || m.focus != 1 || m.favoritesOnly || m.discovery == nil || m.client == nil || m.ctx == nil || !m.pageSelectionCurrent() || m.services.Snapshot == "" || !m.services.Complete || m.services.Truncated || m.services.Next != nil || len(m.services.seenCursors) != 0 {
+	if m.width < operatorStackMinWidth || m.height < operatorStackMinHeight || m.journey != "overview" || m.focus != 1 || m.favoritesOnly || m.discovery == nil || m.client == nil || m.ctx == nil || !m.pageSelectionCurrent() || m.services.Snapshot == "" || !m.services.Complete || m.services.Truncated || m.services.Next != nil || len(m.services.seenCursors) != 0 {
 		return false
 	}
 	if m.bootInFlight || m.draft.Dirty || m.draft.Preview != nil || m.draft.Sent || m.draft.Retired || m.operation != nil || m.warning != "" || m.custodyWarning != "" || m.terminalRefreshWarning != "" || len(m.fieldErrors) != 0 {

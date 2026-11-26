@@ -1,3 +1,5 @@
+Issue #115: SPEC-007 responsive Stack refinement; 60x18 through 160x45 bounds, selection, honest unavailable/error state, real Core PTY proof.
+
 Issue #114 implements SPEC-007 (SPEC-001 TUI-DASHBOARD/KEYBOARD/LIFECYCLE; B04/E01). Active shared operator theme and approved Stack design; dependent on #112/PR #113.
 
 ## Issue 37 Linux acquisition

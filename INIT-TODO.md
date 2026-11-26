@@ -1,3 +1,5 @@
+Issue #115: SPEC-007 responsive Stack refinement; 60x18 through 160x45 bounds, selection, honest unavailable/error state, real Core PTY proof.
+
 Issue #114: implement SPEC-007 shared operator theme, approved Stack design and honest unavailable telemetry; source tests and disposable Core PTY proof required.
 
 ## Next design objective: Service Admin parity TUI (2026-11-25)

@@ -57,3 +57,12 @@ Completed continuation pages are excluded by their retained seenCursors set.
 
 Show the cancellation shortcut only for an admitted pending operation whose
 cancellation is supported and has no recorded or in-flight attempt.
+
+Issue #115 responsive refinement: preserve Stack hierarchy from 60x18 through
+160x45 and wide short viewports. Four aligned metrics use concise compact
+labels; service and inspector stack below 110 columns. Budget every pane before
+rendering so selection, inspector identity, attention provenance and keyboard
+recovery remain visible. At tall sizes cap empty body space to observed content,
+keeping the attention feed adjacent to the data. Pane headings, column labels,
+selection and muted footer distinguish the list from its inspector. Never
+introduce fabricated telemetry or reorder runtime observations for appearance.

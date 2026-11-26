@@ -100,6 +100,9 @@ func (m operatorModel) operatorConnectionHeader(width int) string {
 	if profile == "" {
 		profile = "default"
 	}
+	if width < 78 {
+		return operatorRender(operatorBandStyle.Bold(true), padLine(fmt.Sprintf(" SL Service Lasso · %s · %s", profile, status), width))
+	}
 	return operatorRender(operatorBandStyle.Bold(true), padLine(fmt.Sprintf(" SL  Service Lasso  operator/v2 · %s · %s", profile, status), width))
 }
 

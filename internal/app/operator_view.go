@@ -349,7 +349,7 @@ func (m operatorModel) View() string {
 	warningLine := -1
 	operationLine := -1
 	retainedLine := -1
-	lines := []string{"Service Lasso  operator/v2", m.journey + "  " + m.service + "  " + m.filter()}
+	lines := []string{"Service Lasso  operator/v2 · " + m.connection, m.journey + "  " + m.service + "  " + m.filter()}
 	focus := "Rows"
 	if m.focus == 0 {
 		focus = "Views"

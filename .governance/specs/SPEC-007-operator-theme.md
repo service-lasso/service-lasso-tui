@@ -34,3 +34,10 @@ substitute is admitted here. Empty operation state says None known; retained
 operations use the full safety/result view with authoritative targets/readback.
 At 80 columns list and inspector stack at full width; shared read detail keeps
 1/2/3 overview/dependency/endpoint tabs and existing keyboard/read admission.
+
+Local freshness is the elapsed time since a successful current-ticket overview
+read passed applyLoaded. Failed/obsolete reads never renew it; a changed
+selection hides it until its own read succeeds. The separate snapshot status
+still reports stale/incomplete state. Refresh remains manual, with no pause or
+auto-refresh claim. At 80x24 retain at least four service rows, full-width
+compact inspector, untruncated short tiles and explicit telemetry provenance.

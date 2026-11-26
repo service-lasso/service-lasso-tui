@@ -134,6 +134,7 @@ type operatorModel struct {
 	bootInFlight                              bool
 	fieldErrors                               []api.OperatorFieldError
 	draft                                     operatorDraft
+	overviewObservedAt                        time.Time
 	services                                  operatorPageState[api.OperatorService]
 	graph                                     operatorGraphState
 	variables                                 operatorPageState[api.OperatorVariable]

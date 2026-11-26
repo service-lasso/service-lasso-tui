@@ -146,6 +146,9 @@ func (m operatorModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.acceptPageSelection(msg.Ticket)
+		if m.journey == "overview" {
+			m.overviewObservedAt = time.Now()
+		}
 		m.errorText = ""
 		m.clampJourneyPosition()
 	case operatorPreviewed:

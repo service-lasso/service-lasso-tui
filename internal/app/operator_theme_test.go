@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -21,7 +22,7 @@ func TestOperatorThemeHomeCellBoundsAndSelection(t *testing.T) {
 				m.services.Complete = true
 				m.row = 1
 				view := ansi.Strip(m.View())
-				for _, want := range []string{"HEALTH", "NEEDS ATTENTION", "KNOWN OPERATION", "CORE UPTIME", "> demo-web", "ID: demo-web", "unavailable", "Incident history"} {
+				for _, want := range []string{"HEALTH", "NEEDS ATTENTION", "OPERATION", "CORE UPTIME", "> demo-web", "ID: demo-web", "unavailable", "Incident history"} {
 					if !strings.Contains(view, want) {
 						t.Fatalf("missing %q\n%s", want, view)
 					}
@@ -138,5 +139,52 @@ func TestOperatorCompactInspectorAndConnectionProfile(t *testing.T) {
 	}
 	if inspectorLine <= serviceLine {
 		t.Fatal("compact inspector did not stack below services")
+	}
+}
+
+func TestOperatorOverviewReadAgeOnlyAfterAdmittedSuccess(t *testing.T) {
+	m := dashboardTestModel()
+	page := api.OperatorPage[api.OperatorService]{SnapshotID: "observed", SourceRevision: "revision", ExpiresAt: "2099-10-08T00:00:00.000Z", Rows: []api.OperatorService{operatorJourneyService("demo-api")}}
+	ticket := m.ticket()
+	before := time.Now()
+	updated, _ := m.Update(operatorLoaded{Ticket: ticket, Data: operatorOverviewRead{Page: page}})
+	m = updated.(operatorModel)
+	if m.overviewObservedAt.Before(before) || !strings.Contains(m.overviewReadAge(time.Now()), "updated ") {
+		t.Fatal("successful validated read did not record receipt")
+	}
+	observed := m.overviewObservedAt
+	updated, _ = m.Update(operatorLoaded{Ticket: m.ticket(), Err: &api.OperatorPublicError{Code: "source_unavailable"}})
+	m = updated.(operatorModel)
+	if m.overviewObservedAt != observed {
+		t.Fatal("failed read renewed receipt age")
+	}
+	m.epoch++
+	updated, _ = m.Update(operatorLoaded{Ticket: ticket, Data: operatorOverviewRead{Page: page}})
+	m = updated.(operatorModel)
+	if m.overviewObservedAt != observed || m.overviewReadAge(time.Now()) != "read age unavailable" {
+		t.Fatal("obsolete read acquired freshness")
+	}
+}
+
+func TestOperatorCompactMonitorRetainsFourServiceRows(t *testing.T) {
+	m := dashboardTestModel()
+	m.width = 80
+	m.height = 24
+	m.acceptPageSelection(m.ticket())
+	for i := 0; i < 10; i++ {
+		m.services.Rows = append(m.services.Rows, operatorJourneyService(fmt.Sprintf("service-%02d", i)))
+	}
+	m.row = 7
+	view := m.View()
+	if strings.Count(view, "service-") < 4 {
+		t.Fatalf("compact list lost useful service rows\n%s", view)
+	}
+	if !strings.Contains(view, "> service-05") || !strings.Contains(view, "ID: service-05") {
+		t.Fatal("compact selected service/inspector lost")
+	}
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "▌") && strings.Contains(line, "…") {
+			t.Fatalf("compact tile truncated %q", line)
+		}
 	}
 }

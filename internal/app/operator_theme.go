@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -95,9 +96,22 @@ func (m operatorModel) operatorConnectionHeader(width int) string {
 	if m.errorText != "" {
 		status = "READ FAILED"
 	}
-	profile := operatorText(m.connection)
+	profile := ansi.Truncate(operatorText(m.connection), max(8, width/4), "…")
 	if profile == "" {
 		profile = "default"
 	}
-	return operatorRender(operatorBandStyle.Bold(true), padLine(fmt.Sprintf(" SL  SERVICE LASSO · %s · %s · manual refresh", profile, status), width))
+	return operatorRender(operatorBandStyle.Bold(true), padLine(fmt.Sprintf(" SL  Service Lasso  operator/v2 · %s · %s", profile, status), width))
+}
+
+// Read receipt age is a local successful observation, never probe latency,
+// runtime uptime, or evidence that the underlying snapshot remains fresh.
+func (m operatorModel) overviewReadAge(now time.Time) string {
+	if !m.pageSelectionCurrent() || m.overviewObservedAt.IsZero() {
+		return "read age unavailable"
+	}
+	age := now.Sub(m.overviewObservedAt)
+	if age < 0 {
+		age = 0
+	}
+	return "updated " + age.Truncate(time.Second).String() + " ago"
 }

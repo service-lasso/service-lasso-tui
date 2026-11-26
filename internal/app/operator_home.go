@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/service-lasso/service-lasso-tui/internal/api"
@@ -65,8 +66,8 @@ func (m operatorModel) operatorStackView() string {
 	if m.focus == 0 {
 		focus = "Views"
 	}
-	lines := []string{m.operatorConnectionHeader(inner), operatorRender(operatorBaseStyle.Foreground(operatorMuted), padLine(" Service Lasso  operator/v2 · "+operatorText(state), inner)), m.operatorTabs(inner)}
-	if m.height >= 24 {
+	lines := []string{m.operatorConnectionHeader(inner), operatorRender(operatorBaseStyle.Foreground(operatorMuted), padLine(" "+m.overviewReadAge(time.Now())+" · manual refresh · "+operatorText(state), inner)), m.operatorTabs(inner)}
+	if m.height >= 24 && w >= 110 {
 		lines = append(lines, "")
 	}
 	values := []string{"Unavailable", "Unavailable", "None known", "Unavailable"}
@@ -78,6 +79,13 @@ func (m operatorModel) operatorStackView() string {
 		values[2] = operatorText(m.operation.Operation.Status)
 	}
 	labels := []string{"HEALTH / OBSERVED", "NEEDS ATTENTION", "KNOWN OPERATION", "CORE UPTIME"}
+	if w < 110 {
+		labels = []string{"HEALTH", "ATTENTION", "OPERATION", "CORE UPTIME"}
+		if current {
+			values[0] = fmt.Sprintf("healthy %d / %d", healthy, len(services))
+			values[1] = fmt.Sprintf("%d services", attention)
+		}
+	}
 	colors := []lipgloss.Color{operatorGreen, operatorCoral, operatorTeal, operatorMuted}
 	for line := 0; line < 2; line++ {
 		row := ""
@@ -98,10 +106,12 @@ func (m operatorModel) operatorStackView() string {
 		}
 		lines = append(lines, row)
 	}
-	lines = append(lines, "")
+	if w >= 110 {
+		lines = append(lines, "")
+	}
 	// Reserve a separate attention panel, footer and gaps before sizing the list.
 	feedHeight := 4
-	if m.height < 24 {
+	if m.height < 24 || w < 110 {
 		feedHeight = 3
 	}
 	bodyHeight := m.height - len(lines) - feedHeight - 3
@@ -114,8 +124,8 @@ func (m operatorModel) operatorStackView() string {
 	listHeight, inspectorHeight := bodyHeight, bodyHeight
 	if !wide {
 		leftWidth, rightWidth = inner, inner
-		listHeight = max(3, bodyHeight/2-1)
-		inspectorHeight = bodyHeight - listHeight
+		inspectorHeight = 4
+		listHeight = max(3, bodyHeight-inspectorHeight)
 	}
 	listRows := []string{}
 	for i, s := range services {
@@ -163,6 +173,9 @@ func (m operatorModel) operatorStackView() string {
 	}
 	if m.focus == 0 {
 		inspector = []string{"Focus: Views", "↑↓ select a declared view", "Enter opens · Tab returns to services", "Unavailable views retain API admission."}
+	}
+	if !wide && m.focus == 1 && m.row >= 0 && m.row < len(services) {
+		inspector = []string{inspector[0], inspector[1], "Latency / health history / uptime / restarts: unavailable"}
 	}
 	// Keep unavailable telemetry explicit at compact heights too.
 	if len(inspector) > inspectorHeight-1 && inspectorHeight >= 4 {

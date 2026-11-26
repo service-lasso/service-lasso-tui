@@ -1,7 +1,10 @@
 package app
 
 import (
+	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -58,7 +61,7 @@ func TestStackObservationStatesAndUnknown(t *testing.T) {
 	m.services.Rows[0].HealthStatus = "unknown"
 	m.services.Rows[1].HealthStatus = "unknown"
 	view := m.View()
-	for _, want := range []string{"running 1", "stopped 0", "unknown 1", "healthy 0", "unknown 2"} {
+	for _, want := range []string{"running 1", "stopped 0", "unknown 1", "healthy 0", "unverified 2"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("missing %q: %s", want, view)
 		}
@@ -109,7 +112,7 @@ func TestStackAttentionAndSafetyFallback(t *testing.T) {
 	m.services.Rows[0].HealthStatus = "unhealthy"
 	m.services.Rows[1].Running = "yes"
 	view := m.View()
-	for _, want := range []string{"NEEDS ATTENTION · 1 observed services", "Stopped", "Running"} {
+	for _, want := range []string{"1 stopped or unhealthy", "Stopped", "Running"} {
 		if !strings.Contains(view, want) {
 			t.Fatal(view)
 		}
@@ -127,5 +130,48 @@ func TestStackAttentionAndSafetyFallback(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Fatalf("safety fallback missing %q\n%s", want, view)
 		}
+	}
+}
+
+func TestStackFailedBootstrapRefreshSingleFlight(t *testing.T) {
+	reads := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reads++
+		if r.Method != "GET" {
+			t.Error("bootstrap mutated")
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	client, err := api.NewClient(server.URL, server.Client(), "fixture-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := stackFixture()
+	m.client = client
+	m.ctx = context.Background()
+	m.discovery = nil
+	m.errorText = "Unavailable"
+	if view := m.View(); !strings.Contains(view, "Service Lasso  operator/v2") || !strings.Contains(view, "Runtime API unavailable") {
+		t.Fatal(view)
+	}
+	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	m = updated.(operatorModel)
+	if command == nil || !m.bootInFlight {
+		t.Fatal("no bootstrap retry")
+	}
+	updated, duplicate := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	m = updated.(operatorModel)
+	if duplicate != nil {
+		t.Fatal("duplicate bootstrap")
+	}
+	updated, _ = m.Update(command())
+	m = updated.(operatorModel)
+	if reads != 1 || m.bootInFlight || m.discovery != nil || !strings.Contains(m.View(), "Runtime API unavailable") {
+		t.Fatal("bootstrap failure lost safe state")
+	}
+	_, retry := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if retry == nil {
+		t.Fatal("failure could not retry")
 	}
 }

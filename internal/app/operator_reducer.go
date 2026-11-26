@@ -580,6 +580,14 @@ func (m operatorModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			cmd := m.beginEdit()
 			return m, cmd
 		case "r":
+			if m.discovery == nil {
+				if m.bootInFlight {
+					return m, nil
+				}
+				m.invalidate()
+				m.bootInFlight = true
+				return m, m.bootstrap()
+			}
 			m.invalidate()
 			cmd := m.load(nil)
 			refresh := m.refreshTerminalState(true)

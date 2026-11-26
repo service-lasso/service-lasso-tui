@@ -12,7 +12,7 @@ import (
 // shares the exact filtered row index used by Enter, not a retained detail read.
 func (m operatorModel) stackView() string {
 	w := m.width
-	lines := []string{stackBand.Render(padLine(" SL  Service Lasso / STACK MONITOR", w))}
+	lines := []string{stackBand.Render(padLine(" SL  Service Lasso  operator/v2 / STACK MONITOR", w))}
 	focus := "Services"
 	if m.focus == 0 {
 		focus = "Views"
@@ -31,6 +31,9 @@ func (m operatorModel) stackView() string {
 	}
 	if m.errorText != "" {
 		state = "Read failed: " + m.errorText + " · " + state
+		if m.discovery == nil {
+			state = "Runtime API unavailable · " + m.errorText
+		}
 	}
 	lines = append(lines, padLine(operatorText(state), w))
 	var services []api.OperatorService
@@ -56,27 +59,31 @@ func (m operatorModel) stackView() string {
 			healthUnknown++
 		}
 	}
-	summary := " Observed statuses: unavailable"
-	if services != nil {
-		summary = fmt.Sprintf(" Observed %d · running %d · stopped %d · unknown %d", len(services), running, stopped, unknown)
-	}
-	lines = append(lines, stackRuntime.Render(padLine(summary, w)))
-	health := " Health: unavailable"
-	if services != nil {
-		health = fmt.Sprintf(" Health · healthy %d · unhealthy %d · unknown %d", healthy, unhealthy, healthUnknown)
-	}
-	lines = append(lines, stackHealth.Render(padLine(health, w)))
 	attention := 0
 	for _, s := range services {
 		if s.Running == "no" || s.HealthStatus == "unhealthy" {
 			attention++
 		}
 	}
-	attentionText := " NEEDS ATTENTION · unavailable"
+	runtimeText, healthText, attentionText := "Unavailable", "Unavailable", "Unavailable"
 	if services != nil {
-		attentionText = fmt.Sprintf(" NEEDS ATTENTION · %d observed services stopped or unhealthy", attention)
+		runtimeText = fmt.Sprintf("running %d · stopped %d · unknown %d", running, stopped, unknown)
+		healthText = fmt.Sprintf("healthy %d · unhealthy %d", healthy, unhealthy)
+		attentionText = fmt.Sprintf("%d stopped or unhealthy", attention)
 	}
-	lines = append(lines, stackAttention.Render(padLine(attentionText, w)))
+	if w >= 110 {
+		tileWidth := (w - 4) / 3
+		lastWidth := w - 4 - 2*tileWidth
+		lines = append(lines, stackRuntime.Render(padLine(" RUNTIME / OBSERVED", tileWidth))+"  "+stackHealth.Render(padLine(" HEALTH / OBSERVED", tileWidth))+"  "+stackAttention.Render(padLine(" NEEDS ATTENTION", lastWidth)))
+		lines = append(lines, stackRuntime.Render(padLine(" "+runtimeText, tileWidth))+"  "+stackHealth.Render(padLine(" "+healthText, tileWidth))+"  "+stackAttention.Render(padLine(" "+attentionText, lastWidth)))
+		extra := " Unverified: unavailable"
+		if services != nil {
+			extra = fmt.Sprintf(" unverified %d", healthUnknown)
+		}
+		lines = append(lines, stackRuntime.Render(padLine(" Current filtered observation", tileWidth))+"  "+stackHealth.Render(padLine(extra, tileWidth))+"  "+stackAttention.Render(padLine(" Summary states only", lastWidth)))
+	} else {
+		lines = append(lines, stackRuntime.Render(padLine(" Runtime · "+runtimeText, w)), stackHealth.Render(padLine(fmt.Sprintf(" Health · %s · unverified %d", healthText, healthUnknown), w)), stackAttention.Render(padLine(" NEEDS ATTENTION · "+attentionText, w)))
+	}
 	bodyHeight := m.height - len(lines) - 1
 	if bodyHeight < 3 {
 		return strings.Join(lines[:min(len(lines), m.height)], "\n")
@@ -91,7 +98,7 @@ func (m operatorModel) stackView() string {
 			rows[i] = mark + v
 		}
 		start := stackStart(m.row, len(rows), bodyHeight-2)
-		lines = append(lines, stackPanel("VIEWS", rows[start:], w, bodyHeight)...)
+		lines = append(lines, stackPanel("VIEWS", rows[start:], w, bodyHeight, m.row-start)...)
 	} else {
 		inspector := []string{"No selected service observation."}
 		if m.row >= 0 && m.row < len(services) {
@@ -115,10 +122,7 @@ func (m operatorModel) stackView() string {
 			if i == m.row {
 				mark = "> "
 			}
-			row := padLine(mark+operatorText(s.ServiceID)+" · "+stackStatus(stackRunning(s.Running))+" · "+stackStatus(s.HealthStatus), listWidth-2)
-			if i == m.row {
-				row = stackSelected.Render(row)
-			}
+			row := mark + operatorText(s.ServiceID) + " · " + stackRunning(s.Running) + " · " + s.HealthStatus
 			rows = append(rows, row)
 		}
 		if len(rows) == 0 {
@@ -129,9 +133,9 @@ func (m operatorModel) stackView() string {
 			}
 		}
 		start := stackStart(m.row, len(rows), listHeight-2)
-		list := stackPanel(fmt.Sprintf("SERVICES %d/%d", min(m.row+1, len(services)), len(services)), rows[start:], listWidth, listHeight)
+		list := stackPanel(fmt.Sprintf("SERVICES %d/%d", min(m.row+1, len(services)), len(services)), rows[start:], listWidth, listHeight, m.row-start)
 		if wide {
-			detail := stackPanel("INSPECTOR", inspector, w-listWidth-1, bodyHeight)
+			detail := stackPanel("INSPECTOR", inspector, w-listWidth-1, bodyHeight, -1)
 			for i := range list {
 				lines = append(lines, list[i]+" "+detail[i])
 			}
@@ -139,11 +143,11 @@ func (m operatorModel) stackView() string {
 			lines = append(lines, list...)
 			remaining := m.height - len(lines) - 1
 			if remaining >= 3 {
-				lines = append(lines, stackPanel("INSPECTOR", inspector, w, remaining)...)
+				lines = append(lines, stackPanel("INSPECTOR", inspector, w, remaining, -1)...)
 			}
 		}
 	}
-	footer := " ↑/↓ select · Enter inspect · ←/→ views · Tab focus · r refresh · f filter · q quit"
+	footer := " ↑↓ Select  Enter Inspect  ←→ Views  Tab Focus  r Refresh  f Filter  q Quit"
 	lines = append(lines, dashboardBar.Render(padLine(footer, w)))
 	return strings.Join(lines, "\n")
 }
@@ -167,22 +171,26 @@ func stackStart(row, count, visible int) int {
 
 var (
 	stackBand      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("159")).Background(lipgloss.Color("24"))
-	stackRuntime   = lipgloss.NewStyle().Foreground(lipgloss.Color("87")).Background(lipgloss.Color("23"))
-	stackHealth    = lipgloss.NewStyle().Foreground(lipgloss.Color("150")).Background(lipgloss.Color("22"))
-	stackAttention = lipgloss.NewStyle().Foreground(lipgloss.Color("217")).Background(lipgloss.Color("53"))
+	stackRuntime   = lipgloss.NewStyle().Foreground(lipgloss.Color("87")).Background(lipgloss.Color("236"))
+	stackHealth    = lipgloss.NewStyle().Foreground(lipgloss.Color("150")).Background(lipgloss.Color("236"))
+	stackAttention = lipgloss.NewStyle().Foreground(lipgloss.Color("217")).Background(lipgloss.Color("236"))
 	stackSurface   = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Background(lipgloss.Color("235"))
 	stackSelected  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("87")).Background(lipgloss.Color("23"))
 )
 
 // Filled surfaces avoid vertical rule clutter while keeping monochrome headings.
-func stackPanel(title string, content []string, width, height int) []string {
+func stackPanel(title string, content []string, width, height, selected int) []string {
 	out := []string{stackBand.Render(padLine(" "+title, width))}
 	for i := 0; i < height-1; i++ {
 		text := ""
 		if i < len(content) {
 			text = content[i]
 		}
-		out = append(out, stackSurface.Render(padLine(text, width)))
+		style := stackSurface
+		if i == selected {
+			style = stackSelected
+		}
+		out = append(out, style.Render(padLine(text, width)))
 	}
 	return out
 }
@@ -195,15 +203,4 @@ func stackRunning(value string) string {
 	default:
 		return "Unknown"
 	}
-}
-
-func stackStatus(value string) string {
-	color := "245"
-	switch value {
-	case "Running", "healthy":
-		color = "150"
-	case "Stopped", "unhealthy":
-		color = "210"
-	}
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(operatorText(value))
 }

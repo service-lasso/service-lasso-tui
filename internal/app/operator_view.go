@@ -331,7 +331,11 @@ func (m operatorModel) View() string {
 	if m.focus == 0 {
 		focus = "Views"
 	}
-	lines = append(lines, "Focus: "+focus+" (Tab changes focus)", ansi.Strip(m.operatorTabs(m.width)))
+	tabWidth := m.width
+	if tabWidth >= 80 {
+		tabWidth -= 4
+	}
+	lines = append(lines, "Focus: "+focus+" (Tab changes focus)", ansi.Strip(m.operatorTabs(tabWidth)))
 	if m.journey == "overview" {
 		mode := "all"
 		if m.favoritesOnly {

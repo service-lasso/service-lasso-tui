@@ -79,3 +79,15 @@ func TestOperatorThemeUsesActualViewsAndPreservesSafety(t *testing.T) {
 		}
 	}
 }
+
+func TestOperatorThemeCompactTabsKeepActiveView(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	for _, journey := range operatorViews {
+		m := dashboardTestModel()
+		m.width = 80
+		m.journey = journey
+		if !strings.Contains(m.View(), "["+operatorViewLabel(journey)+"]") {
+			t.Fatalf("active tab hidden for %s\n%s", journey, m.View())
+		}
+	}
+}

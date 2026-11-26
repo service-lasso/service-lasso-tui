@@ -1831,3 +1831,10 @@ full Go tests/vet/build are source evidence, not native runtime acceptance.
 Issue #112 failure refinement: preserve the existing operator/v2 startup marker,
 explicit safe runtime-unavailable status, and read-only bootstrap retry on r
 when discovery failed; guard concurrent bootstrap retries. No mutation replay.
+
+Issue #112 hosted proof prerequisites: the synthetic terminal fixture must
+produce graph/inbox/queue/audit observations only after their actual Right
+gestures; retain readiness, actual waitpid/EOF and quit assertions. Ordinary
+workflow pins reviewed Core develop 8ea20e0ad1aa5f963153953d3f83832be8f1b5a2
+which supplies those read contracts; keep dispatch override/ancestry checks.
+This changes proof inputs only, never native or release qualification gates.

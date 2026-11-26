@@ -19,7 +19,7 @@ def main():
     def run(*a): return subprocess.run([*tmux, *a], check=True, text=True, capture_output=True)
     def capture():
         text = run('capture-pane', '-p', '-e', '-t', session).stdout
-        return text
+        return text.rstrip('\n')
     def send(*keys):
         run('send-keys', '-t', session, *keys)
     def wait_for(needle, seconds=8):

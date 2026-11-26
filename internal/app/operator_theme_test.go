@@ -52,7 +52,7 @@ func TestOperatorThemeHomeDoesNotPromoteUnavailableTelemetry(t *testing.T) {
 	m.services.Rows[1].Running = "yes"
 	m.services.Rows[1].HealthStatus = "unknown"
 	view := m.operatorStackView()
-	for _, want := range []string{"0 healthy · 0/2 checked", "1 stopped or unhealthy", "unverified 2", "Incident history unavailable"} {
+	for _, want := range []string{"0 of 2 checked", "1 stopped or unhealthy", "unverified 2", "Incident history unavailable"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("missing %q\n%s", want, view)
 		}

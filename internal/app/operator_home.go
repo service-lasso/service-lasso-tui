@@ -118,10 +118,17 @@ func (m operatorModel) operatorStackView() string {
 	}
 	if wide {
 		lines = m.stackHeader(inner, state, age, current, now)
+		if m.height >= 30 {
+			lines = append([]string{""}, lines...)
+		}
 	}
 	lines = append(lines, stackNavigation(inner, current && m.focus == 1 && m.row >= 0 && m.row < len(services)))
 	if m.height >= 26 && w >= 110 {
 		lines = append(lines, "")
+	}
+	attentionCount := fmt.Sprintf("%d services", attention)
+	if attention == 1 {
+		attentionCount = "1 service"
 	}
 	values := []string{"Unavailable", "Unavailable", "Count unavailable", "Unavailable"}
 	labels := []string{"HEALTH", "NEEDS ATTENTION", "ACTIVE OPERATIONS", "CORE UPTIME"}
@@ -131,10 +138,13 @@ func (m operatorModel) operatorStackView() string {
 	} else {
 		checked := len(services) - unverified
 		values[0] = fmt.Sprintf("%d healthy · %d/%d checked", healthy, checked, len(services))
+		if checked == 0 {
+			values[0] = fmt.Sprintf("0 of %d checked", len(services))
+		}
 		values[1] = fmt.Sprintf("%d stopped or unhealthy", attention)
 		if !wide {
 			values[0] = fmt.Sprintf("%d/%d checked", checked, len(services))
-			values[1] = fmt.Sprintf("%d services", attention)
+			values[1] = attentionCount
 		}
 		if checked == 0 {
 			colors[0] = operatorMuted
@@ -180,8 +190,12 @@ func (m operatorModel) operatorStackView() string {
 		lines = append(lines, "")
 	}
 	// Reserve a separate attention panel, footer and gaps before sizing the list.
-	feedHeight := min(6, max(4, len(attentionRows)+2))
-	if m.height < 24 || w < 110 {
+	feedLimit := 6
+	if wide && m.height >= 30 {
+		feedLimit = 8
+	}
+	feedHeight := min(feedLimit, max(4, len(attentionRows)+2))
+	if m.height < 24 || !wide {
 		feedHeight = 3
 	}
 	bodyHeight := m.height - len(lines) - feedHeight - 3
@@ -319,7 +333,7 @@ func (m operatorModel) operatorStackView() string {
 	}
 	feed := operatorPane("NEEDS ATTENTION", attentionRows, inner, feedHeight, -1, operatorCoral)
 	alert := operatorBandStyle.Background(operatorAlertBand).Foreground(operatorCoral)
-	heading := fmt.Sprintf(" NEEDS ATTENTION · %d services", attention)
+	heading := " NEEDS ATTENTION · " + attentionCount
 	count := fmt.Sprintf(" · unverified %d", unverified)
 	if wide {
 		count = fmt.Sprintf("unverified %d ", unverified)

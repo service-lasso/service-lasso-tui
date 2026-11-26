@@ -103,3 +103,9 @@ buckets have no bar; a failed check has distinct color and shape. Compact and
 monochrome windows preserve pass/fail meaning, selected service identity, and
 keyboard recovery. Graph rendering never substitutes samples for missing data or
 implies real runtime uptime, restart counts or incident history from probes.
+The latest HTTP result may label a service whose aggregate health is unknown.
+An observed failed HTTP check joins the attention feed once per service with its
+recorded UTC timestamp, while known stopped and degraded summaries retain
+precedence. HTTP observations do not increase aggregate health coverage. Pause
+retains the admitted frame while its overview remains valid and labels the
+chart endpoint as its last observation.

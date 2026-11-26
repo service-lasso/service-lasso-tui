@@ -339,7 +339,7 @@ func (m operatorModel) formStatus() (string, bool) {
 }
 func (m operatorModel) rowCount() int { return len(m.displayRows()) }
 func (m operatorModel) View() string {
-	if m.journey == "overview" && m.width >= 60 && m.height >= 18 && !m.draft.Dirty && m.draft.Preview == nil && !m.draft.Sent && !m.draft.Retired && m.operation == nil && m.warning == "" && m.custodyWarning == "" && m.terminalRefreshWarning == "" && len(m.fieldErrors) == 0 {
+	if m.journey == "overview" && m.width >= operatorStackMinWidth && m.height >= operatorStackMinHeight && !m.draft.Dirty && m.draft.Preview == nil && !m.draft.Sent && !m.draft.Retired && m.operation == nil && m.warning == "" && m.custodyWarning == "" && m.terminalRefreshWarning == "" && len(m.fieldErrors) == 0 {
 		return m.operatorStackView()
 	}
 	focusLine := -1

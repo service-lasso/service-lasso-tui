@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/service-lasso/service-lasso-tui/internal/api"
 )
@@ -289,5 +290,22 @@ func TestOperatorTallStackKeepsAttentionNearObservation(t *testing.T) {
 	}
 	if !strings.Contains(view, "NAME") || !strings.Contains(view, "STATE") {
 		t.Fatal("missing service column headings")
+	}
+}
+
+func TestOperatorResponsiveSemanticStatusAndBottomRecovery(t *testing.T) {
+	for _, test := range []struct {
+		running, health string
+		want            lipgloss.Color
+	}{{"no", "healthy", operatorCoral}, {"yes", "unhealthy", operatorAmber}, {"yes", "healthy", operatorGreen}, {"yes", "unknown", operatorMuted}} {
+		if got := stackStatusColor(api.OperatorService{Running: test.running, HealthStatus: test.health}); got != test.want {
+			t.Fatalf("wrong status color %s/%s", test.running, test.health)
+		}
+	}
+	m := stackFixture()
+	m.width, m.height = 160, 45
+	rows := strings.Split(ansi.Strip(m.View()), "\n")
+	if len(rows) != m.height || !strings.Contains(rows[m.height-1], "q Quit") || !strings.Contains(rows[m.height-2], "Enter Inspect") {
+		t.Fatal("recovery keys not at terminal bottom")
 	}
 }

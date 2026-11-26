@@ -9,6 +9,8 @@ import (
 	"github.com/service-lasso/service-lasso-tui/internal/api"
 )
 
+const operatorStackMinWidth, operatorStackMinHeight = 60, 18
+
 // operatorStackView is strictly a presentation of the admitted overview page.
 // All selection consumers use overviewServices in its original order.
 func (m operatorModel) operatorStackView() string {
@@ -163,7 +165,11 @@ func (m operatorModel) operatorStackView() string {
 			marker = "> "
 		}
 		nameWidth := max(8, (leftWidth-5)*60/100)
-		listRows = append(listRows, marker+padLine(operatorText(s.ServiceID), nameWidth)+"  "+stackObservedStatus(s))
+		statusStyle := operatorBaseStyle.Foreground(stackStatusColor(s))
+		if i == m.row {
+			statusStyle = operatorFocusStyle.Foreground(stackStatusColor(s))
+		}
+		listRows = append(listRows, marker+padLine(operatorText(s.ServiceID), nameWidth)+"  "+operatorRender(statusStyle, stackObservedStatus(s)))
 	}
 	selected := m.row
 	title := "SERVICES · runtime order"
@@ -214,7 +220,7 @@ func (m operatorModel) operatorStackView() string {
 		inspector = []string{"Focus: Views", "↑↓ select a declared view", "Enter opens · Tab returns to services", "Unavailable views retain API admission."}
 	}
 	if !wide && m.focus == 1 && m.row >= 0 && m.row < len(services) {
-		inspector = []string{inspector[0], inspector[1], "Latency / health history / uptime / restarts: unavailable"}
+		inspector = []string{inspector[0], inspector[1], "Latency / history / uptime / restarts: unavailable"}
 	}
 	// Keep unavailable telemetry explicit at compact heights too.
 	if len(inspector) > inspectorHeight-1 && inspectorHeight >= 4 {
@@ -243,6 +249,11 @@ func (m operatorModel) operatorStackView() string {
 		attentionRows = append(attentionRows[:feedHeight-2], attentionRows[len(attentionRows)-1])
 	}
 	lines = append(lines, operatorPane(fmt.Sprintf("NEEDS ATTENTION · %d services · unverified %d", attention, unverified), attentionRows, inner, feedHeight, -1, operatorCoral)...)
+	// Keep recovery commands at the physical bottom without separating data
+	// from its attention feed on a tall terminal.
+	for len(lines) < m.height-2 {
+		lines = append(lines, "")
+	}
 	keys := " ↑↓ Select  Enter Inspect  ←→ Views  Tab Focus  r Refresh  f Filter"
 	if w < 80 {
 		keys = " ↑↓ Select  Enter Inspect  Tab Focus  r Refresh"
@@ -261,6 +272,19 @@ func (m operatorModel) operatorStackView() string {
 		lines[i] = operatorRender(operatorCanvasStyle, strings.Repeat(" ", gutter)+padLine(line, inner)+strings.Repeat(" ", gutter))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func stackStatusColor(s api.OperatorService) lipgloss.Color {
+	if s.Running == "no" {
+		return operatorCoral
+	}
+	if s.HealthStatus == "unhealthy" {
+		return operatorAmber
+	}
+	if s.HealthStatus == "healthy" {
+		return operatorGreen
+	}
+	return operatorMuted
 }
 
 func stackObservedStatus(s api.OperatorService) string {

@@ -66,3 +66,8 @@ recovery remain visible. At tall sizes cap empty body space to observed content,
 keeping the attention feed adjacent to the data. Pane headings, column labels,
 selection and muted footer distinguish the list from its inspector. Never
 introduce fabricated telemetry or reorder runtime observations for appearance.
+
+The shared Stack/monitor minimum is 60x18; monitoring admission keeps all
+existing data and safety requirements at that size. Recovery keys stay at the
+terminal bottom with extra canvas after the attention feed. Stopped, degraded,
+healthy and unknown service states retain semantic colors and explicit words.

@@ -61,7 +61,7 @@ func TestStackObservationStatesAndUnknown(t *testing.T) {
 	m.services.Rows[0].HealthStatus = "unknown"
 	m.services.Rows[1].HealthStatus = "unknown"
 	view := m.View()
-	for _, want := range []string{"running 1", "stopped 0", "unknown 1", "healthy 0", "unverified 2"} {
+	for _, want := range []string{"running 1", "stopped 0", "unknown 1", "0 healthy · 0/2 checked", "unverified 2"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("missing %q: %s", want, view)
 		}

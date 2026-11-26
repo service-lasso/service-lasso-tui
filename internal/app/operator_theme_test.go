@@ -5,7 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/service-lasso/service-lasso-tui/internal/api"
 )
 
 func TestOperatorThemeHomeCellBoundsAndSelection(t *testing.T) {
@@ -89,5 +91,52 @@ func TestOperatorThemeCompactTabsKeepActiveView(t *testing.T) {
 		if !strings.Contains(m.View(), "["+operatorViewLabel(journey)+"]") {
 			t.Fatalf("active tab hidden for %s\n%s", journey, m.View())
 		}
+	}
+}
+
+func TestOperatorThemedDetailKeepsKeyboardTabs(t *testing.T) {
+	m := dashboardTestModel()
+	m.journey = "detail"
+	m.acceptPageSelection(m.ticket())
+	port := 8080
+	m.detail.Endpoints = []api.OperatorEndpoint{{Label: "public-web", Protocol: "http", Port: &port, Availability: api.OperatorAvailability{Available: true}}}
+	for _, test := range []struct{ key, want string }{{"1", "[1 Overview]"}, {"2", "No dependencies reported."}, {"3", "public-web http port=8080 available"}} {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(test.key)})
+		m = updated.(operatorModel)
+		if view := m.View(); !strings.Contains(view, test.want) {
+			t.Fatalf("lost detail tab %s\n%s", test.key, view)
+		}
+	}
+	m.epoch++
+	if strings.Contains(m.View(), "public-web") {
+		t.Fatal("retained detail escaped current-selection guard")
+	}
+}
+
+func TestOperatorCompactInspectorAndConnectionProfile(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	m := dashboardTestModel()
+	m.width = 80
+	m.height = 20
+	m.acceptPageSelection(m.ticket())
+	m.connection = "local\nprofile"
+	view := m.View()
+	for _, want := range []string{`local\nprofile`, "manual refresh", "None known", "ID: demo-api", "Runtime:", "Enter Inspect", "Tab Focus"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("missing %q\n%s", want, view)
+		}
+	}
+	lines := strings.Split(view, "\n")
+	serviceLine, inspectorLine := -1, -1
+	for i, line := range lines {
+		if strings.Contains(line, "> demo-api") {
+			serviceLine = i
+		}
+		if strings.Contains(line, "ID: demo-api") {
+			inspectorLine = i
+		}
+	}
+	if inspectorLine <= serviceLine {
+		t.Fatal("compact inspector did not stack below services")
 	}
 }

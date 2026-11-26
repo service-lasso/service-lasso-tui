@@ -19,10 +19,6 @@ var (
 	dashboardMuted  = operatorBaseStyle.Foreground(operatorMuted)
 )
 
-func (m operatorModel) dashboardEnabled() bool {
-	return false
-}
-
 func padLine(text string, width int) string {
 	if width <= 0 {
 		return ""

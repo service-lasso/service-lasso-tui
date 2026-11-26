@@ -144,9 +144,32 @@ func (m operatorModel) rowLines() []string {
 	case "detail":
 		if m.detail != nil {
 			r := m.detail
-			rows = append(rows, r.Summary.DisplayName, r.Summary.Description, "provider: "+r.Provider.Role+" "+operatorReason(r.Provider.Availability))
-			for _, edge := range r.Dependencies {
-				rows = append(rows, fmt.Sprintf("%s -> %s [%s %s]", edge.FromServiceID, edge.ToServiceID, edge.Kind, edge.State))
+			tabs := []string{"1 Overview", "2 Dependencies", "3 Endpoints"}
+			if m.detailTab >= 0 && m.detailTab < len(tabs) {
+				tabs[m.detailTab] = "[" + tabs[m.detailTab] + "]"
+			}
+			rows = append(rows, strings.Join(tabs, "   "))
+			switch m.detailTab {
+			case 1:
+				if len(r.Dependencies) == 0 {
+					rows = append(rows, "No dependencies reported.")
+				}
+				for _, edge := range r.Dependencies {
+					rows = append(rows, fmt.Sprintf("%s -> %s [%s %s]", edge.FromServiceID, edge.ToServiceID, edge.Kind, edge.State))
+				}
+			case 2:
+				if len(r.Endpoints) == 0 {
+					rows = append(rows, "No endpoints reported.")
+				}
+				for _, ep := range r.Endpoints {
+					port := "unknown"
+					if ep.Port != nil {
+						port = strconv.Itoa(*ep.Port)
+					}
+					rows = append(rows, fmt.Sprintf("%s %s port=%s %s", ep.Label, ep.Protocol, port, operatorReason(ep.Availability)))
+				}
+			default:
+				rows = append(rows, r.Summary.DisplayName, r.Summary.Description, "provider: "+r.Provider.Role+" "+operatorReason(r.Provider.Availability))
 			}
 		}
 	case "graph":
@@ -335,7 +358,8 @@ func (m operatorModel) View() string {
 	if tabWidth >= 80 {
 		tabWidth -= 4
 	}
-	lines = append(lines, "Focus: "+focus+" (Tab changes focus)", ansi.Strip(m.operatorTabs(tabWidth)))
+	navText := ansi.Strip(m.operatorTabs(tabWidth))
+	lines = append(lines, "Focus: "+focus+" (Tab changes focus)", navText)
 	if m.journey == "overview" {
 		mode := "all"
 		if m.favoritesOnly {
@@ -542,7 +566,11 @@ func (m operatorModel) View() string {
 		contentWidth -= 2 * margin
 	}
 	for i, line := range lines {
-		lines[i] = ansi.Truncate(operatorText(line), contentWidth, "")
+		if line == navText {
+			lines[i] = operatorRender(operatorBandStyle, m.operatorTabs(contentWidth))
+		} else {
+			lines[i] = ansi.Truncate(operatorText(line), contentWidth, "")
+		}
 	}
 	lines = tuiStyledLines(lines, contentWidth)
 	if margin > 0 {

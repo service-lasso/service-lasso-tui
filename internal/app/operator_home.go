@@ -69,7 +69,7 @@ func (m operatorModel) operatorStackView() string {
 	if m.height >= 24 {
 		lines = append(lines, "")
 	}
-	values := []string{"Unavailable", "Unavailable", "Unavailable", "Unavailable"}
+	values := []string{"Unavailable", "Unavailable", "None known", "Unavailable"}
 	if current {
 		values[0] = fmt.Sprintf("healthy %d / %d", healthy, len(services))
 		values[1] = fmt.Sprintf("%d stopped or unhealthy", attention)
@@ -108,8 +108,15 @@ func (m operatorModel) operatorStackView() string {
 	if bodyHeight < 3 {
 		bodyHeight = 3
 	}
+	wide := w >= 110
 	leftWidth := (inner - 2) * 57 / 100
 	rightWidth := inner - leftWidth - 2
+	listHeight, inspectorHeight := bodyHeight, bodyHeight
+	if !wide {
+		leftWidth, rightWidth = inner, inner
+		listHeight = max(3, bodyHeight/2-1)
+		inspectorHeight = bodyHeight - listHeight
+	}
 	listRows := []string{}
 	for i, s := range services {
 		marker := "  "
@@ -142,9 +149,9 @@ func (m operatorModel) operatorStackView() string {
 			listRows = []string{"Waiting for a current observation."}
 		}
 	}
-	visible := bodyHeight - 2
+	visible := listHeight - 2
 	start := operatorVisibleStart(m.row, len(listRows), visible)
-	list := operatorPane(title, listRows[start:], leftWidth, bodyHeight, selected-start, operatorMuted)
+	list := operatorPane(title, listRows[start:], leftWidth, listHeight, selected-start, operatorMuted)
 	footer := fmt.Sprintf(" running %d · stopped %d · unknown %d", running, stopped, unknown)
 	list[len(list)-1] = operatorRender(operatorBaseStyle.Foreground(operatorMuted), padLine(footer, leftWidth))
 	inspector := []string{"No selected service observation."}
@@ -158,12 +165,17 @@ func (m operatorModel) operatorStackView() string {
 		inspector = []string{"Focus: Views", "↑↓ select a declared view", "Enter opens · Tab returns to services", "Unavailable views retain API admission."}
 	}
 	// Keep unavailable telemetry explicit at compact heights too.
-	if len(inspector) > bodyHeight-1 && bodyHeight >= 4 {
-		inspector = append(inspector[:bodyHeight-3], "Latency / history: unavailable", "Uptime / restarts: unavailable")
+	if len(inspector) > inspectorHeight-1 && inspectorHeight >= 4 {
+		inspector = append(inspector[:inspectorHeight-3], "Latency / history: unavailable", "Uptime / restarts: unavailable")
 	}
-	detail := operatorPane(inspectorTitle, inspector, rightWidth, bodyHeight, -1, operatorTeal)
-	for i := range list {
-		lines = append(lines, list[i]+"  "+detail[i])
+	detail := operatorPane(inspectorTitle, inspector, rightWidth, inspectorHeight, -1, operatorTeal)
+	if wide {
+		for i := range list {
+			lines = append(lines, list[i]+"  "+detail[i])
+		}
+	} else {
+		lines = append(lines, list...)
+		lines = append(lines, detail...)
 	}
 	lines = append(lines, "")
 	if len(attentionRows) == 0 {

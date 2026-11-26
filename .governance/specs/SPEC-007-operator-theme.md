@@ -27,3 +27,10 @@ selected service matches inspector/Enter; loading/error/empty/stale readings;
 no fabricated telemetry; existing focus, preview, redaction and mutation tests;
 Go formatting/tests/build plus disposable Core PTY captures with root owner.
 These source/fixture proofs do not establish release/native qualification.
+
+Missing measured latency, Core uptime, restarts, historical health and incident
+projection are owned by service-lasso/service-lasso#1973. No legacy/raw API
+substitute is admitted here. Empty operation state says None known; retained
+operations use the full safety/result view with authoritative targets/readback.
+At 80 columns list and inspector stack at full width; shared read detail keeps
+1/2/3 overview/dependency/endpoint tabs and existing keyboard/read admission.

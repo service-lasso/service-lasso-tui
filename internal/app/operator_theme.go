@@ -95,5 +95,9 @@ func (m operatorModel) operatorConnectionHeader(width int) string {
 	if m.errorText != "" {
 		status = "READ FAILED"
 	}
-	return operatorRender(operatorBandStyle.Bold(true), padLine(fmt.Sprintf(" SL  SERVICE LASSO   ·   %s", status), width))
+	profile := operatorText(m.connection)
+	if profile == "" {
+		profile = "default"
+	}
+	return operatorRender(operatorBandStyle.Bold(true), padLine(fmt.Sprintf(" SL  SERVICE LASSO · %s · %s · manual refresh", profile, status), width))
 }

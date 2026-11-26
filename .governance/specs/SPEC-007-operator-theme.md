@@ -41,3 +41,12 @@ selection hides it until its own read succeeds. The separate snapshot status
 still reports stale/incomplete state. Refresh remains manual, with no pause or
 auto-refresh claim. At 80x24 retain at least four service rows, full-width
 compact inspector, untruncated short tiles and explicit telemetry provenance.
+
+Issue #114 monitoring refinement: the existing one-second timer may issue one
+read-only first-page overview refresh per five seconds only while the admitted
+current overview is complete, untruncated and never accumulated continuation
+pages, row focus is active, and no read/bootstrap/draft/operation/safety state
+is pending. Space toggles monitoring pause/resume without dispatching a mutation.
+Retain failed-read rows/last successful age; retry no faster than five seconds.
+Preserve selected service identity on replacement/reorder; obsolete responses
+remain rejected. Mode/shortcut labels must reflect the actual scheduler state.

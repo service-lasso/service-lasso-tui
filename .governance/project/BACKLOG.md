@@ -1,3 +1,5 @@
+Issue #114 implements SPEC-007 (SPEC-001 TUI-DASHBOARD/KEYBOARD/LIFECYCLE; B04/E01). Active shared operator theme and approved Stack design; dependent on #112/PR #113.
+
 ## Issue 37 Linux acquisition
 
 Intent: .governance/project/TUI37-LINUX-ACQUISITION.md. Bounded executor source; authentic native inputs/entry remain unresolved. Windows deferred; current Linux session owns normal develop integration; release owner-only.

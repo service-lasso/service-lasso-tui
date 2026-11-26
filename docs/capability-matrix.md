@@ -1,3 +1,5 @@
+Issue #114 / SPEC-007: admitted overview summary, inspector and derived attention observations; shared visual theme across read/form/safety states. Historical latency, uptime, restarts and health strips remain unavailable without a documented admitted contract.
+
 # TUI capability matrix
 
 Current issue1 source unit: fix/1-complete-client-contract, PR33 targeting develop. The default command now selects operator/v2; --compat-v1 explicitly selects the historical adapter. The current dirty source is incomplete and UNRUN. No current compile, source approval, native acceptance, protected publication or GA claim is made. Earlier “implemented/locally tested” wording below describes historical compatibility work only; it is not evidence for this current head.
@@ -161,3 +163,5 @@ and operation safety paths remain unchanged. No telemetry, uptime, checks,
 latency, new actions or Core contracts are introduced. Deterministic fixture
 tests cover wide/80 views, selection/Enter parity, resize, failure and privacy;
 full Go tests/vet/build are source evidence, not native runtime acceptance.
+
+Issue #114 telemetry successor: service-lasso/service-lasso#1973 owns admitted Core health history, uptime, restart, latency and incident projections. Current Stack labels these values unavailable.

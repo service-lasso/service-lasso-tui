@@ -304,7 +304,7 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
             chflags=[]
             def denied_release(command,**_): chflags.append(command); return types.SimpleNamespace(returncode=1)
             try:
-                with patch.object(sys,"argv",argv), patch.object(sys,"stdin",io.StringIO(json.dumps(handoff)+"\n")), patch.object(harness["subprocess"],"run",denied_release), patch.object(harness["urllib"].request,"urlopen",lambda *_args,**_kwargs:io.BytesIO(b"{}")), patch.dict(harness["main"].__globals__,{"Terminal":Terminal,"bound_execution":lambda *_:(recovery,recovery,{"platform":"darwin"}),"detail":lambda *_:None,"controller_failed":lambda *_:True,"request":lambda *_:{},"process_birth":lambda *_:birth}):
+                with patch.object(sys,"argv",argv), patch.object(sys,"stdin",io.StringIO(json.dumps(handoff)+"\n")), patch.object(harness["subprocess"],"run",denied_release), patch.object(harness["urllib"].request,"urlopen",lambda *_args,**_kwargs:io.BytesIO(b"{}")), patch.dict(harness["main"].__globals__,{"Terminal":Terminal,"bound_execution":lambda *_:(recovery,recovery,{"platform":"darwin"}),"detail":lambda *_:None,"operator_detail":lambda *_:None,"controller_failed":lambda *_:True,"request":lambda *_:{},"process_birth":lambda *_:birth}):
                     with self.assertRaisesRegex(RuntimeError,"native owner finalization unavailable"):
                         harness["main"]()
                 primary=json.loads(pathlib.Path(root,"native-exit-receipt.json").read_text())
@@ -401,7 +401,7 @@ class NativeFiveActionHarnessTests(unittest.TestCase):
                         chflags.append(command); return types.SimpleNamespace(returncode=1)
                     owner_argv=["owner","--root",root,"--executable",str(candidate),"--source-commit","a"*40,"--core-commit","b"*40,"--external-runtime","--adverse-controller-crash","--controller-pid","404"]
                     try:
-                        with patch.object(sys,"argv",owner_argv), patch.object(sys,"stdin",io.StringIO(json.dumps(handoff)+"\n")), patch.object(builtins,"open",open_receipt), patch.object(os,"fsync",fsync_receipt), patch.object(harness["subprocess"],"run",deny_release), patch.object(harness["urllib"].request,"urlopen",lambda *_args,**_kwargs:io.BytesIO(b"{}")), patch.dict(harness["main"].__globals__,{"Terminal":Terminal,"bound_execution":lambda *_:(execution_fd,recovery,{"platform":cleanup_kind}),"detail":lambda *_:None,"controller_failed":lambda *_:True,"request":lambda *_:{},"process_birth":lambda *_:birth}):
+                        with patch.object(sys,"argv",owner_argv), patch.object(sys,"stdin",io.StringIO(json.dumps(handoff)+"\n")), patch.object(builtins,"open",open_receipt), patch.object(os,"fsync",fsync_receipt), patch.object(harness["subprocess"],"run",deny_release), patch.object(harness["urllib"].request,"urlopen",lambda *_args,**_kwargs:io.BytesIO(b"{}")), patch.dict(harness["main"].__globals__,{"Terminal":Terminal,"bound_execution":lambda *_:(execution_fd,recovery,{"platform":cleanup_kind}),"detail":lambda *_:None,"operator_detail":lambda *_:None,"controller_failed":lambda *_:True,"request":lambda *_:{},"process_birth":lambda *_:birth}):
                             observation={}
                             if boundary=="none":
                                 harness["main"](observation)

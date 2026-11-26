@@ -36,3 +36,13 @@ negative cases; full Go, relevant Node/Python checks; distinct exact-candidate
 review; actual exact-head hosted Linux native gate and all applicable PR checks;
 normal develop merge, postmerge proof, #112 closure and worktree disposition.
 No release/publication/deployment or whole #20 completion follows.
+
+Independent observer refinement: v2 has no fleet operation-list API. Read only
+the phase-owned private operations.json wrapper/payload for IDs and count,
+fail closed on corrupt/changing/foreign state, and use fresh v2 own-ID HTTP
+readback for every action/target/outcome. The journal is never a success source
+or public receipt. Audit exact denied client/profile/action set and seven
+authorization failures independently. Current Core insufficient_profile maps
+to dependency_blocked in availability; preserve that truthful observed UI and
+track the presentation defect in [Core #1974](https://github.com/service-lasso/service-lasso/issues/1974), while actual denied 403 audit
+proves insufficient_profile. No Core code or contract is substituted.

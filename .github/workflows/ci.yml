@@ -144,6 +144,7 @@ jobs:
           set -euo pipefail
           python scripts/verify-release-asset-conpty-python.test.py
           python scripts/tui20-native-five-action.test.py
+          python -B scripts/tui20-native-operator-v2.test.py
           python scripts/tui28-native-ownership.test.py
           python scripts/observer-stream-continuity.test.py
           python scripts/windows-original-continuity.test.py
@@ -251,6 +252,7 @@ jobs:
           set -euo pipefail
           python scripts/verify-release-asset-conpty-python.test.py
           python scripts/tui20-native-five-action.test.py
+          python -B scripts/tui20-native-operator-v2.test.py
           python scripts/tui28-native-ownership.test.py
           python scripts/observer-stream-continuity.test.py
           python scripts/windows-original-continuity.test.py
@@ -278,7 +280,7 @@ jobs:
           - name: Linux
             runner: ubuntu-latest
     env:
-      CORE_COMMIT: 2633c07be25512d0a84f9bfa28de6be5edff35e8
+      CORE_COMMIT: 8ea20e0ad1aa5f963153953d3f83832be8f1b5a2
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:

@@ -1582,3 +1582,20 @@ A `/tmp` development-synthetic bundle was written from owner-authored evidence, 
 
 ### Next design objective: Service Admin parity TUI (2026-11-25)
 Proposed design objective, not yet active: `docs/serviceadmin-parity-design.md` maps every live `lasso-serviceadmin` screen (Dashboard, Services and the ten service-detail tabs, Dependencies, Routes, Logs, Runtime, MCP, Installed, Variables, Network, Security, Inbox, Telemetry, Audit, Secrets Broker, Settings, Help) to a keyboard TUI screen, with layout, mockups, keymap, polling, connection/auth, error states, theming, an MVP/phase plan and Core gaps. Issue: not yet created. Spec sections: not yet mapped. The design's TypeScript + Ink recommendation is superseded by `docs/framework-decision.md` (Go + Bubble Tea); lifecycle actions stay on this repository's preview/confirm/durable-operation flow. Missing Core contracts it lists (event stream, forward log cursor, restartAll) are candidate Core dependencies per GOV-06. Nothing is implemented or validated.
+
+## Issue #112 Stack Monitor homepage
+
+SPEC-001 TUI-DASHBOARD / TUI-KEYBOARD; selected operator/v2 B04 / E01.
+Replace only the overview presentation with a compact stack header, counts of
+observed running/stopped/unknown and healthy/unhealthy/unknown summaries,
+keyboard-selected service rows and a summary-only inspector. Counts describe
+the current filtered observation, never an unobserved fleet total. Preserve
+snapshot pending, failed, empty, incomplete and stale distinctions and exclude
+rows belonging to a prior read selection. Unknown health stays unknown.
+Wide terminals place list and inspector beside each other; 80-column terminals
+stack compact panels. The selected row follows navigation and resize. Focus
+and working shortcuts stay explicit; existing help, navigation, confirmation
+and operation safety paths remain unchanged. No telemetry, uptime, checks,
+latency, new actions or Core contracts are introduced. Deterministic fixture
+tests cover wide/80 views, selection/Enter parity, resize, failure and privacy;
+full Go tests/vet/build are source evidence, not native runtime acceptance.

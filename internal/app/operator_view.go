@@ -317,6 +317,9 @@ func (m operatorModel) formStatus() (string, bool) {
 }
 func (m operatorModel) rowCount() int { return len(m.displayRows()) }
 func (m operatorModel) View() string {
+	if m.journey == "overview" && m.width >= 80 && m.height >= 20 && !m.draft.Dirty && m.draft.Preview == nil && !m.draft.Sent && !m.draft.Retired && m.operation == nil && m.warning == "" && m.custodyWarning == "" && m.terminalRefreshWarning == "" && len(m.fieldErrors) == 0 {
+		return m.stackView()
+	}
 	if m.dashboardEnabled() {
 		return m.dashboardView()
 	}

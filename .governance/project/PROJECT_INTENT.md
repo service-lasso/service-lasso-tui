@@ -1576,3 +1576,20 @@ Issue #42 / SPEC005 E2E001–E2E004: automate ordinary-source local real-Core au
 
 
 Issue #44 / SPEC006 PLATFORM001–003: ordinary matching-host Windows ConPTY with shared verified DACL/tool bootstrap and separately scoped exploratory macOS POSIX evidence. Preserve Linux behavior and all existing full operator/native acceptance gates.
+
+## Issue #112 Stack Monitor homepage
+
+SPEC-001 TUI-DASHBOARD / TUI-KEYBOARD; selected operator/v2 B04 / E01.
+Replace only the overview presentation with a compact stack header, counts of
+observed running/stopped/unknown and healthy/unhealthy/unknown summaries,
+keyboard-selected service rows and a summary-only inspector. Counts describe
+the current filtered observation, never an unobserved fleet total. Preserve
+snapshot pending, failed, empty, incomplete and stale distinctions and exclude
+rows belonging to a prior read selection. Unknown health stays unknown.
+Wide terminals place list and inspector beside each other; 80-column terminals
+stack compact panels. The selected row follows navigation and resize. Focus
+and working shortcuts stay explicit; existing help, navigation, confirmation
+and operation safety paths remain unchanged. No telemetry, uptime, checks,
+latency, new actions or Core contracts are introduced. Deterministic fixture
+tests cover wide/80 views, selection/Enter parity, resize, failure and privacy;
+full Go tests/vet/build are source evidence, not native runtime acceptance.

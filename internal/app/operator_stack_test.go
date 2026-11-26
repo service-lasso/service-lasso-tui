@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/service-lasso/service-lasso-tui/internal/api"
 )
 
 func stackFixture() operatorModel {
@@ -99,5 +100,32 @@ func TestStackFocusAndSafeSummary(t *testing.T) {
 	m.custodyWarning = "retained-original"
 	if !strings.Contains(m.View(), "retained-original") {
 		t.Fatal("safety warning hidden")
+	}
+}
+
+func TestStackAttentionAndSafetyFallback(t *testing.T) {
+	m := stackFixture()
+	m.services.Rows[0].Running = "no"
+	m.services.Rows[0].HealthStatus = "unhealthy"
+	m.services.Rows[1].Running = "yes"
+	view := m.View()
+	for _, want := range []string{"NEEDS ATTENTION · 1 observed services", "Stopped", "Running"} {
+		if !strings.Contains(view, want) {
+			t.Fatal(view)
+		}
+	}
+	for _, rule := range []string{"│", "╭", "╰"} {
+		if strings.Contains(view, rule) {
+			t.Fatal("boxed stack panel")
+		}
+	}
+	operation, _, _ := terminalRefreshFixture(t)
+	m.operation = &api.OperatorReadback{Operation: operation, Result: &api.OperatorResult{Summary: "Verified terminal result"}}
+	m.terminalRefreshWarning = "source unavailable"
+	view = m.View()
+	for _, want := range []string{"Original service refresh failed:", "source unavailable", "Verified terminal result"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("safety fallback missing %q\n%s", want, view)
+		}
 	}
 }

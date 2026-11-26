@@ -26,7 +26,7 @@ test('private connection rejects broad permissions and remote token destinations
 test('actual synthetic terminal waits readiness and reaps after stream EOF before exit',{skip:process.platform==='win32'},async()=>{
  const root=await mkdtemp(path.join(tmpdir(),'tui-e2e-terminal-'));try{
   const executable=path.join(root,'terminal.py');
- const observations=path.join(root,'observations.json');
+  const observations=path.join(root,'observations.json');
   await writeFile(executable,`#!/usr/bin/env python3
 import os,sys,time,tty,json
 observations=${JSON.stringify(observations)}
@@ -37,7 +37,7 @@ print('Service Lasso  operator/v2\\nError: 404 Not Found',flush=True)
 while True:
  b=os.read(0,1)
  if b==bytes([27]):
-  if os.read(0,2)!=b'[C':raise RuntimeError('unexpected synthetic key')
+  if os.read(0,1)+os.read(0,1)!=b'[C':raise RuntimeError('unexpected synthetic key')
   route=next(routes)
   with open(observations) as source:rows=json.load(source)
   rows.append({'method':'GET','pathname':'/api/operator/v2'+route,'statusCode':200})

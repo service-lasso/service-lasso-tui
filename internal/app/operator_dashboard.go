@@ -14,7 +14,7 @@ var (
 	dashboardMeta   = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	dashboardSelect = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("87"))
 	dashboardBar    = lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Background(lipgloss.Color("236"))
-	dashboardBorder = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	dashboardBorder = lipgloss.NewStyle().Foreground(lipgloss.Color("67"))
 	dashboardGood   = lipgloss.NewStyle().Foreground(lipgloss.Color("114"))
 	dashboardWarn   = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	dashboardMuted  = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
@@ -139,14 +139,17 @@ func (m operatorModel) dashboardSummary(mainWidth int) string {
 			degraded++
 		}
 	}
-	line := fmt.Sprintf(" %d services  ·  %d running  ·  %d stopped  ·  %d degraded", len(services), running, stopped, degraded)
+	total := len(services)
+	filled := 0
+	if total > 0 {
+		filled = running * 12 / total
+	}
+	gauge := "[" + dashboardGood.Render(strings.Repeat("█", filled)) + dashboardMuted.Render(strings.Repeat("░", 12-filled)) + "]"
+	line := fmt.Sprintf(" SERVICES %s  %d/%d running  ·  %d stopped  ·  %d degraded", gauge, running, total, stopped, degraded)
 	if degraded > 0 {
 		return dashboardWarn.Render(padLine(line, mainWidth))
 	}
-	if stopped > 0 {
-		return dashboardMuted.Render(padLine(line, mainWidth))
-	}
-	return dashboardGood.Render(padLine(line, mainWidth))
+	return dashboardMuted.Render(padLine(line, mainWidth))
 }
 
 func (m operatorModel) dashboardRows(mainWidth int) []string {
@@ -225,20 +228,21 @@ func dashboardPanel(title string, content []string, width, height int) []string 
 	}
 	label := dashboardTitle.Render(" " + title + " ")
 	used := ansi.StringWidth(label)
-	line := "╭─" + label
+	border := dashboardBorder
+	line := border.Render("╭─") + label
 	if pad := inner - used - 1; pad > 0 {
-		line += strings.Repeat("─", pad)
+		line += border.Render(strings.Repeat("─", pad))
 	}
-	line += "╮"
+	line += border.Render("╮")
 	out := []string{line}
 	for i := 0; i < height-2; i++ {
 		text := ""
 		if i < len(content) {
 			text = content[i]
 		}
-		out = append(out, "│"+padLine(text, inner)+"│")
+		out = append(out, border.Render("│")+padLine(text, inner)+border.Render("│"))
 	}
-	out = append(out, "╰"+strings.Repeat("─", inner)+"╯")
+	out = append(out, border.Render("╰"+strings.Repeat("─", inner)+"╯"))
 	return out
 }
 

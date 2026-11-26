@@ -91,6 +91,24 @@ class OperatorKeyboardTests(unittest.TestCase):
         self.assertEqual(keys,['r','\x1b[H','\r','\r','rjq','\x15',phrase,'\r'])
         self.assertEqual(term.action_phase,'readback-complete')
 
+class SettledClearTests(unittest.TestCase):
+    def test_clear_requires_both_fresh_footer_and_actual_owned_record_absence(self):
+        for mode in ('cleared','record remains','old footer'):
+            with self.subTest(mode=mode),tempfile.TemporaryDirectory() as root:
+                record=pathlib.Path(root,'record');record.write_text('retained operation metadata')
+                class Term:
+                    text='old x clear settled';operator_record_path=str(record)
+                    def write(self,value):
+                        if value!='x':raise AssertionError('unexpected clear key')
+                        if mode!='record remains':record.unlink()
+                        self.text+='\n←/→ view  '+('x clear settled  ' if mode=='old footer' else '')+'q quit\n'
+                    def read(self):pass
+                clock=iter((0,1,21))
+                with patch.object(HARNESS['time'],'monotonic',lambda:next(clock)):
+                    if mode=='cleared':HARNESS['operator_clear_settled'](Term())
+                    else:
+                        with self.assertRaisesRegex(RuntimeError,'clear was not observed'):HARNESS['operator_clear_settled'](Term())
+
 class ActualAuditTests(unittest.TestCase):
     def test_denied_profile_requires_actual_seven_client_action_reason_events(self):
         subjects={'service_install','service_configure','service_start','service_stop','service_restart','update_check','update_download'}

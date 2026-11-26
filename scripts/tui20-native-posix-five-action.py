@@ -145,12 +145,14 @@ class Terminal:
         args=[executable,"--compat-v1","--profile",profile]
         if sys_platform()=="linux":
             self.operator_v2=True
+            config=env.get("XDG_CONFIG_HOME")
+            self.operator_record_path=os.path.join(config,"service-lasso-tui","operation-reconciliation.json") if config else None
             args=[executable,"--profile",profile]
-            fcntl.ioctl(self.master,termios.TIOCSWINSZ,struct.pack("HHHH",40,120,0,0))
         if sys_platform()=="linux":
             self.acquisition={"pid":None,"originals":[],"descriptors":{name:{"descriptor":descriptor,"attempted":False,"completed":False,"original":None} for name,descriptor in (("master",self.master),("slave",self.slave))}}
             OWNED_TERMINALS.append(self)
             try:
+                fcntl.ioctl(self.master,termios.TIOCSWINSZ,struct.pack("HHHH",40,120,0,0))
                 self.child=fexecve_child(held,args,env,self.master,self.slave,self)
                 self.child.tui20_birth=process_birth(self.child.pid)
             except BaseException as original:
@@ -759,6 +761,16 @@ def operator_lifecycle(term):
     for _ in range(5): term.write("\x1b[B")
     start=len(term.text); term.write("\r"); term.wait(("lifecycle  tui20-fixture", "Form: available"),30,start)
 
+def operator_clear_settled(term):
+    record=getattr(term,"operator_record_path",None)
+    if record is None: raise RuntimeError("phase-owned operation record path unavailable")
+    start=len(term.text); term.write("x"); deadline=time.monotonic()+20
+    while time.monotonic()<deadline:
+        term.read()
+        footers=re.findall(r"\u2190/\u2192 view[^\r\n]*",operator_plain(term.text[start:]))
+        if footers and "x clear settled" not in footers[-1] and not os.path.lexists(record): return
+    raise RuntimeError("settled operation clear was not observed")
+
 def operator_action(term,action_id,name,url,token,observer):
     # Read the actual current table for keyboard position, never invent an
     # enabled action or submit outside the TUI's preview/confirmation path.
@@ -767,8 +779,6 @@ def operator_action(term,action_id,name,url,token,observer):
     positions=[index for index,cap in enumerate(caps) if cap["id"]==action_id and cap["availability"]["available"]]
     if len(positions)!=1: raise RuntimeError("required v2 action is unavailable")
     before_ids=observer.ids()
-    before=before_ids
-    if before: term.write("x"); term.read(.2)
     start=len(term.text); term.write("r"); term.wait(("Form: available",),30,start)
     term.write("\x1b[H")
     for _ in range(positions[0]): term.write("\x1b[B")
@@ -799,15 +809,13 @@ def operator_action(term,action_id,name,url,token,observer):
         if len(added)==1:
             row=operator_record(url,token,added[0])
             if row.get("action")!=action_id or row.get("targetIds")!=["tui20-fixture"]: raise RuntimeError("v2 operation retargeted")
-            readback=request(url,token,"/api/operator/v2/operations/"+row["operationId"])["data"]["operation"]
-            if readback.get("actionId")!=action_id or readback.get("serviceId")!="tui20-fixture" or readback.get("targets")!=["tui20-fixture"]: raise RuntimeError("v2 readback identity mismatch")
-            if readback.get("outcome") is not None:
-                if readback.get("status")!="succeeded" or readback.get("outcome")!="succeeded" or readback.get("cancellationSupported"): raise RuntimeError("v2 durable action failed")
+            if row.get("outcome") is not None:
+                if row.get("status")!="succeeded" or row.get("outcome")!="succeeded" or row.get("cancellationSupported"): raise RuntimeError("v2 durable action failed")
                 term.wait(("Operation "+row["operationId"],"succeeded"),30,readback_start)
                 if "c cancel" in term.text[readback_start:]: raise RuntimeError("unsupported cancellation advertised")
                 term.action_phase="readback-complete"; diagnostic_stage("action-readback-return")
                 return row
-        time.sleep(.1)
+        time.sleep(.5)
     raise RuntimeError("v2 durable readback unavailable")
 
 def operator_plain(text):
@@ -888,7 +896,13 @@ def operator_five_actions(args,launch_fd,held,held_inode,identity,env,url,token,
     term.write("\r"); term.read(.2)
     if observer.ids()!=unchanged or "Draft: service_reload" in term.text: raise RuntimeError("unsupported reload submitted")
     action_readbacks=[]
-    for action_id,name in (("service_install","install"),("service_configure","config"),("service_start","start"),("service_stop","stop"),("service_restart","restart")):
+    for index,(action_id,name) in enumerate((("service_install","install"),("service_configure","config"),("service_start","start"),("service_stop","stop"),("service_restart","restart"))):
+        # Selected Core defaults to 120 actor requests per 60 seconds. This
+        # proof also performs independent reads; pace only after the prior
+        # terminal result and before acquiring the next confirmation/TTL.
+        if index:
+            operator_clear_settled(term)
+            time.sleep(20)
         diagnostic_stage("allowed-action-enter")
         row=operator_action(term,action_id,name,url,token,observer)
         diagnostic_stage("allowed-action-return")
@@ -897,7 +911,10 @@ def operator_five_actions(args,launch_fd,held,held_inode,identity,env,url,token,
     runtime_pid=runtime.pid if runtime is not None else runtime_handoff["_runtimePID"]; runtime_birth=runtime.tui20_birth if runtime is not None else runtime_handoff["_runtimeBirth"]
     write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"coreRuntimePID":runtime_pid,"runtimeBirth":runtime_birth,"tuiChildPID":term.child.pid,"tuiChildBirth":term.child.tui20_birth,"sourceCommit":identity["sourceCommit"],"binarySHA256":identity["binarySHA256"],"phase":"normal_q_exit","immutableExecutionHeld":True,"ptyHeld":False})
     diagnostic_stage("allowed-five-actions-return"); diagnostic_stage("reconnect-enter")
-    term=Terminal(launch_fd,args.executable,"native",env); operator_detail(term)
+    term=Terminal(launch_fd,args.executable,"native",env)
+    last_id=action_readbacks[-1]["operationId"]
+    term.wait(("Operation "+last_id,"succeeded"),30)
+    operator_detail(term)
     outcome["terminals"].append({"terminal":"reconnect","exit":term.close()})
     diagnostic_stage("reconnect-return")
     records=[{key:row.get(key) for key in ("operationId","action","targetIds","status","outcome","cancellationSupported","correlationId")} for row in (operator_record(url,token,operation_id) for operation_id in sorted(observer.ids()))]

@@ -46,3 +46,12 @@ authorization failures independently. Current Core insufficient_profile maps
 to dependency_blocked in availability; preserve that truthful observed UI and
 track the presentation defect in [Core #1974](https://github.com/service-lasso/service-lasso/issues/1974), while actual denied 403 audit
 proves insufficient_profile. No Core code or contract is substituted.
+
+Acceptance refinement after actual Core429 evidence: do not alter actor/client
+rate limits. After each authoritative terminal result, clear only the first
+four client records and verify fresh UI plus record absence before pacing20s
+for the next action; acquire no preview/confirmation TTL during that wait.
+Retain the fifth settled record and prove its exact ID restores on reconnect,
+with no new Core operation or success audit. Pending restoration remains
+not exercised/unqualified. Resize belongs to the registered pre-fork PTY
+acquisition try, so errors preserve originals and once-close both endpoints.

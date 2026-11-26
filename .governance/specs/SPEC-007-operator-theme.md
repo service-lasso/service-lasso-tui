@@ -71,3 +71,16 @@ The shared Stack/monitor minimum is 60x18; monitoring admission keeps all
 existing data and safety requirements at that size. Recovery keys stay at the
 terminal bottom with extra canvas after the attention feed. Stopped, degraded,
 healthy and unknown service states retain semantic colors and explicit words.
+
+Issue #117 mockup refinement: at wide sizes use a separate brand and truthful
+freshness/status header, primary numbered Stack shortcuts, semantic tile rails,
+striped service rows with a selected-row rail, a severity-led inspector, a
+tinted attention feed, and individually rendered keyboard keycaps. Spend
+available reference-height rows on the panels while keeping tall sparse
+observations together. Compact and monochrome layouts retain explicit text and
+recovery hints. Health coverage counts checked summaries within the observed
+selection. Preserve runtime service order and the exact selected service used
+by Enter and shortcuts. Stack numbers focus services or open selected service
+detail, operation history, or logs. All navigation continues through normal
+read admission and does not control operations. Core #1973 remains the
+dependency for real telemetry and stack-wide operation counts.

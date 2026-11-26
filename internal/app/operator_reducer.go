@@ -15,6 +15,26 @@ var operatorViews = []string{"overview", "detail", "graph", "variables", "endpoi
 func operatorJourneyNeedsService(journey string) bool {
 	return journey != "overview" && journey != "graph" && journey != "inbox" && journey != "queue" && journey != "audit"
 }
+
+// Direct Stack navigation goes through the same selected observation and
+// admitted read path as Enter.
+func (m *operatorModel) openStackService(journey string) tea.Cmd {
+	services := m.overviewServices()
+	if m.focus != 1 || !m.pageSelectionCurrent() || m.row < 0 || m.row >= len(services) {
+		return nil
+	}
+	service := services[m.row].ServiceID
+	m.rememberJourneyPosition()
+	m.invalidate()
+	m.service = service
+	m.journey = journey
+	if journey == "detail" {
+		m.detailTab = 0
+	}
+	m.restoreJourneyPosition()
+	return m.load(nil)
+}
+
 func (m operatorModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	// Retain the actual original before ticket/context admission can reject it.
 	// The record never grants publication, settlement, replay or cancellation.
@@ -571,8 +591,19 @@ func (m operatorModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		case "left", "right":
 			cmd := m.changeView(msg.String() == "right")
 			return m, cmd
-		case "1", "2", "3":
-			if m.journey == "detail" && m.focus == 1 {
+		case "1", "2", "3", "4":
+			if m.useStackView() {
+				if msg.String() == "1" {
+					if m.focus == 0 {
+						m.toggleFocus()
+					}
+				} else if m.services.Snapshot != "" {
+					shortcut := stackShortcuts[msg.String()[0]-'2']
+					cmd := m.openStackService(shortcut.journey)
+					return m, cmd
+				}
+			}
+			if msg.String() != "4" && m.journey == "detail" && m.focus == 1 {
 				m.detailTab = int(msg.String()[0] - '1')
 				m.row = 0
 				m.scroll = 0
@@ -590,15 +621,8 @@ func (m operatorModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
-			if m.journey == "overview" && m.pageSelectionCurrent() && m.row < len(m.overviewServices()) {
-				service := m.overviewServices()[m.row].ServiceID
-				m.rememberJourneyPosition()
-				m.invalidate()
-				m.service = service
-				m.journey = "detail"
-				m.detailTab = 0
-				m.restoreJourneyPosition()
-				cmd := m.load(nil)
+			if m.journey == "overview" && m.pageSelectionCurrent() && m.row >= 0 && m.row < len(m.overviewServices()) {
+				cmd := m.openStackService("detail")
 				return m, cmd
 			}
 			cmd := m.beginEdit()

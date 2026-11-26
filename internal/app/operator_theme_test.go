@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -51,7 +52,7 @@ func TestOperatorThemeHomeDoesNotPromoteUnavailableTelemetry(t *testing.T) {
 	m.services.Rows[1].Running = "yes"
 	m.services.Rows[1].HealthStatus = "unknown"
 	view := m.operatorStackView()
-	for _, want := range []string{"healthy 0 / 2", "1 stopped or unhealthy", "unverified 2", "Incident history unavailable"} {
+	for _, want := range []string{"0 of 2 checked", "1 stopped or unhealthy", "unverified 2", "Incident history unavailable"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("missing %q\n%s", want, view)
 		}
@@ -123,7 +124,7 @@ func TestOperatorCompactInspectorAndConnectionProfile(t *testing.T) {
 	m.acceptPageSelection(m.ticket())
 	m.connection = "local\nprofile"
 	view := m.View()
-	for _, want := range []string{`local\nprofile`, "manual refresh", "None known", "ID: demo-api", "Runtime:", "Enter Inspect", "Tab Focus"} {
+	for _, want := range []string{`local\nprofile`, "manual refresh", "Unavailable", "ID: demo-api", "Runtime:", "Enter Inspect", "Tab Focus"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("missing %q\n%s", want, view)
 		}
@@ -307,5 +308,48 @@ func TestOperatorResponsiveSemanticStatusAndBottomRecovery(t *testing.T) {
 	rows := strings.Split(ansi.Strip(m.View()), "\n")
 	if len(rows) != m.height || !strings.Contains(rows[m.height-1], "q Quit") || !strings.Contains(rows[m.height-2], "Enter Inspect") {
 		t.Fatal("recovery keys not at terminal bottom")
+	}
+}
+
+func TestStackNumberedNavigationUsesSelectedService(t *testing.T) {
+	m := stackFixture()
+	m.ctx = context.Background()
+	m.row = 1
+	for _, test := range []struct{ key, journey string }{{"2", "detail"}, {"3", "history"}, {"4", "logs"}} {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(test.key)})
+		got := updated.(operatorModel)
+		if got.journey != test.journey || got.service != "demo-web" {
+			t.Fatalf("shortcut %s opened %s/%s", test.key, got.journey, got.service)
+		}
+	}
+	m.toggleFocus()
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
+	if got := updated.(operatorModel); got.focus != 1 || got.row != 1 {
+		t.Fatal("Stack shortcut lost service focus or identity")
+	}
+	m.epoch++
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	if got := updated.(operatorModel); got.journey != "overview" {
+		t.Fatal("operation history opened without an admitted selected service")
+	}
+}
+
+func TestStackWideHeaderShowsObservationAndMonitorStates(t *testing.T) {
+	m := monitorFixture(t)
+	m.width, m.height = 112, 33
+	m.overviewObservedAt = time.Now()
+	for _, state := range []struct {
+		want    string
+		prepare func()
+	}{
+		{"LIVE · updated", func() {}},
+		{"PAUSED · updated", func() { m.overviewPaused = true }},
+		{"STALE · updated", func() { m.services.Stale = true }},
+		{"READ FAILED · updated", func() { m.errorText = "Source unavailable" }},
+	} {
+		state.prepare()
+		if view := ansi.Strip(m.View()); !strings.Contains(view, state.want) {
+			t.Fatalf("missing %q\n%s", state.want, view)
+		}
 	}
 }

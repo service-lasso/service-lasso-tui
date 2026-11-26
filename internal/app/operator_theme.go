@@ -24,6 +24,8 @@ var (
 	operatorBaseStyle   = lipgloss.NewStyle().Foreground(operatorTextColor).Background(operatorSurface)
 	operatorCanvasStyle = lipgloss.NewStyle().Foreground(operatorTextColor).Background(operatorCanvas)
 	operatorBandStyle   = lipgloss.NewStyle().Foreground(operatorTextColor).Background(operatorBand)
+	operatorStripe      = lipgloss.Color("#101C2B")
+	operatorAlertBand   = lipgloss.Color("#342738")
 	operatorBrandStyle  = lipgloss.NewStyle().Bold(true).Foreground(operatorCanvas).Background(operatorTeal)
 	operatorFocusStyle  = lipgloss.NewStyle().Bold(true).Foreground(operatorTeal).Background(lipgloss.Color("#1B4650"))
 )

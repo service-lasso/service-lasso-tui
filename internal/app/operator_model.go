@@ -135,6 +135,8 @@ type operatorModel struct {
 	fieldErrors                               []api.OperatorFieldError
 	draft                                     operatorDraft
 	overviewObservedAt                        time.Time
+	overviewAttemptAt                         time.Time
+	overviewPaused                            bool
 	services                                  operatorPageState[api.OperatorService]
 	graph                                     operatorGraphState
 	variables                                 operatorPageState[api.OperatorVariable]

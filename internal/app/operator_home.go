@@ -51,22 +51,35 @@ func (m operatorModel) operatorStackView() string {
 	}
 	state := "Pending: no snapshot loaded for this selection."
 	if current {
-		state = m.snapshotStatus()
+		state = "complete observation"
+		if len(services) == 0 {
+			state = "complete; no rows"
+		}
+		if !m.services.Complete {
+			state = "incomplete observation; n next"
+		}
+		if m.services.Truncated {
+			state = "truncated; omitted rows remain unknown"
+		}
+		if m.services.Stale || operatorSnapshotExpired(m.services.Expiry, time.Now()) {
+			state = "stale; retained rows need refresh"
+		}
 	}
 	if m.loading {
 		state = "Loading… " + state
 	}
 	if m.errorText != "" {
-		state = "Read failed: " + m.errorText + " · " + state
+		state = "Read failed · " + state
+		attentionRows = append([]string{"Error: " + operatorText(m.errorText)}, attentionRows...)
 		if m.discovery == nil {
-			state = "Runtime API unavailable · " + m.errorText
+			state = "Runtime API unavailable"
 		}
 	}
 	focus := "Services"
 	if m.focus == 0 {
 		focus = "Views"
 	}
-	lines := []string{m.operatorConnectionHeader(inner), operatorRender(operatorBaseStyle.Foreground(operatorMuted), padLine(" "+m.overviewReadAge(time.Now())+" · manual refresh · "+operatorText(state), inner)), m.operatorTabs(inner)}
+	lines := []string{m.operatorConnectionHeader(inner), operatorRender(operatorBaseStyle.Foreground(operatorMuted), padLine(" "+m.overviewReadAge(time.Now())+" · "+m.overviewMonitorMode()+" · "+operatorText(state), inner)), m.operatorTabs(inner)}
 	if m.height >= 24 && w >= 110 {
 		lines = append(lines, "")
 	}

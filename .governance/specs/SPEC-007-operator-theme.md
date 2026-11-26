@@ -50,3 +50,7 @@ is pending. Space toggles monitoring pause/resume without dispatching a mutation
 Retain failed-read rows/last successful age; retry no faster than five seconds.
 Preserve selected service identity on replacement/reorder; obsolete responses
 remain rejected. Mode/shortcut labels must reflect the actual scheduler state.
+
+Auto refresh is additionally suspended in local favorites-only mode: load(nil)
+clears read-bound metadata and must not perturb filtered selection mid-read.
+Completed continuation pages are excluded by their retained seenCursors set.

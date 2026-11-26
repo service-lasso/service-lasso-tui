@@ -135,6 +135,13 @@ func (m operatorModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.markFormReadFailed()
 			return m, nil
 		}
+		selectedOverviewID := ""
+		if m.journey == "overview" && m.focus == 1 && m.pageSelectionCurrent() {
+			old := m.overviewServices()
+			if m.row >= 0 && m.row < len(old) {
+				selectedOverviewID = old[m.row].ServiceID
+			}
+		}
 		if err := m.applyLoaded(msg); err != nil {
 			m.receivedFailures = append(m.receivedFailures, operatorReceivedFailure{Message: msg, Err: err})
 			if m.journey == "overview" || m.journey == "graph" || m.journey == "metadata" {
@@ -148,6 +155,15 @@ func (m operatorModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.acceptPageSelection(msg.Ticket)
 		if m.journey == "overview" {
 			m.overviewObservedAt = time.Now()
+			if selectedOverviewID != "" {
+				for i, service := range m.overviewServices() {
+					if service.ServiceID == selectedOverviewID {
+						m.row = i
+						m.scroll = i
+						break
+					}
+				}
+			}
 		}
 		m.errorText = ""
 		m.clampJourneyPosition()
@@ -330,8 +346,9 @@ func (m operatorModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.pollScheduled = false
 		m.expirePages(time.Now())
 		if m.operation == nil {
+			refresh := m.refreshOverviewIfDue(time.Now())
 			next := m.nextPollTick()
-			return m, next
+			return m, tea.Batch(refresh, next)
 		}
 		m.pollRequest++
 		m.pollInFlight = true
@@ -428,6 +445,10 @@ func (m operatorModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch msg.String() {
+		case " ":
+			if m.journey == "overview" && m.focus == 1 && m.operation == nil {
+				m.overviewPaused = !m.overviewPaused
+			}
 		case "/":
 			if m.journey == "logs" && m.focus == 1 && !m.loading {
 				m.logSearchDraft = &operatorDraft{Selector: "Search logs", Text: m.logSearch, Cursor: len(m.logSearch)}

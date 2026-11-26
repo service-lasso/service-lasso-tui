@@ -102,9 +102,9 @@ func (m operatorModel) operatorConnectionHeader(width int) string {
 		profile = "default"
 	}
 	if width < 78 {
-		return operatorRender(operatorBandStyle.Bold(true), padLine(operatorRender(operatorBrandStyle, " SL ")+fmt.Sprintf(" Service Lasso · %s · %s", profile, status), width))
+		return operatorRender(operatorBrandStyle, " SL ") + operatorRender(operatorBandStyle.Bold(true), padLine(fmt.Sprintf(" Service Lasso · %s · %s", profile, status), width-4))
 	}
-	return operatorRender(operatorBandStyle.Bold(true), padLine(operatorRender(operatorBrandStyle, " SL ")+fmt.Sprintf(" Service Lasso  operator/v2 · %s · %s", profile, status), width))
+	return operatorRender(operatorBrandStyle, " SL ") + operatorRender(operatorBandStyle.Bold(true), padLine(fmt.Sprintf(" Service Lasso  operator/v2 · %s · %s", profile, status), width-4))
 }
 
 // Read receipt age is a local successful observation, never probe latency,

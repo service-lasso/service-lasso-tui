@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/service-lasso/service-lasso-tui/internal/api"
 )
 
@@ -81,7 +82,29 @@ func (m operatorModel) operatorStackView() string {
 	if m.focus == 0 {
 		focus = "Views"
 	}
-	lines := []string{m.operatorConnectionHeader(inner), operatorRender(operatorBaseStyle.Foreground(operatorMuted), padLine(" "+m.overviewReadAge(time.Now())+" · "+m.overviewMonitorMode()+" · "+operatorText(state), inner)), m.operatorTabs(inner)}
+	age := m.overviewReadAge(time.Now())
+	if w < 80 {
+		age = strings.ReplaceAll(age, "read age unavailable", "age unavailable")
+		if current {
+			state = "current"
+			if !m.services.Complete {
+				state = "partial · n next"
+			}
+			if m.services.Truncated {
+				state = "truncated"
+			}
+			if m.services.Stale || operatorSnapshotExpired(m.services.Expiry, time.Now()) {
+				state = "stale · refresh"
+			}
+		}
+		if m.loading {
+			state = "Loading · " + state
+		}
+		if m.errorText != "" {
+			state = "Read failed · " + state
+		}
+	}
+	lines := []string{m.operatorConnectionHeader(inner), operatorRender(operatorBaseStyle.Foreground(operatorMuted), padLine(" "+age+" · "+m.overviewMonitorMode()+" · "+operatorText(state), inner)), m.operatorTabs(inner)}
 	if m.height >= 26 && w >= 110 {
 		lines = append(lines, "")
 	}
@@ -165,11 +188,7 @@ func (m operatorModel) operatorStackView() string {
 			marker = "> "
 		}
 		nameWidth := max(8, (leftWidth-5)*60/100)
-		statusStyle := operatorBaseStyle.Foreground(stackStatusColor(s))
-		if i == m.row {
-			statusStyle = operatorFocusStyle.Foreground(stackStatusColor(s))
-		}
-		listRows = append(listRows, marker+padLine(operatorText(s.ServiceID), nameWidth)+"  "+operatorRender(statusStyle, stackObservedStatus(s)))
+		listRows = append(listRows, marker+padLine(operatorText(s.ServiceID), nameWidth)+"  "+stackObservedStatus(s))
 	}
 	selected := m.row
 	title := "SERVICES · runtime order"
@@ -203,6 +222,21 @@ func (m operatorModel) operatorStackView() string {
 		paneHeight--
 	}
 	list := operatorPane(title, listRows[start:], leftWidth, paneHeight, selected-start, operatorMuted)
+	if m.focus == 1 {
+		for j := 0; j < visible && start+j < len(services); j++ {
+			i := start + j
+			s := services[i]
+			style := operatorBaseStyle
+			marker := "  "
+			if i == m.row {
+				style = operatorFocusStyle
+				marker = "> "
+			}
+			prefix := " " + marker + padLine(operatorText(s.ServiceID), max(8, (leftWidth-5)*60/100)) + "  "
+			tail := padLine(stackObservedStatus(s), leftWidth-ansi.StringWidth(prefix))
+			list[1+j] = operatorRender(style, prefix) + operatorRender(style.Foreground(stackStatusColor(s)), tail)
+		}
+	}
 	if columnHeader {
 		header := "   " + padLine("NAME", max(8, (leftWidth-5)*60/100)) + "  STATE"
 		list = append(list[:1], append([]string{operatorRender(operatorBaseStyle.Foreground(operatorMuted), padLine(header, leftWidth))}, list[1:]...)...)
@@ -269,7 +303,7 @@ func (m operatorModel) operatorStackView() string {
 	}
 	// Apply outer canvas gutters only after all cell-bounded surfaces are composed.
 	for i, line := range lines {
-		lines[i] = operatorRender(operatorCanvasStyle, strings.Repeat(" ", gutter)+padLine(line, inner)+strings.Repeat(" ", gutter))
+		lines[i] = operatorRender(operatorCanvasStyle, strings.Repeat(" ", gutter)) + padLine(line, inner) + operatorRender(operatorCanvasStyle, strings.Repeat(" ", gutter))
 	}
 	return strings.Join(lines, "\n")
 }

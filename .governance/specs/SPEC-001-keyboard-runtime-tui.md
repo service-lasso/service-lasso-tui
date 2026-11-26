@@ -1838,3 +1838,14 @@ gestures; retain readiness, actual waitpid/EOF and quit assertions. Ordinary
 workflow pins reviewed Core develop 8ea20e0ad1aa5f963153953d3f83832be8f1b5a2
 which supplies those read contracts; keep dispatch override/ancestry checks.
 This changes proof inputs only, never native or release qualification gates.
+
+## TUI-ACCEPTANCE-112 Linux operator/v2 prerequisite
+
+Issue #20 / #112 / PR #113 bounded Linux migration is specified in
+../project/TUI112-LINUX-V2-NATIVE-PREREQUISITE.md. Existing complete native
+ownership/negative/five-action acceptance remains mandatory. Broader #20 stays
+open; this supplies no Windows/native/publication or release qualification.
+
+Linux native v2 migration also verifies literal terminal KeySpace in the
+confirmation editor. Preserve the exact server phrase (including spaces),
+reject altered/missing spaces, and retain explicit Enter as the submit cut.

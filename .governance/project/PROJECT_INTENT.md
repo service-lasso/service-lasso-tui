@@ -1593,3 +1593,8 @@ and operation safety paths remain unchanged. No telemetry, uptime, checks,
 latency, new actions or Core contracts are introduced. Deterministic fixture
 tests cover wide/80 views, selection/Enter parity, resize, failure and privacy;
 full Go tests/vet/build are source evidence, not native runtime acceptance.
+
+Issue #112 / PR #113 now includes the user-authorized Linux operator/v2 native
+landing prerequisite under #20: see TUI112-LINUX-V2-NATIVE-PREREQUISITE.md.
+Preserve all five authoritative actions/negative auth/review/readback and
+existing owned native controls; broader #20 remains open. No gate bypass.

@@ -99,7 +99,7 @@ func TestStackHTTPFailureAttentionIsBoundAndDoesNotPromoteAggregateHealth(t *tes
 		}},
 	})
 	view := m.View()
-	for _, phrase := range []string{"HTTP CHECK FAILED", "NEEDS ATTENTION · 2 services", "0 of 2 checked", "Latest HTTP check failed", "Last failed:"} {
+	for _, phrase := range []string{"HTTP CHECK FAILED", "NEEDS ATTENTION · 2 services", "2 of 2 HTTP checked", "0 pass · 2 fail", "Latest HTTP check failed", "Last failed:"} {
 		if !strings.Contains(view, phrase) {
 			t.Fatalf("missing %q in Stack view\n%s", phrase, view)
 		}

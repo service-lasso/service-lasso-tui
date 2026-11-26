@@ -39,7 +39,7 @@ func (m operatorModel) operatorStackView() string {
 	}
 	running, stopped, unknown, healthy, unverified, attention := 0, 0, 0, 0, 0, 0
 	attentionRows := []string{}
-	failedChecks := 0
+	failedChecks, httpPassed, httpFailed := 0, 0, 0
 	for _, s := range services {
 		switch s.Running {
 		case "yes":
@@ -56,16 +56,25 @@ func (m operatorModel) operatorStackView() string {
 		default:
 			unverified++
 		}
+		checks, checkStatus := m.stackCheckFor(s, now)
+		httpCheckFailed := false
+		if checkStatus == "" {
+			httpCheckFailed = !checks.latest().Passed
+			if httpCheckFailed {
+				httpFailed++
+			} else {
+				httpPassed++
+			}
+		}
 		if s.Running == "no" || s.HealthStatus == "unhealthy" {
 			attention++
 			attentionRows = append(attentionRows, operatorText(s.ServiceID)+"  ·  "+stackObservedStatus(s)+"  ·  observed summary")
-		} else if checks, status := m.stackCheckFor(s, now); status == "" {
-			if latest := checks.latest(); !latest.Passed {
-				at, _ := time.Parse(time.RFC3339Nano, latest.At)
-				failedChecks++
-				attention++
-				attentionRows = append(attentionRows, fmt.Sprintf("%sZ  %s  ·  Latest HTTP check failed · %d ms", at.UTC().Format("15:04:05"), operatorText(s.ServiceID), latest.DurationMS))
-			}
+		} else if httpCheckFailed {
+			latest := checks.latest()
+			at, _ := time.Parse(time.RFC3339Nano, latest.At)
+			failedChecks++
+			attention++
+			attentionRows = append(attentionRows, fmt.Sprintf("%sZ  %s  ·  Latest HTTP check failed · %d ms", at.UTC().Format("15:04:05"), operatorText(s.ServiceID), latest.DurationMS))
 		}
 	}
 	state := "Pending: no snapshot loaded for this selection."
@@ -162,6 +171,17 @@ func (m operatorModel) operatorStackView() string {
 			colors[0] = operatorAmber
 		}
 	}
+	httpChecked := httpPassed + httpFailed
+	if httpChecked != 0 {
+		values[0] = fmt.Sprintf("%d of %d HTTP checked", httpChecked, len(services))
+		if !wide {
+			values[0] = fmt.Sprintf("%d/%d HTTP", httpChecked, len(services))
+		}
+		colors[0] = operatorGreen
+		if httpFailed != 0 {
+			colors[0] = operatorAmber
+		}
+	}
 	if !wide {
 		labels[1], labels[2] = "ATTENTION", "OPERATION"
 		values[2] = "Unavailable"
@@ -187,6 +207,9 @@ func (m operatorModel) operatorStackView() string {
 				text = values[i]
 			} else if line == 2 {
 				text = ""
+				if i == 0 && httpChecked != 0 {
+					text = fmt.Sprintf("%d pass · %d fail", httpPassed, httpFailed)
+				}
 			}
 			if i > 0 {
 				row += operatorRender(operatorCanvasStyle, " ")

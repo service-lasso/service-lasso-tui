@@ -106,6 +106,7 @@ implies real runtime uptime, restart counts or incident history from probes.
 The latest HTTP result may label a service whose aggregate health is unknown.
 An observed failed HTTP check joins the attention feed once per service with its
 recorded UTC timestamp, while known stopped and degraded summaries retain
-precedence. HTTP observations do not increase aggregate health coverage. Pause
+precedence. When present, HTTP observations supply explicitly scoped HTTP
+check coverage and pass/fail totals without promoting aggregate health. Pause
 retains the admitted frame while its overview remains valid and labels the
 chart endpoint as its last observation.

@@ -1,3 +1,5 @@
+Issue #119: SPEC-007 TUI-DASHBOARD, actual 15-minute HTTP check latency and per-service pass/fail strips from Core #1973.
+
 Issue #117: SPEC-007 mockup refinement; truthful wide monitor hierarchy, working Stack shortcuts, compact/monochrome safety and real Core PTY proof.
 
 Issue #115: SPEC-007 responsive Stack refinement; 60x18 through 160x45 bounds, selection, honest unavailable/error state, real Core PTY proof.

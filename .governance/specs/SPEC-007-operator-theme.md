@@ -84,3 +84,22 @@ by Enter and shortcuts. Stack numbers focus services or open selected service
 detail, operation history, or logs. All navigation continues through normal
 read admission and does not control operations. Core #1973 remains the
 dependency for real telemetry and stack-wide operation counts.
+
+Issue #119 Stack health graphs (TUI-DASHBOARD): display the selected service's
+primary HTTP-check latency over the last fifteen minutes and a pass/fail strip
+per listed service from actual admitted operator/v2 observations (Core #1973).
+Read the additive GET /health-check-samples endpoint in one bounded batch for
+each admitted overview page. Its closed frame contains observation time,
+900-second window, and only requested service IDs with configured state and
+actual chronological timestamp, pass/fail, and integer duration samples.
+Optional reads never delay publication of the overview or change its readback
+and navigation semantics. Drop obsolete responses, scope graphs to the current
+page selection, and expire readings. An older Core, denied/failed reads, no HTTP
+check, no recent samples, and stale readings retain explicit text states.
+
+At reference size plot timestamp-binned latency with labeled millisecond scale
+and the latest observed duration, plus timestamp-binned service strips. Empty
+buckets have no bar; a failed check has distinct color and shape. Compact and
+monochrome windows preserve pass/fail meaning, selected service identity, and
+keyboard recovery. Graph rendering never substitutes samples for missing data or
+implies real runtime uptime, restart counts or incident history from probes.

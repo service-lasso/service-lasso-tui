@@ -138,6 +138,9 @@ class PosixReadContinuity(unittest.TestCase):
                 with ExitStack() as stack:
                     for target,attribute,value in ((module.argparse.ArgumentParser,"parse_args",lambda _self:args),(module,"start_owned_runtime",start),(module,"finalize_native_outcome",finalizer),(module,"write_json",writer),(module,"owned_runtime_birth_absent",lambda _runtime:False),(module,"process_birth",lambda _pid:{}),(module,"hold_candidate",lambda *_args:(17,{"sourceCommit":args.source_commit,"binarySHA256":"c"*64},(1,2))),(module,"bound_execution",lambda *_args:(18,None,{})),(module,"write_owner_birth",lambda *_args:None),(module,"Terminal",Terminal),(module,"detail",lambda *_args:None),(module,"controller_failed",lambda *_args:True),(module,"request",lambda *_args:{}),(module.urllib.request,"urlopen",lambda *_args,**_kwargs:types.SimpleNamespace(read=lambda:b"")),(module.hashlib,"file_digest",lambda *_args:types.SimpleNamespace(hexdigest=lambda:"c"*64))):
                         stack.enter_context(patch.object(target,attribute,value))
+                    if name=="tui20-native-posix-five-action.py":
+                        stack.enter_context(patch.object(module,"operator_detail",lambda *_args:None))
+                        storage_parent=stack.enter_context(patch.object(module.os,"mkdir"))
                     stack.enter_context(patch("builtins.open",mock_open(read_data=b"controlled")))
                     if cleanup_failed in ("descriptor","descriptor-dual","primary-persist"): stack.enter_context(patch.object(module.os,"close",side_effect=close_descriptor))
                     if cleanup_failed=="raw-conversion":
@@ -158,6 +161,8 @@ class PosixReadContinuity(unittest.TestCase):
                         with self.assertRaises(type(expected)) as caught: module.main(observation)
                         self.assertIs(caught.exception,expected)
                     if cleanup_failed=="raw-conversion": raw_wait.assert_called_once_with(123,1)
+                if name=="tui20-native-posix-five-action.py" and not body_failed:
+                    storage_parent.assert_called_once_with(module.os.path.join("owned-source-fixture","tui-config"),0o700)
                 self.assertEqual(events,["finalizer","write","flush","close","wait"])
                 self.assertEqual(observation["bodyPrimaryPresent"],body_failed or cleanup_failed=="raw-conversion")
                 if body_failed: self.assertIs(observation["bodyPrimary"],primary)
@@ -389,9 +394,10 @@ class PosixReadContinuity(unittest.TestCase):
                 self.assertEqual(sum(item[0]=="terminal_close" for item in events),3 if mode=="useful" else (0 if mode=="file_dual" else (2 if mode in ("mutation_dual","replacement_cleanup") else 1)))
     def test_actual_linux_terminal_acquisition_keeps_fork_primary_and_child_custody(self):
         for name in ("tui20-native-posix-five-action.py","tui28-native-linux-five-action.py"):
-            for mode in ("useful","fork_dual","slave","birth","wrapper"):
+            modes=("useful","fork_dual","slave","birth","wrapper")+(("resize","resize_dual") if name=="tui20-native-posix-five-action.py" else ())
+            for mode in modes:
                 module=self.load(name); original=RuntimeError("PRIVATE acquisition"); secondary=OSError("PRIVATE close")
-                closed=[]
+                closed=[]; resizes=[]
                 ActualBoundProcess=module.BoundProcess
                 def wrap(pid):
                     if mode=="wrapper": raise original
@@ -403,16 +409,30 @@ class PosixReadContinuity(unittest.TestCase):
                     return 123
                 def close(fd):
                     closed.append(fd)
-                    if mode=="fork_dual" and fd==18: raise secondary
+                    if mode in ("fork_dual","resize_dual") and fd==18: raise secondary
                     if mode=="slave": raise original
-                with patch.object(module,"BoundProcess",side_effect=wrap), patch.object(module,"sys_platform",return_value="linux"), patch.object(module.pty,"openpty",return_value=(17,18),create=True), patch.object(module.os,"fork",side_effect=fork,create=True), patch.object(module.os,"close",side_effect=close), patch.object(module,"process_birth",side_effect=original if mode=="birth" else lambda pid:"birth"):
+                def resize(fd,operation,geometry):
+                    self.assertEqual(len(module.OWNED_TERMINALS),1)
+                    self.assertIsNone(module.OWNED_TERMINALS[0].child)
+                    self.assertEqual((fd,operation),(17,0x5414))
+                    self.assertEqual(module.struct.unpack("HHHH",geometry),(40,120,0,0))
+                    resizes.append(True)
+                    if mode in ("resize","resize_dual"):raise original
+                with patch.object(module,"BoundProcess",side_effect=wrap), patch.object(module,"sys_platform",return_value="linux"), patch.object(module.pty,"openpty",return_value=(17,18),create=True), patch.object(module.os,"fork",side_effect=fork,create=True), patch.object(module.os,"close",side_effect=close), patch.object(module,"process_birth",side_effect=original if mode=="birth" else lambda pid:"birth"), patch.object(module.fcntl,"ioctl",side_effect=resize,create=True), patch.object(module.termios,"TIOCSWINSZ",0x5414,create=True):
                     if mode=="useful": terminal=module.Terminal(19,"candidate","profile",{})
                     else:
                         with self.assertRaises(RuntimeError) as caught: module.Terminal(19,"candidate","profile",{})
                         self.assertIs(caught.exception,original)
                         terminal=module.OWNED_TERMINALS[0]
                 self.assertEqual(len(module.OWNED_TERMINALS),1)
-                if mode=="fork_dual":
+                if name=="tui20-native-posix-five-action.py":self.assertEqual(resizes,[True])
+                if mode in ("resize","resize_dual"):
+                    self.assertIsNone(terminal.child);self.assertIsNone(terminal.acquisition["pid"])
+                    self.assertEqual(closed,[18,17])
+                    self.assertEqual(terminal.acquisition["originals"],[original]+([secondary] if mode=="resize_dual" else []))
+                    self.assertEqual(terminal.acquisition["descriptors"]["slave"]["completed"],mode!="resize_dual")
+                    self.assertTrue(terminal.acquisition["descriptors"]["master"]["completed"])
+                elif mode=="fork_dual":
                     self.assertIsNone(terminal.child); self.assertEqual(closed,[18,17])
                     self.assertEqual(terminal.acquisition["originals"],[original,secondary])
                     self.assertFalse(terminal.acquisition["descriptors"]["slave"]["completed"])

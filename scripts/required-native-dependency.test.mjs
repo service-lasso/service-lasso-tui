@@ -43,8 +43,9 @@ test("required native dependency excludes deferred macOS without masking require
   // Ignore only the comment between job blocks; it carries no step behavior.
   assert.equal(steps(requiredTest).replace(/\n  # Darwin diagnostics.*$/u, "").trimEnd(), steps(deferredTest));
   assert.equal(steps(requiredNative), steps(deferredNative));
+  assert.match(requiredNative, /^      CORE_COMMIT: 8ea20e0ad1aa5f963153953d3f83832be8f1b5a2$/mu);
+  assert.match(deferredNative, /^      CORE_COMMIT: 2633c07be25512d0a84f9bfa28de6be5edff35e8$/mu);
   for (const body of [requiredNative, deferredNative]) {
-    assert.match(body, /^      CORE_COMMIT: 2633c07be25512d0a84f9bfa28de6be5edff35e8$/mu);
     for (const phase of ["preflight", "five-actions", "finalization-failure", "adverse-controller", "adverse-owner-death", "handoff-timeout", "shutdown-pipe-failure"]) {
       assert.ok(body.includes(`prepare_phase "$attempt/${phase}"`), `missing ${phase}`);
     }

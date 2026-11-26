@@ -1,4 +1,5 @@
 """Native Linux/macOS PTY evidence for Issue 20; credentials remain process-memory only."""
+import re, struct
 import argparse, ctypes, fcntl, hashlib, json, os, pty, select, signal, stat, subprocess, sys, termios, time, urllib.request
 
 ALLOWED_ENV=("HOME","LANG","LC_ALL","PATH","SHELL","TERM","TMPDIR","USER")
@@ -143,9 +144,15 @@ class Terminal:
         self.text=""; self.label=profile; self.exit_reason=None; self.child=None; self.read_observations=[]
         args=[executable,"--compat-v1","--profile",profile]
         if sys_platform()=="linux":
+            self.operator_v2=True
+            config=env.get("XDG_CONFIG_HOME")
+            self.operator_record_path=os.path.join(config,"service-lasso-tui","operation-reconciliation.json") if config else None
+            args=[executable,"--profile",profile]
+        if sys_platform()=="linux":
             self.acquisition={"pid":None,"originals":[],"descriptors":{name:{"descriptor":descriptor,"attempted":False,"completed":False,"original":None} for name,descriptor in (("master",self.master),("slave",self.slave))}}
             OWNED_TERMINALS.append(self)
             try:
+                fcntl.ioctl(self.master,termios.TIOCSWINSZ,struct.pack("HHHH",40,120,0,0))
                 self.child=fexecve_child(held,args,env,self.master,self.slave,self)
                 self.child.tui20_birth=process_birth(self.child.pid)
             except BaseException as original:
@@ -187,6 +194,7 @@ class Terminal:
         while time.monotonic()<until:
             if all(value in self.text[start:] for value in need): return
             self.read()
+            if all(value in self.text[start:] for value in need): return
             if self.child.poll() is not None: raise RuntimeError("terminal exited before expected state")
             if self.child.reaped_unowned:
                 self.exit_reason="terminal_unknown"; self.recovery_state="child_reaped_unowned"
@@ -231,7 +239,7 @@ class Terminal:
             if result is not None: row["exitObserved"]=True; return row
             if self.child.reaped_unowned: raise ChildReapedUnowned("owned child was reaped outside BoundProcess")
             fresh=self.text[row["textOffset"]:]
-            if row["original"] is None and "Confirmation cancelled." in fresh:
+            if row["original"] is None and ("Confirmation cancelled." in fresh or getattr(self,"operator_v2",False) and "Form: available" in fresh):
                 row["acknowledged"]=True; return row
             # A write return, elapsed time, EOF or read failure is no UI ack and
             # no child exit. Retain SAME failed owner and drain until observed.
@@ -696,6 +704,227 @@ def bound_replacement_probe(launch_fd,held,executable,inode_identity,digest_iden
             else:
                 os.replace(original,executable)
     return results
+class OperatorOperationObserver:
+    """Private fixture accounting; only real own-ID HTTP readback proves outcome."""
+    def __init__(self,root):
+        self.path=os.path.join(root,"workspace",".service-lasso","mcp","operations.json")
+        self.seen_ids=set()
+    def ids(self):
+        try: fd=os.open(self.path,os.O_RDONLY|getattr(os,"O_NOFOLLOW",0))
+        except FileNotFoundError:
+            if self.seen_ids: raise RuntimeError("observed operation state disappeared")
+            return set()
+        with os.fdopen(fd,"rb") as stream:
+            before=os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode) or before.st_uid!=os.geteuid() or stat.S_IMODE(before.st_mode)!=0o600 or before.st_size>8*1024*1024: raise RuntimeError("private operation state identity unavailable")
+            raw=stream.read(8*1024*1024+1); after=os.fstat(stream.fileno())
+        named=os.stat(self.path,follow_symlinks=False)
+        identity=lambda row:(row.st_dev,row.st_ino,row.st_size,row.st_mtime_ns,row.st_ctime_ns)
+        if identity(before)!=identity(after) or identity(after)!=identity(named) or len(raw)!=before.st_size: raise RuntimeError("private operation state changed during observation")
+        try: wrapper=json.loads(raw)
+        except (ValueError,UnicodeError) as original: raise RuntimeError("private operation state corrupt") from original
+        if not isinstance(wrapper,dict) or set(wrapper)!={"version","protection","payload"} or wrapper["version"]!=1 or wrapper["protection"]!="owner-only-file": raise RuntimeError("private operation wrapper changed")
+        payload=wrapper["payload"]
+        if not isinstance(payload,dict) or set(payload)!={"version","operations"} or payload["version"]!=1 or not isinstance(payload["operations"],list): raise RuntimeError("private operation payload changed")
+        ids=set()
+        for row in payload["operations"]:
+            if not isinstance(row,dict) or not isinstance(row.get("operationId"),str) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,200}",row["operationId"]) or row.get("actorId")!="tui20-native-operator" or row.get("clientId")!="tui20-native-client" or row["operationId"] in ids: raise RuntimeError("private operation ownership or identity changed")
+            ids.add(row["operationId"])
+        if not self.seen_ids.issubset(ids): raise RuntimeError("observed operation identity disappeared")
+        self.seen_ids.update(ids)
+        return ids
+
+def operator_record(url,token,operation_id):
+    row=request(url,token,"/api/operator/v2/operations/"+operation_id)["data"]["operation"]
+    if row.get("operationId")!=operation_id or row.get("serviceId")!="tui20-fixture" or row.get("targets")!=["tui20-fixture"]: raise RuntimeError("v2 own-ID readback identity mismatch")
+    return {"operationId":row["operationId"],"action":row["actionId"],"targetIds":row["targets"],"status":row["status"],"outcome":row["outcome"],"cancellationSupported":row["cancellationSupported"],"correlationId":row["correlationId"]}
+
+def operator_unrelated(url,token):
+    detail=request(url,token,"/api/operator/v2/services/tui20-unrelated")["data"]
+    row=detail["summary"]
+    if row.get("serviceId")!="tui20-unrelated": raise RuntimeError("unrelated v2 service missing")
+    return {"servicePresent":True,"id":row["serviceId"],"installed":row["installed"],"configured":row["configured"],"running":row["running"],"healthStatus":row["healthStatus"],"updateStatus":row["updateStatus"]}
+
+# Linux acceptance follows the supported operator/v2 public entry. Independent
+# operation/audit observers below read the same real Core durable operation store.
+def operator_ready(term):
+    term.wait(("Service Lasso", "> tui20-fixture"),30)
+
+def operator_detail(term):
+    operator_ready(term)
+    term.write("\x1b[H"); term.wait(("> tui20-fixture",),20)
+    start=len(term.text); term.write("\r"); term.wait(("detail  tui20-fixture", "provider:"),30,start)
+
+def operator_lifecycle(term):
+    start=len(term.text); term.write("\t"); term.wait(("Focus: Views",),20,start)
+    term.write("\x1b[H")
+    for _ in range(5): term.write("\x1b[B")
+    start=len(term.text); term.write("\r"); term.wait(("lifecycle  tui20-fixture", "Form: available"),30,start)
+
+def operator_clear_settled(term):
+    record=getattr(term,"operator_record_path",None)
+    if record is None: raise RuntimeError("phase-owned operation record path unavailable")
+    start=len(term.text); term.write("x"); deadline=time.monotonic()+20
+    while time.monotonic()<deadline:
+        term.read()
+        footers=re.findall(r"\u2190/\u2192 view[^\r\n]*",operator_plain(term.text[start:]))
+        if footers and "x clear settled" not in footers[-1] and not os.path.lexists(record): return
+    raise RuntimeError("settled operation clear was not observed")
+
+def operator_action(term,action_id,name,url,token,observer):
+    # Read the actual current table for keyboard position, never invent an
+    # enabled action or submit outside the TUI's preview/confirmation path.
+    availability=request(url,token,"/api/operator/v2/services/tui20-fixture/lifecycle-availability")["data"]
+    caps=availability["capabilities"]
+    positions=[index for index,cap in enumerate(caps) if cap["id"]==action_id and cap["availability"]["available"]]
+    if len(positions)!=1: raise RuntimeError("required v2 action is unavailable")
+    before_ids=observer.ids()
+    start=len(term.text); term.write("r"); term.wait(("Form: available",),30,start)
+    term.write("\x1b[H")
+    for _ in range(positions[0]): term.write("\x1b[B")
+    term.action_phase="preview-await"; diagnostic_stage("action-preview-enter")
+    start=len(term.text); term.action_output_offset=start; term.write("\r"); term.wait(("Draft: "+action_id,),20,start)
+    start=len(term.text); term.write("\r"); term.wait(("Original preview targets:","Original effects:","Confirmation phrase:"),45,start)
+    fresh=operator_plain(term.text[start:])
+    matches=re.findall(r"Confirmation phrase: ([^\r\n]+)",fresh)
+    if not matches: raise RuntimeError("server-issued confirmation phrase unavailable")
+    phrase=matches[-1].strip()
+    if not phrase or len(phrase)>128: raise RuntimeError("server-issued confirmation phrase invalid")
+    if "tui20-fixture" not in fresh: raise RuntimeError("original preview target not reviewed")
+    term.action_phase="confirmation-ready"; diagnostic_stage("action-preview-return")
+    # Printable navigation/quit keys remain draft text. Without an Enter cut
+    # they must never issue an operation. Clear only that test input afterwards.
+    term.write("rjq"); time.sleep(.2); term.read()
+    frozen=observer.ids()
+    if frozen!=before_ids: raise RuntimeError("unconfirmed v2 preview created an operation")
+    term.write("\x15"); term.write(phrase)
+    term.action_phase="submission-attempted"; diagnostic_stage("action-submit-enter")
+    readback_start=len(term.text); term.write("\r")
+    term.action_phase="readback-await"; diagnostic_stage("action-readback-enter")
+    deadline=time.monotonic()+90; added=[]
+    while time.monotonic()<deadline:
+        term.read()
+        added=sorted(observer.ids()-before_ids)
+        if len(added)>1: raise RuntimeError("v2 action created more than one operation")
+        if len(added)==1:
+            row=operator_record(url,token,added[0])
+            if row.get("action")!=action_id or row.get("targetIds")!=["tui20-fixture"]: raise RuntimeError("v2 operation retargeted")
+            if row.get("outcome") is not None:
+                if row.get("status")!="succeeded" or row.get("outcome")!="succeeded" or row.get("cancellationSupported"): raise RuntimeError("v2 durable action failed")
+                term.wait(("Operation "+row["operationId"],"succeeded"),30,readback_start)
+                if "c cancel" in term.text[readback_start:]: raise RuntimeError("unsupported cancellation advertised")
+                term.action_phase="readback-complete"; diagnostic_stage("action-readback-return")
+                return row
+        time.sleep(.5)
+    raise RuntimeError("v2 durable readback unavailable")
+
+def operator_plain(text):
+    return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+
+def operator_audit(url,token,action):
+    value=request(url,token,"/api/audit?actor=tui20-native-operator&action="+action+"&limit=500")
+    rows=value.get("events")
+    if not isinstance(rows,list) or value.get("nextCursor") is not None: raise RuntimeError("actual Core audit observation incomplete")
+    if any(not isinstance(row,dict) or not isinstance(row.get("id"),str) for row in rows): raise RuntimeError("actual Core audit schema unavailable")
+    if len({row["id"] for row in rows})!=len(rows): raise RuntimeError("actual Core audit duplicated identity")
+    return rows
+
+def operator_assert_denials(before,after,expected_subjects):
+    prior_ids={row["id"] for row in before}
+    observed=[row for row in after if row["id"] not in prior_ids]
+    if len(observed)!=7 or {row.get("subject") for row in observed}!=expected_subjects or any(row.get("action")!="mcp.action.denied" or row.get("actor")!="tui20-native-operator" or row.get("statusCode")!=403 or row.get("reason")!="insufficient_profile" or row.get("metadata",{}).get("clientId")!="tui20-native-denied-client" or row.get("metadata",{}).get("action")!=row.get("subject") for row in observed): raise RuntimeError("actual v2 permission denial audit mismatch")
+
+def operator_success_audits(records,events):
+    matches=[]
+    for row in records:
+        count=sum(event.get("action")=="mcp.operation.succeeded" and event.get("actor")=="tui20-native-operator" and event.get("subject")==row["operationId"] and event.get("correlationId")==row["correlationId"] and event.get("metadata",{}).get("operationId")==row["operationId"] and event.get("metadata",{}).get("action")==row["action"] and event.get("metadata",{}).get("targetIds")==row["targetIds"] for event in events)
+        matches.append({"operationId":row["operationId"],"coreAuditCount":count})
+    if any(row["coreAuditCount"]!=1 for row in matches): raise RuntimeError("v2 correlated Core audit mismatch")
+    return matches
+
+def operator_five_actions(args,launch_fd,held,held_inode,identity,env,url,token,denied,outcome,observation,runtime,runtime_handoff):
+    before=operator_unrelated(url,token); observer=OperatorOperationObserver(args.root); adverse=[]; outcome["adverseAudit"]=adverse
+    for profile,label,expected in (("missing","missing-credential",2),("invalid","invalid-credential",0),("denied","scope-denied",0)):
+        count=len(observer.ids()); audit_before=operator_audit(url,token,"mcp.action.denied"); audit=len(audit_before)
+        if profile=="missing":
+            diagnostic_stage("bound-replacement-probe-enter")
+            outcome["heldExecutableBinding"]["replacementProbe"]=bound_replacement_probe(launch_fd,held,args.executable,held_inode,identity,profile,env,observation.setdefault("replacementProbe",[]))
+            diagnostic_stage("bound-replacement-probe-return"); diagnostic_stage("missing-credential-enter")
+            term=Terminal(launch_fd,args.executable,profile,env); term.wait((SAFE_CONFIGURATION_DIAGNOSTIC,),30)
+            expected_denials=0
+        elif profile=="invalid":
+            diagnostic_stage("invalid-credential-enter")
+            term=Terminal(launch_fd,args.executable,profile,env)
+            term.wait(("Runtime API unavailable", "401 Unauthorized"),30)
+            expected_denials=0
+        else:
+            diagnostic_stage("denied-credential-enter")
+            denied_table=request(url,denied,"/api/operator/v2/services/tui20-fixture/lifecycle-availability")["data"]
+            denied_caps=denied_table["capabilities"]
+            if any(cap["availability"]["available"] for cap in denied_caps): raise RuntimeError("read-only token admitted mutation")
+            expected_subjects={cap["id"] for cap in denied_caps if cap["id"]!="service_reload"}
+            if expected_subjects!={"service_install","service_configure","service_start","service_stop","service_restart","update_check","update_download"}: raise RuntimeError("guarded v2 denial coverage changed")
+            expected_denials=len(expected_subjects)
+            # Core #1974: availability currently labels insufficient_profile as
+            # dependency_blocked. Assert actual authorization audit independently.
+            audit_before=operator_audit(url,token,"mcp.action.denied"); audit=len(audit_before)
+            term=Terminal(launch_fd,args.executable,profile,env); operator_detail(term)
+            start=len(term.text); term.write("\t"); term.wait(("Focus: Views",),20,start)
+            term.write("\x1b[H")
+            for _ in range(5): term.write("\x1b[B")
+            start=len(term.text); term.write("\r"); term.wait(("lifecycle  tui20-fixture","Install dependencies blocked"),30,start)
+            if "Draft:" in term.text[start:]: raise RuntimeError("denied action allocated a draft")
+            term.write("\r"); term.read(.2)
+        outcome["terminals"].append({"terminal":label,"exit":term.close(expected)})
+        if profile=="missing": assert_safe_missing_credential(term.text,env); diagnostic_stage("missing-credential-return")
+        elif profile=="invalid": diagnostic_stage("invalid-credential-return")
+        else: diagnostic_stage("denied-credential-return")
+        after=len(observer.ids()); audit_rows=operator_audit(url,token,"mcp.action.denied"); audit_after=len(audit_rows)
+        if profile=="denied":
+            operator_assert_denials(audit_before,audit_rows,expected_subjects)
+        adverse.append({"case":label,"beforeOperationCount":count,"afterOperationCount":after,"noOperation":after==count,"coreDeniedAuditBefore":audit,"coreDeniedAuditAfter":audit_after,"coreDeniedAuditDelta":audit_after-audit})
+        if after!=count or audit_after-audit!=expected_denials: raise RuntimeError("v2 adverse lifecycle receipt invalid")
+    diagnostic_stage("allowed-five-actions-enter")
+    term=Terminal(launch_fd,args.executable,"native",env); operator_detail(term); operator_lifecycle(term)
+    term.wait(("Reload unsupported",),20)
+    unchanged=observer.ids()
+    reload_table=request(url,token,"/api/operator/v2/services/tui20-fixture/lifecycle-availability")["data"]["capabilities"]
+    reload_positions=[i for i,cap in enumerate(reload_table) if cap["id"]=="service_reload" and not cap["availability"]["supported"] and not cap["availability"]["available"]]
+    if len(reload_positions)!=1: raise RuntimeError("reload capability unavailable or changed")
+    term.write("\x1b[H")
+    for _ in range(reload_positions[0]): term.write("\x1b[B")
+    term.write("\r"); term.read(.2)
+    if observer.ids()!=unchanged or "Draft: service_reload" in term.text: raise RuntimeError("unsupported reload submitted")
+    action_readbacks=[]
+    for index,(action_id,name) in enumerate((("service_install","install"),("service_configure","config"),("service_start","start"),("service_stop","stop"),("service_restart","restart"))):
+        # Selected Core defaults to 120 actor requests per 60 seconds. This
+        # proof also performs independent reads; pace only after the prior
+        # terminal result and before acquiring the next confirmation/TTL.
+        if index:
+            operator_clear_settled(term)
+            time.sleep(20)
+        diagnostic_stage("allowed-action-enter")
+        row=operator_action(term,action_id,name,url,token,observer)
+        diagnostic_stage("allowed-action-return")
+        action_readbacks.append({key:row.get(key) for key in ("operationId","action","targetIds","status","outcome","cancellationSupported","correlationId")})
+    outcome["terminals"].append({"terminal":"allowed","exit":term.close()})
+    runtime_pid=runtime.pid if runtime is not None else runtime_handoff["_runtimePID"]; runtime_birth=runtime.tui20_birth if runtime is not None else runtime_handoff["_runtimeBirth"]
+    write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"coreRuntimePID":runtime_pid,"runtimeBirth":runtime_birth,"tuiChildPID":term.child.pid,"tuiChildBirth":term.child.tui20_birth,"sourceCommit":identity["sourceCommit"],"binarySHA256":identity["binarySHA256"],"phase":"normal_q_exit","immutableExecutionHeld":True,"ptyHeld":False})
+    diagnostic_stage("allowed-five-actions-return"); diagnostic_stage("reconnect-enter")
+    term=Terminal(launch_fd,args.executable,"native",env)
+    last_id=action_readbacks[-1]["operationId"]
+    term.wait(("Operation "+last_id,"succeeded"),30)
+    operator_detail(term)
+    outcome["terminals"].append({"terminal":"reconnect","exit":term.close()})
+    diagnostic_stage("reconnect-return")
+    records=[{key:row.get(key) for key in ("operationId","action","targetIds","status","outcome","cancellationSupported","correlationId")} for row in (operator_record(url,token,operation_id) for operation_id in sorted(observer.ids()))]
+    if len(records)!=5 or sorted(records,key=lambda row:row["operationId"])!=sorted(action_readbacks,key=lambda row:row["operationId"]) or len({row["operationId"] for row in records})!=5: raise RuntimeError("v2 completed operation replay or audit mismatch")
+    events=operator_audit(url,token,"mcp.operation.succeeded")
+    matches=operator_success_audits(records,events)
+    if operator_unrelated(url,token)!=before: raise RuntimeError("v2 unrelated state changed")
+    write_json(os.path.join(args.root,"operation-audit.json"),{"operations":records,"coreAudit":matches})
+    outcome.update({"outcome":"succeeded","actions":["install","config","start","stop","restart"],"adverseAudit":adverse,"reloadDenied":True,"cancellation":{"advertised":False,"supportedActionTested":False},"reconnect":{"completedOperationNoReplay":True,"pendingReconciliation":"not_exercised_unqualified"},"unrelatedService":{**before,"unchangedAfterFiveActions":True},"fixtureOperationCount":len(records)})
+
 def detail(term):
     # Initial dashboard metadata may render before the service snapshot. A
     # fixed-width real service row, not bare ID/query echo, precedes any input.
@@ -951,8 +1180,13 @@ def _main_attempt(observation):
         held,identity,held_inode=hold_candidate(args.executable,args.source_commit,observation.setdefault("acquisition",[])); outcome["candidateIdentity"]=identity
         if runtime is not None: write_owner_birth(args,runtime,identity)
         launch_fd,darwin_protected,binding=bound_execution(held,identity,args.root,observation.setdefault("acquisition",[])); outcome["heldExecutableBinding"]=binding
+        if sys_platform()=="linux":
+            config=os.path.join(args.root,"tui-config"); os.mkdir(config,0o700)
+            env.update({"XDG_CONFIG_HOME":config,"NO_COLOR":"1"})
         if args.adverse_controller_crash:
-            term=Terminal(launch_fd,args.executable,"native",env); term.wait(("Runtime identity:",),30); detail(term)
+            term=Terminal(launch_fd,args.executable,"native",env)
+            if sys_platform()=="linux": operator_detail(term)
+            else: term.wait(("Runtime identity:",),30); detail(term)
             runtime_pid=runtime.pid if runtime is not None else runtime_handoff["_runtimePID"]; runtime_birth=runtime.tui20_birth if runtime is not None else runtime_handoff["_runtimeBirth"]
             write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"coreRuntimePID":runtime_pid,"runtimeBirth":runtime_birth,"tuiChildPID":term.child.pid,"tuiChildBirth":term.child.tui20_birth,"sourceCommit":identity["sourceCommit"],"binarySHA256":identity["binarySHA256"],"phase":"controller_failure_live","immutableExecutionHeld":True,"ptyHeld":True})
             deadline=time.monotonic()+15
@@ -968,13 +1202,18 @@ def _main_attempt(observation):
             write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"coreRuntimePID":runtime_pid,"runtimeBirth":runtime_birth,"tuiChildPID":term.child.pid,"tuiChildBirth":term.child.tui20_birth,"sourceCommit":identity["sourceCommit"],"binarySHA256":identity["binarySHA256"],"phase":"normal_q_exit","immutableExecutionHeld":True,"ptyHeld":False})
             return
         if args.adverse_owner_death:
-            term=Terminal(launch_fd,args.executable,"native",env); term.wait(("Runtime identity:",),30); detail(term)
+            term=Terminal(launch_fd,args.executable,"native",env)
+            if sys_platform()=="linux": operator_detail(term)
+            else: term.wait(("Runtime identity:",),30); detail(term)
             runtime_pid=runtime.pid if runtime is not None else runtime_handoff["_runtimePID"]; runtime_birth=runtime.tui20_birth if runtime is not None else runtime_handoff["_runtimeBirth"]
             write_json(os.path.join(args.root,"external-owner-live.json"),{"externalOwnerPID":os.getpid(),"ownerBirth":process_birth(os.getpid()),"coreRuntimePID":runtime_pid,"runtimeBirth":runtime_birth,"tuiChildPID":term.child.pid,"tuiChildBirth":term.child.tui20_birth,"sourceCommit":identity["sourceCommit"],"binarySHA256":identity["binarySHA256"],"phase":"owner_death_live","immutableExecutionHeld":True,"ptyHeld":True})
             # This is an adverse owner death while the production TUI is live.
             # The observer owns Core/JWKS and records the later external reaping;
             # no child is force-closed and no terminal status is fabricated.
             os.kill(os.getpid(),signal.SIGKILL)
+        if sys_platform()=="linux":
+            operator_five_actions(args,launch_fd,held,held_inode,identity,env,url,token,denied,outcome,observation,runtime,runtime_handoff)
+            return
         before=unrelated(url,token); adverse=[]
         outcome["adverseAudit"]=adverse
         # Current TUI20 legacy flow performs two fresh availability GETs:

@@ -1810,3 +1810,42 @@ TUI31 exclusive-name returning predicate precode: reconstruct exact prefix/hex/c
 TUI31 parent failed-file acquisition precode: SAME actual parent directory/native source/name and serial parent archive-acquisition deadline feed distinct exclusive O_WRONLY|O_CREAT|O_EXCL writer and independently opened O_RDONLY reader occurrences. Both use nonblocking CLOEXEC/beneath/nosymlink/nomagiclink/noxdev exact native open, actual typed lowFD lift and separate filesystem/statx observations. Full output/clock exclusions protect directory/path/declarations/candidate/name/identity/native name sources before effects. Native collisions and all partial/late prefixes retain actual FDs without fallback/retry/close. Reader must match writer native object tuple/filesystem/size through distinct native entries. No policy/source/finance/custody grant from acquisition success; parent-native context/creation/25-purpose graph and actual controlling caller must dominate invocation.TUI31 failed-file containing and returning precode: distinct typed parent writer/reader owners are reserved in SAME prebirth arena with actual sizeof/alignment, separate from child archive entries. Returning acquisition predicates replay complete output/clock/source exclusions and original ten-observation envelope from saved first index, never renewed remaining capacity; reader independently rejoins SAME writer/native tuple/distinct FD. These are prebirth zero-size acquisition originals, not post-emission stability or archive authority. Synthetic production-body fixtures retain substitutions explicitly UNRUN; parent policy/creation/full-purpose graph, authentic inputs/finance/provider/entry and terminal/late-ACK remain unfinished prerequisites.
 TUI31 real deadline-exclusion fixture precode: independently fixture-owned actual deadline root/sequence enrollment and actual parent-directory preflight must reject a birth original overlapping the genuine clock-output roster before any directory occurrence/path/declaration/native mutation. Use synthetic clock only, without substituting sequence_excludes_output; this addresses the earlier stub coverage limitation and confers no native/provider/finance authority. No production once-state reset or admitted entry bypass.
 TUI31 parent LSM acquisition precode: distinct preowned current/fscreate owners and aligned buffers must retain actual issuing-thread gettid-before, lsm_get_self_attr and gettid-after, each native call separately bracketed by SAME serial original operation deadline. Readonly shared original-view interpreter reconstructs selected32B header/framing/current versus explicit-empty fscreate semantics from original native inputs/outputs rather than copying child context. Full owner/backing/clock source exclusions precede preparation and native effects; no second allocation/retry, no policy/creation authentication from SELinux ID or thread equality. Existing normal observer API semantics stay unchanged; separate parent caller/source/provider/whole parser graph/containing qualification still required.
+
+## Issue #112 Stack Monitor homepage
+
+SPEC-001 TUI-DASHBOARD / TUI-KEYBOARD; selected operator/v2 B04 / E01.
+Replace only the overview presentation with a compact stack header, counts of
+observed running/stopped/unknown and healthy/unhealthy/unknown summaries,
+keyboard-selected service rows and a summary-only inspector. Counts describe
+the current filtered observation, never an unobserved fleet total. Preserve
+snapshot pending, failed, empty, incomplete and stale distinctions and exclude
+rows belonging to a prior read selection. Unknown health stays unknown.
+Wide terminals place list and inspector beside each other; 80-column terminals
+stack compact panels. The selected row follows navigation and resize. Focus
+and working shortcuts stay explicit; existing help, navigation, confirmation
+and operation safety paths remain unchanged. No telemetry, uptime, checks,
+latency, new actions or Core contracts are introduced. Deterministic fixture
+tests cover wide/80 views, selection/Enter parity, resize, failure and privacy;
+full Go tests/vet/build are source evidence, not native runtime acceptance.
+
+Issue #112 failure refinement: preserve the existing operator/v2 startup marker,
+explicit safe runtime-unavailable status, and read-only bootstrap retry on r
+when discovery failed; guard concurrent bootstrap retries. No mutation replay.
+
+Issue #112 hosted proof prerequisites: the synthetic terminal fixture must
+produce graph/inbox/queue/audit observations only after their actual Right
+gestures; retain readiness, actual waitpid/EOF and quit assertions. Ordinary
+workflow pins reviewed Core develop 8ea20e0ad1aa5f963153953d3f83832be8f1b5a2
+which supplies those read contracts; keep dispatch override/ancestry checks.
+This changes proof inputs only, never native or release qualification gates.
+
+## TUI-ACCEPTANCE-112 Linux operator/v2 prerequisite
+
+Issue #20 / #112 / PR #113 bounded Linux migration is specified in
+../project/TUI112-LINUX-V2-NATIVE-PREREQUISITE.md. Existing complete native
+ownership/negative/five-action acceptance remains mandatory. Broader #20 stays
+open; this supplies no Windows/native/publication or release qualification.
+
+Linux native v2 migration also verifies literal terminal KeySpace in the
+confirmation editor. Preserve the exact server phrase (including spaces),
+reject altered/missing spaces, and retain explicit Enter as the submit cut.

@@ -26,22 +26,31 @@ test('private connection rejects broad permissions and remote token destinations
 test('actual synthetic terminal waits readiness and reaps after stream EOF before exit',{skip:process.platform==='win32'},async()=>{
  const root=await mkdtemp(path.join(tmpdir(),'tui-e2e-terminal-'));try{
   const executable=path.join(root,'terminal.py');
+  const observations=path.join(root,'observations.json');
   await writeFile(executable,`#!/usr/bin/env python3
-import os,sys,time,tty
+import os,sys,time,tty,json
+observations=${JSON.stringify(observations)}
+routes=iter(['/graph','/inbox','/queue','/audit'])
 tty.setraw(0)
 time.sleep(.25)
 print('Service Lasso  operator/v2\\nError: 404 Not Found',flush=True)
 while True:
  b=os.read(0,1)
+ if b==bytes([27]):
+  if os.read(0,1)+os.read(0,1)!=b'[C':raise RuntimeError('unexpected synthetic key')
+  route=next(routes)
+  with open(observations) as source:rows=json.load(source)
+  rows.append({'method':'GET','pathname':'/api/operator/v2'+route,'statusCode':200})
+  with open(observations,'w') as target:json.dump(rows,target)
  if b==b'q':
   for fd in [0,1,2]:os.close(fd)
   time.sleep(.25)
   os._exit(0)
 `,{mode:0o700});
   const connection=path.join(root,'connection.json');await writeFile(connection,JSON.stringify({url:'http://127.0.0.1:12345',token:'synthetic-terminal-fixture-only'}),{mode:0o600});
-  const output=path.join(root,'proof');const observations=path.join(root,'observations.json');await writeFile(observations,JSON.stringify([{method:'GET',pathname:'/api/operator/v2/services',statusCode:200}]));const driver=path.resolve('scripts/local-e2e-pty.py');
+  const output=path.join(root,'proof');await writeFile(observations,JSON.stringify([{method:'GET',pathname:'/api/operator/v2/services',statusCode:200}]));const driver=path.resolve('scripts/local-e2e-pty.py');
   const exit=await new Promise((resolve,reject)=>{const child=spawn(process.env.TUI_E2E_TEST_PYTHON??(process.platform==='win32'?'python':'python3'),['-B',driver,'--binary',executable,'--connection-file',connection,'--output',output,'--mode','v2','--observations',observations],{stdio:['ignore','pipe','pipe']});child.on('error',reject);child.on('close',resolve);});
-  assert.equal(exit,0);const result=JSON.parse(await readFile(path.join(output,'result.json')));
+  assert.equal(exit,0);assert.deepEqual(JSON.parse(await readFile(observations)).map(row=>row.pathname),['/api/operator/v2/services','/api/operator/v2/graph','/api/operator/v2/inbox','/api/operator/v2/queue','/api/operator/v2/audit']);const result=JSON.parse(await readFile(path.join(output,'result.json')));
   assert.equal(result.status,'passed');assert.equal(result.reason,null);assert.equal(result.exitCode,0);assert.equal(result.actualWaitpid,true);assert.equal(result.interruptedForCleanup,false);
   assert.equal(result.readyBeforeKeys,true);assert.equal(result.tokenLeaked,false);assert.ok(result.qToReapSeconds>=.2);assert.ok(result.qToReapSeconds<2);
   const ready=result.events.find(row=>Object.hasOwn(row,'readyAtSeconds'));const key=result.events.find(row=>row.key==='q');assert.ok(key.atSeconds>=ready.readyAtSeconds);

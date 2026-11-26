@@ -7,19 +7,18 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-isatty"
 	"github.com/service-lasso/service-lasso-tui/internal/api"
 )
 
 var (
-	tuiTitleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("87")).Background(lipgloss.Color("24"))
-	tuiMetaStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("109"))
-	tuiSelectedStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("87"))
-	tuiFooterStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Background(lipgloss.Color("236"))
-	tuiErrorStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("203"))
-	tuiWarningStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	tuiTitleStyle    = operatorBandStyle.Bold(true)
+	tuiMetaStyle     = operatorBaseStyle.Foreground(operatorMuted)
+	tuiSelectedStyle = operatorFocusStyle
+	tuiFooterStyle   = operatorBandStyle
+	tuiErrorStyle    = operatorBaseStyle.Bold(true).Foreground(operatorCoral)
+	tuiWarningStyle  = operatorBaseStyle.Foreground(operatorAmber)
 )
 
 func tuiColorEnabled() bool {
@@ -36,19 +35,19 @@ func tuiStyledLines(lines []string, width int) []string {
 	for i, line := range lines {
 		switch {
 		case i == 0:
-			styled[i] = tuiTitleStyle.Width(width).Render("▌ " + line)
+			styled[i] = tuiTitleStyle.Render(padLine(" SL  "+line, width))
 		case i == 1:
-			styled[i] = tuiMetaStyle.Render(line)
+			styled[i] = tuiMetaStyle.Render(padLine(line, width))
 		case strings.HasPrefix(line, "> "):
-			styled[i] = tuiSelectedStyle.Render(line)
+			styled[i] = tuiSelectedStyle.Render(padLine(line, width))
 		case strings.HasPrefix(line, "Error:"):
-			styled[i] = tuiErrorStyle.Render(line)
+			styled[i] = tuiErrorStyle.Render(padLine(line, width))
 		case strings.HasPrefix(line, "Retained warning:"), strings.HasPrefix(line, "Storage custody:"), strings.HasPrefix(line, "Original service refresh failed:"):
-			styled[i] = tuiWarningStyle.Render(line)
+			styled[i] = tuiWarningStyle.Render(padLine(line, width))
 		case strings.HasPrefix(line, "←/→"):
 			styled[i] = tuiFooterStyle.Width(width).Render(line)
 		default:
-			styled[i] = line
+			styled[i] = operatorBaseStyle.Render(padLine(line, width))
 		}
 	}
 	return styled
@@ -145,9 +144,32 @@ func (m operatorModel) rowLines() []string {
 	case "detail":
 		if m.detail != nil {
 			r := m.detail
-			rows = append(rows, r.Summary.DisplayName, r.Summary.Description, "provider: "+r.Provider.Role+" "+operatorReason(r.Provider.Availability))
-			for _, edge := range r.Dependencies {
-				rows = append(rows, fmt.Sprintf("%s -> %s [%s %s]", edge.FromServiceID, edge.ToServiceID, edge.Kind, edge.State))
+			tabs := []string{"1 Overview", "2 Dependencies", "3 Endpoints"}
+			if m.detailTab >= 0 && m.detailTab < len(tabs) {
+				tabs[m.detailTab] = "[" + tabs[m.detailTab] + "]"
+			}
+			rows = append(rows, strings.Join(tabs, "   "))
+			switch m.detailTab {
+			case 1:
+				if len(r.Dependencies) == 0 {
+					rows = append(rows, "No dependencies reported.")
+				}
+				for _, edge := range r.Dependencies {
+					rows = append(rows, fmt.Sprintf("%s -> %s [%s %s]", edge.FromServiceID, edge.ToServiceID, edge.Kind, edge.State))
+				}
+			case 2:
+				if len(r.Endpoints) == 0 {
+					rows = append(rows, "No endpoints reported.")
+				}
+				for _, ep := range r.Endpoints {
+					port := "unknown"
+					if ep.Port != nil {
+						port = strconv.Itoa(*ep.Port)
+					}
+					rows = append(rows, fmt.Sprintf("%s %s port=%s %s", ep.Label, ep.Protocol, port, operatorReason(ep.Availability)))
+				}
+			default:
+				rows = append(rows, r.Summary.DisplayName, r.Summary.Description, "provider: "+r.Provider.Role+" "+operatorReason(r.Provider.Availability))
 			}
 		}
 	case "graph":
@@ -317,8 +339,8 @@ func (m operatorModel) formStatus() (string, bool) {
 }
 func (m operatorModel) rowCount() int { return len(m.displayRows()) }
 func (m operatorModel) View() string {
-	if m.dashboardEnabled() {
-		return m.dashboardView()
+	if m.journey == "overview" && m.width >= 80 && m.height >= 20 && !m.draft.Dirty && m.draft.Preview == nil && !m.draft.Sent && !m.draft.Retired && m.operation == nil && m.warning == "" && m.custodyWarning == "" && m.terminalRefreshWarning == "" && len(m.fieldErrors) == 0 {
+		return m.operatorStackView()
 	}
 	focusLine := -1
 	editorLine := -1
@@ -327,12 +349,17 @@ func (m operatorModel) View() string {
 	warningLine := -1
 	operationLine := -1
 	retainedLine := -1
-	lines := []string{"Service Lasso  operator/v2", m.journey + "  " + m.service + "  " + m.filter()}
+	lines := []string{"Service Lasso  operator/v2 · " + m.connection, m.journey + "  " + m.service + "  " + m.filter()}
 	focus := "Rows"
 	if m.focus == 0 {
 		focus = "Views"
 	}
-	lines = append(lines, "Focus: "+focus+" (Tab changes focus)")
+	tabWidth := m.width
+	if tabWidth >= 80 {
+		tabWidth -= 4
+	}
+	navText := ansi.Strip(m.operatorTabs(tabWidth))
+	lines = append(lines, "Focus: "+focus+" (Tab changes focus)", navText)
 	if m.journey == "overview" {
 		mode := "all"
 		if m.favoritesOnly {
@@ -530,11 +557,36 @@ func (m operatorModel) View() string {
 	} else if m.declaredInspectionAction() != nil {
 		lines = append(lines, "Alt+PgUp/PgDn inspect declared schema and reference labels (read-only)")
 	}
-	lines = append(lines, "←/→ view  ↑/↓ select  Enter/e edit  r refresh  n next  c cancel  x clear settled  q quit")
-	lines = operatorViewport(lines, m.height, focusLine, []int{custodyLine, editorLine, warningLine, errorLine, retainedLine, operationLine, 0, 1, 2, len(lines) - 1})
-	for i, line := range lines {
-		lines[i] = ansi.Truncate(operatorText(line), m.width, "")
+	footer := "←/→ view  ↑/↓ select  Enter/e edit  r refresh  n next"
+	editingDraft := !m.draft.Sent && !m.draft.Retired && (m.draft.Dirty || m.draft.Preview != nil)
+	if m.operation != nil && !m.mutationBlocked() && !editingDraft && m.logSearchDraft == nil && !m.declaredReadReview {
+		if m.operation.Operation.CancellationSupported && m.operation.Operation.Outcome == nil && !m.cancelInFlight && !m.cancelAttempted {
+			footer += "  c cancel"
+		}
+		if m.operation.Operation.CanClear() && !m.legacyRecord {
+			footer += "  x clear settled"
+		}
 	}
-	lines = tuiStyledLines(lines, m.width)
+	lines = append(lines, footer+"  q quit")
+	lines = operatorViewport(lines, m.height, focusLine, []int{custodyLine, editorLine, warningLine, errorLine, retainedLine, operationLine, 0, 1, 2, len(lines) - 1})
+	contentWidth := m.width
+	margin := 0
+	if m.width >= 80 {
+		margin = 2
+		contentWidth -= 2 * margin
+	}
+	for i, line := range lines {
+		if line == navText {
+			lines[i] = operatorRender(operatorBandStyle, m.operatorTabs(contentWidth))
+		} else {
+			lines[i] = ansi.Truncate(operatorText(line), contentWidth, "")
+		}
+	}
+	lines = tuiStyledLines(lines, contentWidth)
+	if margin > 0 {
+		for i, line := range lines {
+			lines[i] = operatorRender(operatorCanvasStyle, strings.Repeat(" ", margin)+padLine(line, contentWidth)+strings.Repeat(" ", margin))
+		}
+	}
 	return strings.Join(lines, "\n")
 }

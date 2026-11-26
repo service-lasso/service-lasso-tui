@@ -1,3 +1,5 @@
+Issue #114 / SPEC-007: admitted overview summary, inspector and derived attention observations; shared visual theme across read/form/safety states. Historical latency, uptime, restarts and health strips remain unavailable without a documented admitted contract.
+
 # TUI capability matrix
 
 Current issue1 source unit: fix/1-complete-client-contract, PR33 targeting develop. The default command now selects operator/v2; --compat-v1 explicitly selects the historical adapter. The current dirty source is incomplete and UNRUN. No current compile, source approval, native acceptance, protected publication or GA claim is made. Earlier “implemented/locally tested” wording below describes historical compatibility work only; it is not evidence for this current head.
@@ -145,3 +147,21 @@ Author17 current readonly declared inspection (source only, UNRUN): actual Input
 
 ## OPV2-R31-LOG-SEARCH-1 source checkpoint (author18)
 Exact selected CODECS109 search query<=256UTF8bytes is authored in actual client/load/reducer/view and bound to connection/service/stream/context/query tickets, current page selections and remembered positions. `/` opens a separate read editor; Enter starts a fresh first page, Escape retains the prior query, Ctrl+u plus Enter clears. Original OperatorLogs callers remain no-search. Invalid UTF8/over-byte requests deny before GET; escaped display never copies back. Actual synthetic HTTP/reducer/Unicode/custody source cases are UNRUN, not Core/native issuance. Core current v2 log producer, sourceHandle catalog and tail/source/run/rotation ownership remain UNSUPPLIED/UNPROVEN full R31 obligations; no v1q fallback or source/native/full-delivery GO.
+## Issue #112 Stack Monitor homepage
+
+SPEC-001 TUI-DASHBOARD / TUI-KEYBOARD; selected operator/v2 B04 / E01.
+Replace only the overview presentation with a compact stack header, counts of
+observed running/stopped/unknown and healthy/unhealthy/unknown summaries,
+keyboard-selected service rows and a summary-only inspector. Counts describe
+the current filtered observation, never an unobserved fleet total. Preserve
+snapshot pending, failed, empty, incomplete and stale distinctions and exclude
+rows belonging to a prior read selection. Unknown health stays unknown.
+Wide terminals place list and inspector beside each other; 80-column terminals
+stack compact panels. The selected row follows navigation and resize. Focus
+and working shortcuts stay explicit; existing help, navigation, confirmation
+and operation safety paths remain unchanged. No telemetry, uptime, checks,
+latency, new actions or Core contracts are introduced. Deterministic fixture
+tests cover wide/80 views, selection/Enter parity, resize, failure and privacy;
+full Go tests/vet/build are source evidence, not native runtime acceptance.
+
+Issue #114 telemetry successor: service-lasso/service-lasso#1973 owns admitted Core health history, uptime, restart, latency and incident projections. Current Stack labels these values unavailable.

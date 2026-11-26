@@ -121,7 +121,7 @@ func(m *operatorModel)editKey(msg tea.KeyMsg)tea.Cmd{
  if m.draft.ReferenceMode&&m.draft.Preview==nil{switch msg.String(){case "tab","shift+tab","alt+n":m.pickPayloadReference(true);return nil;case "left","right","up","down","home","end","delete","backspace":return nil}}
  switch msg.String(){case "left":m.draft.moveCursor(false);return nil;case "right":m.draft.moveCursor(true);return nil;case "up":m.draft.moveLine(false);return nil;case "down":m.draft.moveLine(true);return nil;case "home":m.draft.lineBoundary(false);return nil;case "end":m.draft.lineBoundary(true);return nil;case "delete":m.draft.erase(false);return nil;case "backspace":m.draft.erase(true);return nil}
  if m.draft.Preview!=nil{
-  switch msg.String(){case "alt+pgdown":m.movePreviewReview(true);case "alt+pgup":m.movePreviewReview(false);case "alt+home":m.draft.PreviewReview=false;case "enter":return m.submitPreview();case "ctrl+u":m.setEditorText("");default:if msg.Type==tea.KeyRunes{m.draft.insert(string(msg.Runes),128)}};return nil
+  switch msg.String(){case "alt+pgdown":m.movePreviewReview(true);case "alt+pgup":m.movePreviewReview(false);case "alt+home":m.draft.PreviewReview=false;case "enter":return m.submitPreview();case "ctrl+u":m.setEditorText("");default:if msg.Type==tea.KeyRunes{m.draft.insert(string(msg.Runes),128)}else if msg.Type==tea.KeySpace&&!msg.Alt{m.draft.insert(" ",128)}};return nil
  }
  if m.literalEditorInputAllowed(){switch msg.String(){case "ctrl+n":m.insertEditorText("\n");return nil;case "ctrl+t":m.insertEditorText("\t");return nil}}
  if m.payloadKey(msg){return nil}

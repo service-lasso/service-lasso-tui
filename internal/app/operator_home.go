@@ -39,6 +39,7 @@ func (m operatorModel) operatorStackView() string {
 	}
 	running, stopped, unknown, healthy, unverified, attention := 0, 0, 0, 0, 0, 0
 	attentionRows := []string{}
+	failedChecks, httpPassed, httpFailed := 0, 0, 0
 	for _, s := range services {
 		switch s.Running {
 		case "yes":
@@ -55,9 +56,25 @@ func (m operatorModel) operatorStackView() string {
 		default:
 			unverified++
 		}
+		checks, checkStatus := m.stackCheckFor(s, now)
+		httpCheckFailed := false
+		if checkStatus == "" {
+			httpCheckFailed = !checks.latest().Passed
+			if httpCheckFailed {
+				httpFailed++
+			} else {
+				httpPassed++
+			}
+		}
 		if s.Running == "no" || s.HealthStatus == "unhealthy" {
 			attention++
 			attentionRows = append(attentionRows, operatorText(s.ServiceID)+"  ·  "+stackObservedStatus(s)+"  ·  observed summary")
+		} else if httpCheckFailed {
+			latest := checks.latest()
+			at, _ := time.Parse(time.RFC3339Nano, latest.At)
+			failedChecks++
+			attention++
+			attentionRows = append(attentionRows, fmt.Sprintf("%sZ  %s  ·  Latest HTTP check failed · %d ms", at.UTC().Format("15:04:05"), operatorText(s.ServiceID), latest.DurationMS))
 		}
 	}
 	state := "Pending: no snapshot loaded for this selection."
@@ -144,11 +161,24 @@ func (m operatorModel) operatorStackView() string {
 		values[1] = fmt.Sprintf("%d stopped or unhealthy", attention)
 		if !wide {
 			values[0] = fmt.Sprintf("%d/%d checked", checked, len(services))
+		}
+		if !wide || failedChecks > 0 {
 			values[1] = attentionCount
 		}
 		if checked == 0 {
 			colors[0] = operatorMuted
 		} else if healthy < checked {
+			colors[0] = operatorAmber
+		}
+	}
+	httpChecked := httpPassed + httpFailed
+	if httpChecked != 0 {
+		values[0] = fmt.Sprintf("%d of %d HTTP checked", httpChecked, len(services))
+		if !wide {
+			values[0] = fmt.Sprintf("%d/%d HTTP", httpChecked, len(services))
+		}
+		colors[0] = operatorGreen
+		if httpFailed != 0 {
 			colors[0] = operatorAmber
 		}
 	}
@@ -177,6 +207,9 @@ func (m operatorModel) operatorStackView() string {
 				text = values[i]
 			} else if line == 2 {
 				text = ""
+				if i == 0 && httpChecked != 0 {
+					text = fmt.Sprintf("%d pass · %d fail", httpPassed, httpFailed)
+				}
 			}
 			if i > 0 {
 				row += operatorRender(operatorCanvasStyle, " ")
@@ -210,10 +243,22 @@ func (m operatorModel) operatorStackView() string {
 	leftWidth := (inner - 2) * 58 / 100
 	rightWidth := inner - leftWidth - 2
 	listHeight, inspectorHeight := bodyHeight, bodyHeight
+	stripWidth := 0
+	if wide {
+		stripWidth = 15
+	} else if w >= 80 {
+		stripWidth = 12
+	}
 	if !wide {
 		leftWidth, rightWidth = inner, inner
 		inspectorHeight = 4
 		listHeight = max(3, bodyHeight-inspectorHeight)
+	}
+	stateWidth := 0
+	nameWidth := max(8, (leftWidth-5)*60/100)
+	if stripWidth > 0 {
+		stateWidth = 17
+		nameWidth = leftWidth - 6 - stateWidth - stripWidth
 	}
 	// Reserve the service rows here. Render only the visible rows once the
 	// viewport and selection offset are known.
@@ -268,47 +313,53 @@ func (m operatorModel) operatorStackView() string {
 				style = operatorFocusStyle.Foreground(operatorTextColor)
 				rail, marker = operatorRender(operatorFocusStyle, "▌"), "> "
 			}
-			prefix := marker + padLine(operatorText(s.ServiceID), max(8, (leftWidth-5)*60/100)) + "  "
-			tail := padLine(stackObservedStatus(s), leftWidth-1-ansi.StringWidth(prefix))
-			list[1+j] = rail + operatorRender(style, prefix) + operatorRender(style.Foreground(stackStatusColor(s)), tail)
+			prefix := marker + padLine(operatorText(s.ServiceID), nameWidth) + "  "
+			statusWidth := leftWidth - 1 - ansi.StringWidth(prefix)
+			if stripWidth > 0 {
+				statusWidth = stateWidth
+			}
+			checks, status := m.stackCheckFor(s, now)
+			serviceStatus, serviceColor := stackCheckServiceStatus(s, checks, status)
+			tail := operatorRender(style.Foreground(serviceColor), padLine(serviceStatus, statusWidth))
+			if stripWidth > 0 {
+				tail += operatorRender(style, " ") + stackCheckStrip(checks, status, style, stripWidth)
+			}
+			list[1+j] = rail + operatorRender(style, prefix) + tail
 		}
 	}
 	if columnHeader {
-		header := "   " + padLine("NAME", max(8, (leftWidth-5)*60/100)) + "  STATE"
+		header := "   " + padLine("NAME", nameWidth) + "  STATE"
+		if stripWidth > 0 {
+			header = "   " + padLine("NAME", nameWidth) + "  " + padLine("STATE", stateWidth) + " 15M CHECKS"
+		}
 		list = append(list[:1], append([]string{operatorRender(operatorBaseStyle.Foreground(operatorMuted), padLine(header, leftWidth))}, list[1:]...)...)
 	}
 	footer := fmt.Sprintf(" running %d · stopped %d · unknown %d", running, stopped, unknown)
+	if stripWidth > 0 && m.focus == 1 {
+		footer = padLine(footer, leftWidth-19) + "█ pass ▂ fail · gap"
+	}
 	list[len(list)-1] = operatorRender(operatorBandStyle.Foreground(operatorMuted), padLine(footer, leftWidth))
 	inspector := []string{"No selected service observation."}
 	inspectorTitle := "INSPECTOR"
-	inspectorStatus := ""
-	inspectorColor := operatorMuted
-	if m.focus == 1 && m.row >= 0 && m.row < len(services) {
-		s := services[m.row]
-		inspectorTitle = operatorText(s.DisplayName)
-		inspectorStatus = strings.ToUpper(stackObservedStatus(s))
-		inspectorColor = stackStatusColor(s)
-		inspector = []string{"ID: " + operatorText(s.ServiceID), "Runtime: " + stackRunningLabel(s.Running) + " · Health: " + operatorText(s.HealthStatus), "Installed: " + operatorText(s.Installed) + " · Configured: " + operatorText(s.Configured), "Update: " + operatorText(s.UpdateStatus), operatorText(s.Description), "Latency / check history: unavailable", "Uptime / restarts: unavailable"}
-		if wide && inspectorHeight >= 13 {
-			inspector = append(inspector[:5], "", "TELEMETRY", "Latency / check history: unavailable", "Uptime / restarts: unavailable")
-		}
-	}
 	if m.focus == 0 {
 		inspector = []string{"Focus: Views", "↑↓ select a declared view", "Enter opens · Tab returns to services", "Unavailable views retain API admission."}
 	}
-	if !wide && m.focus == 1 && m.row >= 0 && m.row < len(services) {
-		inspector = []string{inspector[0], inspector[1], "Latency / history / uptime / restarts: unavailable"}
-	}
-	// Keep unavailable telemetry explicit at compact heights too.
-	if len(inspector) > inspectorHeight-1 && inspectorHeight >= 4 {
-		inspector = append(inspector[:inspectorHeight-3], "Latency / history: unavailable", "Uptime / restarts: unavailable")
-	}
 	detail := operatorPane(inspectorTitle, inspector, rightWidth, inspectorHeight, -1, operatorTeal)
-	if inspectorStatus != "" {
+	if m.focus == 1 && m.row >= 0 && m.row < len(services) {
+		s := services[m.row]
+		inspectorTitle = operatorText(s.DisplayName)
+		checks, state := m.stackCheckFor(s, now)
+		inspectorStatus, inspectorColor := stackCheckServiceStatus(s, checks, state)
+		inspectorStatus = strings.ToUpper(inspectorStatus)
 		band := operatorFocusStyle
 		nameWidth := rightWidth - ansi.StringWidth(inspectorStatus) - 2
 		detail[0] = operatorRender(band, padLine(" "+inspectorTitle, nameWidth)) +
 			operatorRender(band.Foreground(inspectorColor), " "+inspectorStatus+" ")
+		content := stackCheckLatencyRows(checks, state, s, rightWidth, inspectorHeight-1, m.overviewPaused)
+		for i := 1; i < len(detail); i++ {
+			detail[i] = operatorRender(operatorBaseStyle, strings.Repeat(" ", rightWidth))
+		}
+		copy(detail[1:], content)
 	}
 	if wide {
 		for i := range list {
@@ -326,7 +377,11 @@ func (m operatorModel) operatorStackView() string {
 		}
 		attentionRows = append(attentionRows, text)
 	}
-	attentionRows = append(attentionRows, "Incident history unavailable · summary observations only")
+	provenance := "Incident history unavailable · summary observations only"
+	if failedChecks > 0 {
+		provenance = "Incident history unavailable · observed HTTP checks and service summaries"
+	}
+	attentionRows = append(attentionRows, provenance)
 	// Keep the incident provenance visible even when many services need attention.
 	if len(attentionRows) > feedHeight-1 {
 		attentionRows = append(attentionRows[:feedHeight-2], attentionRows[len(attentionRows)-1])

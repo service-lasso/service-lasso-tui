@@ -18,7 +18,7 @@ func TestOperatorThemeHomeCellBoundsAndSelection(t *testing.T) {
 				m.acceptPageSelection(m.ticket())
 				m.services.Complete = true
 				m.row = 1
-				view := ansi.Strip(m.operatorStackView())
+				view := ansi.Strip(m.View())
 				for _, want := range []string{"HEALTH", "NEEDS ATTENTION", "KNOWN OPERATION", "CORE UPTIME", "> demo-web", "ID: demo-web", "unavailable", "Incident history"} {
 					if !strings.Contains(view, want) {
 						t.Fatalf("missing %q\n%s", want, view)

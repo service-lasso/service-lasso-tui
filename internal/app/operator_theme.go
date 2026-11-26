@@ -36,9 +36,9 @@ func operatorRender(style lipgloss.Style, text string) string {
 func operatorViewLabel(name string) string {
 	switch name {
 	case "overview":
-		return "Services"
-	case "stack":
 		return "Stack"
+	case "detail":
+		return "Services"
 	case "declared_actions":
 		return "Actions"
 	case "health_history":

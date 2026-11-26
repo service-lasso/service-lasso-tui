@@ -316,8 +316,8 @@ func (m operatorModel) formStatus() (string, bool) {
 }
 func (m operatorModel) rowCount() int { return len(m.displayRows()) }
 func (m operatorModel) View() string {
-	if m.dashboardEnabled() {
-		return m.dashboardView()
+	if m.journey == "overview" && m.width >= 80 && m.height >= 20 && !m.draft.Dirty && m.draft.Preview == nil && !m.draft.Sent && !m.draft.Retired && m.operation == nil && m.warning == "" && m.custodyWarning == "" && m.terminalRefreshWarning == "" && len(m.fieldErrors) == 0 {
+		return m.operatorStackView()
 	}
 	focusLine := -1
 	editorLine := -1
@@ -531,9 +531,20 @@ func (m operatorModel) View() string {
 	}
 	lines = append(lines, "←/→ view  ↑/↓ select  Enter/e edit  r refresh  n next  c cancel  x clear settled  q quit")
 	lines = operatorViewport(lines, m.height, focusLine, []int{custodyLine, editorLine, warningLine, errorLine, retainedLine, operationLine, 0, 1, 2, len(lines) - 1})
-	for i, line := range lines {
-		lines[i] = ansi.Truncate(operatorText(line), m.width, "")
+	contentWidth := m.width
+	margin := 0
+	if m.width >= 80 {
+		margin = 2
+		contentWidth -= 2 * margin
 	}
-	lines = tuiStyledLines(lines, m.width)
+	for i, line := range lines {
+		lines[i] = ansi.Truncate(operatorText(line), contentWidth, "")
+	}
+	lines = tuiStyledLines(lines, contentWidth)
+	if margin > 0 {
+		for i, line := range lines {
+			lines[i] = operatorRender(operatorCanvasStyle, strings.Repeat(" ", margin)+padLine(line, contentWidth)+strings.Repeat(" ", margin))
+		}
+	}
 	return strings.Join(lines, "\n")
 }

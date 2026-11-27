@@ -47,6 +47,9 @@ func TestStackRuntimeViewBindsSelectedStatusAndIncidents(t *testing.T) {
 		if m.width >= 80 && (!strings.Contains(view, "RUN UPTIME") || !strings.Contains(view, "15M CHECKS")) {
 			t.Fatalf("%v lost table telemetry\n%s", size, view)
 		}
+		if strings.Contains(view, "observed summary") {
+			t.Fatalf("current service observations mixed into the timestamped Core timeline at %v\n%s", size, view)
+		}
 		rows := strings.Split(view, "\n")
 		if len(rows) != m.height || strings.Contains(view, "\x1b") {
 			t.Fatalf("incorrect height or ANSI escape at %v", size)

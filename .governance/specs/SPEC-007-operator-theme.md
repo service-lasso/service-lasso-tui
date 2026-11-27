@@ -118,8 +118,9 @@ current-run service uptime, durable service restart counts, workspace-scoped
 active durable operation count and recent UTC incidents. Nullable metrics
 and histories are unavailable; known empty history and zero counts are
 explicit. Display only safe fixed incident labels and server-supplied
-timestamps. Distinguish durable incidents from current service and HTTP
-observations. Keep check strips and the fifteen-minute latency chart.
+timestamps. A nonempty timeline contains only newest-first durable Core
+incidents. Current service and HTTP summaries remain the attention fallback
+when incident history is empty or unavailable. Keep check strips and the fifteen-minute latency chart.
 
 Read and publish runtime telemetry independently of overview and check
 samples. Confirm its existing reconciliation context and selector before

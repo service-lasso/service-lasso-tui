@@ -238,6 +238,9 @@ func (m operatorModel) operatorStackView() string {
 		lines = append(lines, "")
 	}
 	incidentRows, provenance := m.stackIncidentRows(now, runtimeStatus, services)
+	if len(incidentRows) != 0 {
+		attentionRows = incidentRows
+	}
 	if runtimeStatus == "Unavailable" && failedChecks > 0 {
 		provenance = "Incident history unavailable · observed HTTP checks and service summaries"
 	}
@@ -246,7 +249,7 @@ func (m operatorModel) operatorStackView() string {
 	if wide && m.height >= 30 {
 		feedLimit = 8
 	}
-	feedHeight := min(feedLimit, max(4, len(incidentRows)+len(attentionRows)+2))
+	feedHeight := min(feedLimit, max(4, len(attentionRows)+2))
 	if m.height < 24 || !wide {
 		feedHeight = 3
 	}
@@ -403,14 +406,13 @@ func (m operatorModel) operatorStackView() string {
 		lines = append(lines, detail...)
 	}
 	lines = append(lines, "")
-	if len(attentionRows) == 0 && len(incidentRows) == 0 {
+	if len(attentionRows) == 0 {
 		observations := "No stopped or unhealthy summaries observed."
 		if !current {
 			observations = "Observed service conditions unavailable."
 		}
 		attentionRows = append(attentionRows, observations)
 	}
-	attentionRows = append(incidentRows, attentionRows...)
 	attentionRows = append(attentionRows, provenance)
 	// Keep the incident provenance visible even when many services need attention.
 	if len(attentionRows) > feedHeight-1 {

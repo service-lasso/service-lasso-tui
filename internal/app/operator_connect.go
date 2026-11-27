@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/service-lasso/service-lasso-tui/internal/api"
 	"github.com/service-lasso/service-lasso-tui/internal/lifetime"
 )
@@ -120,6 +121,10 @@ func (m connectionModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "enter":
+			if !m.connectionTargetFits() {
+				m.errorText = "Resize terminal to show full target before confirming."
+				return m, nil
+			}
 			switch m.step {
 			case "target":
 				m.target = strings.TrimSpace(m.target)
@@ -260,4 +265,10 @@ func connectionDisplayTarget(target string) string {
 		parsed.Fragment = "redacted"
 	}
 	return operatorText(parsed.String())
+}
+
+// Confirmation and secret submission require the complete admitted target to
+// remain visible, including after a resize. Never confirm a clipped origin.
+func (m connectionModel) connectionTargetFits() bool {
+	return m.height >= 18 && ansi.StringWidth(connectionDisplayTarget(m.target))+1 <= max(1, m.width-4)
 }

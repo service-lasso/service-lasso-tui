@@ -178,3 +178,7 @@ before admitting the overview. Safe rejection allows retry or target editing.
 Missing credentials on a real terminal open setup for the selected profile;
 nonterminal resolution failures remain noninteractive. Preserve configured
 profiles, lifecycle safety, existing input custody and explicit CLI precedence.
+
+Target confirmation and credential submission require the entire admitted URL
+to fit visibly, including after resize. Otherwise block the transition and give
+resize guidance; never confirm or send a credential to a hidden origin suffix.

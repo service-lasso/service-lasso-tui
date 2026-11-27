@@ -130,3 +130,35 @@ func TestConnectDoesNotEchoCredentialsInTargetURL(t *testing.T) {
 		}
 	}
 }
+
+func TestConnectCannotConfirmOrSubmitHiddenLongOriginAfterResize(t *testing.T) {
+	target := "https://" + strings.Repeat("long-origin-", 7) + "example.com:8443"
+	m := NewOperatorConnect(context.Background(), nil, target, api.AuthModeOAuthBearer).(connectionModel)
+	m.width, m.height = 80, 24
+	m, command := connectKey(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.step != "target" || command != nil || !strings.Contains(m.errorText, "full target") {
+		t.Fatal("clipped long origin was confirmed")
+	}
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 180, Height: 32})
+	m = next.(connectionModel)
+	m, _ = connectKey(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.step != "confirm" || !strings.Contains(m.View(), target) {
+		t.Fatal("full target unavailable at confirmation")
+	}
+	next, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = next.(connectionModel)
+	m, _ = connectKey(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.step != "confirm" {
+		t.Fatal("resize bypassed target confirmation")
+	}
+	next, _ = m.Update(tea.WindowSizeMsg{Width: 180, Height: 32})
+	m = next.(connectionModel)
+	m, _ = connectKey(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = connectKey(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("masked-secret")})
+	next, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = next.(connectionModel)
+	m, command = connectKey(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if m.step != "credential" || command != nil || strings.Contains(m.View(), "masked-secret") {
+		t.Fatal("submitted credential to hidden target")
+	}
+}

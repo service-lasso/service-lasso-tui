@@ -4,7 +4,7 @@ import { verifyScopedQualification } from "./assemble-scoped-candidate.mjs";
 import { hash, SCOPE } from "./scoped-native-contract.mjs";
 import { parseStrictJSON } from "./scoped-json.mjs";
 import { assertSourcePolicy } from "./scoped-policy.mjs";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -99,7 +99,7 @@ export async function publishCandidate({ assetDirectory, identity, token, fetchI
   const originalTag = await tagProof();
   const publicReceipt = async release => {
     const proof = await tagProof(); if (!proof) fail("candidate tag missing");
-    const receipt = await verifyPublicAssetBytes({ release, manifest, localAssets: held.inventory, assetDirectory, downloadDir: await mkdtemp(path.join(os.tmpdir(), "candidate-public-")), fetchImpl });
+    const receipt = await verifyPublicAssetBytes({ release, manifest, localAssets: held.inventory, assetDirectory, downloadDir: await realpath(await mkdtemp(path.join(os.tmpdir(), "candidate-public-"))), fetchImpl });
     // Detect ref movement across the complete byte receipt too.
     const finalProof = await tagProof(); if (canonical(finalProof) !== canonical(proof)) fail("candidate tag changed during receipt");
     const stable = await read(`/releases/${release.id}`); if(canonical(publication(stable))!==canonical(publication(release)))fail("public inventory changed across byte readback");
@@ -131,7 +131,7 @@ export async function publishCandidate({ assetDirectory, identity, token, fetchI
   }
   const draft = await read(`/releases/${created.id}`);
   if (draft?.id !== created.id) fail("draft numeric identity mismatch");
-  await verifyDraftAssetBytes({ release: draft, manifest, localAssets: held.inventory, heldBytes: held.bytes, downloadDir: await mkdtemp(path.join(os.tmpdir(), "candidate-draft-")), token, fetchImpl });
+  await verifyDraftAssetBytes({ release: draft, manifest, localAssets: held.inventory, heldBytes: held.bytes, downloadDir: await realpath(await mkdtemp(path.join(os.tmpdir(), "candidate-draft-"))), token, fetchImpl });
   await journal("verified-private-draft", draft);
   if (!await tagProof()) fail("candidate tag missing before publication");
   await beforeWrite();

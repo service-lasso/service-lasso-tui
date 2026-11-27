@@ -1603,3 +1603,10 @@ existing owned native controls; broader #20 remains open. No gate bypass.
 
 
 Issue #129 / SPEC-007 MANIFEST001–004: release-native @tui provider manifest, exact candidate archives/tag/SHA-256 and protected seven-asset verification; no release dispatch or publication authorized.
+
+
+Issue #131 / SPEC-008 TEMP001–003: canonical paths for freshly created owned verification temp directories; unchanged strict candidate path denial and no-publish symlink-temp regression.
+
+Issue #133 / SPEC-008 TEMP005: retain real fixture stdout before actual control-pipe close; unchanged EBADF/EPIPE/live-JWKS/natural-exit evidence.
+
+Issue #136 / SPEC-008 TEMP006: parse original custody body before actual Bash3.2 rendezvous; same owner/process/env/FDs and full positive/negative proofs preserved.

@@ -2,12 +2,12 @@ import { execFileSync } from "node:child_process";
 import os from "node:os";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile, writeFile, readdir, mkdir, mkdtemp } from "node:fs/promises";
+import { readFile, writeFile, readdir, mkdir, mkdtemp, symlink, rm } from "node:fs/promises";
 import path from "node:path";
 import { fixture, artifactZIP, IDENTITY, RUN, SOURCE, VERSION } from "./scoped-candidate-fixture.mjs";
 import { assembleScopedCandidate } from "./assemble-scoped-candidate.mjs";
 import { publishCandidate } from "./publish-scoped-candidate.mjs";
-import { assertManifest, assertActualLocalAssets, assertPreflight } from "./verify-scoped-candidate-publication.mjs";
+import { assertManifest, assertActualLocalAssets, assertPreflight, readBoundedRegularLocalAsset } from "./verify-scoped-candidate-publication.mjs";
 import { assertManifest as legacyManifest } from "./verify-candidate-publication.mjs";
 import { SCOPE, PUBLIC_RECEIPTS, hash } from "./scoped-native-contract.mjs";
 import { parseStrictJSON } from "./scoped-json.mjs";
@@ -206,4 +206,23 @@ test(`TUI28-CANDIDATE actual Git checkout preserves canonical policy under autoc
     const control=path.join(root,"control");git(root,"clone","--no-checkout",seed,control);git(control,"config","core.autocrlf","true");git(control,"checkout","--detach","HEAD");
     const transformed=await readFile(path.join(control,".governance","project","ga-platform-scope.json"));assert.equal(transformed.toString("utf8"),policy.toString("utf8").replace(/\n/gu,"\r\n"));assert.notEqual(hash(transformed),SCOPE.policySha256);
   }
+});
+
+
+test("actual publisher verifies original draft and public bytes with a symlinked host temp ancestor",async t=>{
+ const f=await assemble(await fixture());
+ t.after(()=>rm(f.root,{recursive:true,force:true}));
+ const physical=path.join(f.root,"physical-temp"),linked=path.join(f.root,"linked-temp");
+ await mkdir(physical);await symlink(physical,linked,process.platform==="win32"?"junction":"dir");
+ const original=os.tmpdir;os.tmpdir=()=>linked;
+ try{
+  const result=await publish(f);
+  assert.equal(result.receipt.publication.immutable,true);
+  assert.equal(result.receipt.publication.assets.length,4);
+  assert.deepEqual(f.mutations,["tag","draft","upload","upload","upload","upload","publish"]);
+  assert.deepEqual(await readdir(physical),[]);
+  const linkedAssets=path.join(f.root,"linked-assets");
+  await symlink(f.assets,linkedAssets,process.platform==="win32"?"junction":"dir");
+  await assert.rejects(readBoundedRegularLocalAsset(linkedAssets,"candidate-manifest.json"),/linked candidate ancestor denied/u);
+ }finally{os.tmpdir=original;}
 });

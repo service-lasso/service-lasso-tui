@@ -139,3 +139,8 @@ Wide latency panels retain axes and neutral guides without numeric sample claims
 compact panels retain a graphical guide or timestamp-binned sample strip. Real
 observations retain durations, failures, gaps and existing freshness rules.
 Validate no-check, empty and real states from 60x18 through 200x20.
+
+Issue #123 missing-credential diagnosis retains the fixed generic observer
+prefix and adds a fixed hint to load the local admin token in this terminal.
+No environment variable names, private profile names, URLs or values are exposed;
+profile/transport admission still precedes credential lookup.

@@ -180,7 +180,7 @@ func (m *ConnectionManager) Client(name string) (*Client, error) {
 	}
 	token := m.env(profile.TokenEnv)
 	if token == "" {
-		return nil, &OperatorError{Stage: "configuration"}
+		return nil, &ConfigurationError{Kind: ConfigurationErrorMissingCredential}
 	}
 	if m.operatorV2 {
 		client, err := NewOperatorClientWithAuth(profile.URL, nil, token, mode, profile.Scopes...)

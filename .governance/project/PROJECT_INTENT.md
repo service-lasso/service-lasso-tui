@@ -1,3 +1,5 @@
+Issue #143: SPEC-007 operator theme / TUI-DASHBOARD, blank table RUN UPTIME without confirmed running; canonical prepared intent displays green Ready in STATE and inspector.
+
 Issue #134: SPEC-002 AC-2/AC-3 ordinary protected Actions-token publication retains exact source and immutable seven-asset acceptance.
 
 Issue #123: SPEC-007 TUI-DASHBOARD, always-visible neutral and sampled Stack check graphics; Core #1981 consumes the merged TUI pin.

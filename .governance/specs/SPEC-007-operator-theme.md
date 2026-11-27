@@ -182,3 +182,15 @@ profiles, lifecycle safety, existing input custody and explicit CLI precedence.
 Target confirmation and credential submission require the entire admitted URL
 to fit visibly, including after resize. Otherwise block the transition and give
 resize guidance; never confirm or send a credential to a hidden origin suffix.
+
+Issue #143 (TUI-DASHBOARD): RUN UPTIME is blank in the Stack service table
+unless the service observation confirms `running: yes`. This includes stopped,
+prepared, disabled, unsupported, and unknown observations, even if telemetry
+contains an uptime sample. Running rows retain measured uptime and explicit
+Pending/unavailable telemetry status. Preserve STATE, selected inspector uptime
+and restart status, column alignment, and check graphics at 120x32 and 80x24.
+
+Issue #143 owner clarification: show canonical `prepared` intent as green
+`Ready` in Stack STATE and selected inspector status. Ready denotes prepared
+capability, never a running observation; non-running Ready rows have blank
+RUN UPTIME. Health/check failures retain their existing precedence.

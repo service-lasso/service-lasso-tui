@@ -15,7 +15,7 @@ func TestStackAuthoritativeIntentClassification(t *testing.T) {
 		intent, label string
 		attention     bool
 	}{
-		{"expected", "Expected stopped", true}, {"prepared", "Prepared", false},
+		{"expected", "Expected stopped", true}, {"prepared", "Ready", false},
 		{"optional", "Optional stopped", false}, {"disabled", "Disabled", false},
 		{"unsupported", "Unsupported", false}, {"gated", "Setup gated", false},
 		{"unprepared", "Not prepared", false}, {"", "Stopped / unknown", false},
@@ -32,7 +32,10 @@ func TestStackAuthoritativeIntentClassification(t *testing.T) {
 				row:      api.OperatorStackServiceRuntime{ServiceID: service.ServiceID, StackIntent: tc.intent},
 				revision: service.DefinitionRevision, generation: service.Generation, modelEpoch: service.ModelEpoch, receipt: now,
 			}}
-			text, _ := m.stackIntentStatus(*service, stackServiceChecks{}, "No HTTP check", now)
+			text, color := m.stackIntentStatus(*service, stackServiceChecks{}, "No HTTP check", now)
+			if tc.intent == "prepared" && color != operatorGreen {
+				t.Fatalf("prepared Ready color %q, want green %q", color, operatorGreen)
+			}
 			if text != tc.label || m.stackNeedsAttention(*service, now) != tc.attention {
 				t.Fatalf("%s classification %q", tc.intent, text)
 			}

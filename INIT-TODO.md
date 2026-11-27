@@ -1585,3 +1585,5 @@ Issue #129 / SPEC-007 MANIFEST001–004: release-native @tui provider manifest, 
 
 
 Issue #131 / SPEC-008 TEMP001–003: canonical paths for freshly created owned verification temp directories; unchanged strict candidate path denial and no-publish symlink-temp regression.
+
+Issue #133 / SPEC-008 TEMP005: retain real fixture stdout before actual control-pipe close; unchanged EBADF/EPIPE/live-JWKS/natural-exit evidence.

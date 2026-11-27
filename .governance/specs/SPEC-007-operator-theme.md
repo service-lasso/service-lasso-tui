@@ -182,3 +182,12 @@ profiles, lifecycle safety, existing input custody and explicit CLI precedence.
 Target confirmation and credential submission require the entire admitted URL
 to fit visibly, including after resize. Otherwise block the transition and give
 resize guidance; never confirm or send a credential to a hidden origin suffix.
+
+Issue #145 (TUI-DASHBOARD): Stack selected-service actions. Show `a Actions`
+in the keyboard footer. The shortcut opens the existing Lifecycle journey for
+the admitted selected service; Enter remains Inspect. Missing, stale, expired,
+loading, foreign-selection and invalid-row observations cannot supply a target.
+Navigation only reads lifecycle availability and never sends a mutation. Existing
+authentication, capability availability, revision binding, preview and exact
+confirmation gates remain authoritative. Verify selection and read-only HTTP
+routing plus wide/compact footer layout and action-admission regressions.

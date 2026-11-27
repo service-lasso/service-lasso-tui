@@ -101,7 +101,6 @@ jobs:
       CANDIDATE_VERSION: ${{ needs.validate-source.outputs.version }}
       CANDIDATE_TAG: ${{ needs.validate-source.outputs.tag }}
       CANDIDATE_SHA: ${{ needs.validate-source.outputs.sha }}
-      CANDIDATE_ASSET_DIR: ${{ runner.temp }}/release-assets
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -118,6 +117,7 @@ jobs:
         env:
           GOFLAGS: ""
           GOWORK: "off"
+          CANDIDATE_ASSET_DIR: ${{ runner.temp }}/release-assets
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = "refs/heads/develop"
@@ -146,6 +146,8 @@ jobs:
           rmdir "$CANDIDATE_ASSET_DIR/stage"
           (cd "$CANDIDATE_ASSET_DIR" && sha256sum service-lasso-tui-"$CANDIDATE_VERSION"-* > SHA256SUMS.txt)
       - name: Verify checksums, extraction paths, and embedded VCS provenance
+        env:
+          CANDIDATE_ASSET_DIR: ${{ runner.temp }}/release-assets
         shell: bash
         run: |
           set -euo pipefail
@@ -162,6 +164,8 @@ jobs:
             rm -rf "$extraction_root"
           done
       - name: Write candidate manifest and local byte inventory
+        env:
+          CANDIDATE_ASSET_DIR: ${{ runner.temp }}/release-assets
         shell: bash
         run: |
           set -euo pipefail
@@ -180,7 +184,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: service-lasso-tui-candidate-${{ needs.validate-source.outputs.version }}-${{ needs.validate-source.outputs.sha }}
-          path: ${{ env.CANDIDATE_ASSET_DIR }}
+          path: ${{ runner.temp }}/release-assets
           if-no-files-found: error
           retention-days: 90
 

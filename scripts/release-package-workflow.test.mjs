@@ -14,7 +14,7 @@ test('actual ordinary workflow packages four clean stamped platforms outside sou
   const workflow = readFileSync(path.join(root, '.github/workflows/release.yml'), 'utf8');
   const packageJob = workflow.split('  package-candidate:\n')[1].split('  publish-candidate:\n')[0];
   assert.match(packageJob, /CANDIDATE_ASSET_DIR: \$\{\{ runner.temp \}\}\/release-assets/);
-  assert.match(packageJob, /path: \$\{\{ env.CANDIDATE_ASSET_DIR \}\}/);
+  assert.match(packageJob, /path: \$\{\{ runner.temp \}\}\/release-assets/);
   const bodies = [...packageJob.matchAll(/^        run: (?:\|\n((?:          .*\n|\n)+)|([^\n]+)\n)/gm)].map(match => match[1] ? match[1].replace(/^          /gm, '') : match[2]);
   assert.equal(bodies.length, 4);
   try {

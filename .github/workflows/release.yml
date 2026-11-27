@@ -87,7 +87,8 @@ jobs:
           help_status=0
           "$binary" --help > "$RUNNER_TEMP/tui-help.txt" 2>&1 || help_status=$?
           test "$help_status" = 2
-          grep -F "Usage of $binary:" "$RUNNER_TEMP/tui-help.txt" >/dev/null
+          grep -F "Usage of " "$RUNNER_TEMP/tui-help.txt" >/dev/null
+          grep -F -- "-connect" "$RUNNER_TEMP/tui-help.txt" >/dev/null
 
   package-candidate:
     needs: [validate-source, platform-smoke]

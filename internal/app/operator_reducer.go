@@ -639,6 +639,11 @@ func (m operatorModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			cmd := m.beginEdit()
 			return m, cmd
+		case "a":
+			if m.journey == "overview" && !m.loading && m.services.Snapshot != "" && !m.services.Stale && !m.pageSelectionExpired(time.Now()) {
+				cmd := m.openStackService("lifecycle")
+				return m, cmd
+			}
 		case "r":
 			if m.discovery == nil {
 				if m.bootInFlight {

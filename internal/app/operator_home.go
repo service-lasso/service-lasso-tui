@@ -437,9 +437,9 @@ func (m operatorModel) operatorStackView() string {
 	for len(lines) < m.height-2 {
 		lines = append(lines, "")
 	}
-	keys := [][2]string{{"↑↓", "Select"}, {"Enter", "Inspect"}, {"Tab", "Focus"}, {"r", "Refresh"}}
+	keys := [][2]string{{"↑↓", "Select"}, {"Enter", "Inspect"}, {"a", "Actions"}, {"r", "Refresh"}}
 	if w >= 80 {
-		keys = append(keys, [2]string{"f", "Filter"})
+		keys = append(keys, [2]string{"Tab", "Focus"}, [2]string{"f", "Filter"})
 	}
 	if wide && m.focus == 1 && (m.overviewPaused || m.overviewMonitorEligible()) {
 		label := "Pause"

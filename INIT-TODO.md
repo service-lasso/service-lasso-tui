@@ -1583,4 +1583,4 @@ Issue #44 / SPEC006 PLATFORM001–003: ordinary matching-host Windows ConPTY wit
 
 Issue #129 / SPEC-007 MANIFEST001–004: release-native @tui provider manifest, exact candidate archives/tag/SHA-256 and protected seven-asset verification; no release dispatch or publication authorized.
 
-- Issue #134 → SPEC-002 AC-2/AC-3: ordinary Actions-token candidate publication.
+- Issue #134 -> SPEC-002 AC-2/AC-3: ordinary Actions-token candidate publication.

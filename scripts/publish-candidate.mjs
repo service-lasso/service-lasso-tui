@@ -81,6 +81,7 @@ export async function publishCandidate({ assetDirectory, identity, token, fetchI
   };
   if (existing) return { recovered: true, release: existing, receipt: await publicReceipt(existing) };
   if (originalTag) fail("orphan candidate tag collision");
+  if (manifest.schemaVersion !== 3) fail("new candidate requires the release-native service manifest");
   // Recheck both collision surfaces immediately before the sole creation.
   if (await read(`/releases/tags/${identity.tag}`, { optional: true }) || await tagProof()) fail("candidate creation collision");
   await beforeWrite();

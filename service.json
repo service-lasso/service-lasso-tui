@@ -1,0 +1,54 @@
+{
+  "id": "@tui",
+  "name": "Service Lasso TUI",
+  "description": "Keyboard-first Service Lasso terminal client, installed prebuilt and launched on demand.",
+  "role": "provider",
+  "enabled": true,
+  "autostart": false,
+  "version": "0.0.0",
+  "meta": {
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/service-lasso/service-lasso-tui.git"
+    },
+    "tags": [
+      "service-lasso",
+      "terminal",
+      "provider"
+    ]
+  },
+  "artifact": {
+    "kind": "archive",
+    "source": {
+      "type": "github-release",
+      "repo": "service-lasso/service-lasso-tui",
+      "channel": "latest"
+    },
+    "platforms": {
+      "win32-x64": {
+        "assetName": "service-lasso-tui-{version}-win32-amd64.zip",
+        "archiveType": "zip",
+        "command": "./service-lasso-tui.exe",
+        "args": []
+      },
+      "linux-x64": {
+        "assetName": "service-lasso-tui-{version}-linux-amd64.tar.gz",
+        "archiveType": "tar.gz",
+        "command": "./service-lasso-tui",
+        "args": []
+      },
+      "darwin-arm64": {
+        "assetName": "service-lasso-tui-{version}-darwin-arm64.tar.gz",
+        "archiveType": "tar.gz",
+        "command": "./service-lasso-tui",
+        "args": []
+      },
+      "darwin-x64": {
+        "assetName": "service-lasso-tui-{version}-darwin-amd64.tar.gz",
+        "archiveType": "tar.gz",
+        "command": "./service-lasso-tui",
+        "args": []
+      }
+    }
+  }
+}

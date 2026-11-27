@@ -35,6 +35,7 @@ const (
 type ConfigurationErrorKind string
 
 const (
+	ConfigurationErrorMissingCredential       ConfigurationErrorKind = "missing_credential"
 	ConfigurationErrorInvalidURL              ConfigurationErrorKind = "invalid_url"
 	ConfigurationErrorUnsupportedScheme       ConfigurationErrorKind = "unsupported_scheme"
 	ConfigurationErrorUserinfo                ConfigurationErrorKind = "userinfo"
@@ -54,6 +55,8 @@ func (e *ConfigurationError) Unwrap() error { return e.cause }
 
 func (e *ConfigurationError) Error() string {
 	switch e.Kind {
+	case ConfigurationErrorMissingCredential:
+		return "Service Lasso API token missing; set SERVICE_LASSO_API_TOKEN or the configured profile token environment variable"
 	case ConfigurationErrorInvalidURL:
 		return "invalid Service Lasso API URL"
 	case ConfigurationErrorUnsupportedScheme:

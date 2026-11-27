@@ -101,3 +101,17 @@ func TestOperatorRemoteOverrideRejectedBeforeCredential(t *testing.T) {
 		t.Fatal("insecure override read credential")
 	}
 }
+
+func TestMissingCredentialHasSafeActionableDiagnosis(t *testing.T) {
+	for _, tokenEnv := range []string{"SERVICE_LASSO_API_TOKEN", "private-profile-name"} {
+		m := &ConnectionManager{profiles: map[string]ConnectionProfile{"reader": {URL: "http://127.0.0.1:9999", TokenEnv: tokenEnv}}, env: func(string) string { return "" }, operatorV2: true}
+		client, err := m.Client("reader")
+		var configured *ConfigurationError
+		if client != nil || !errors.As(err, &configured) || configured.Kind != ConfigurationErrorMissingCredential {
+			t.Fatalf("missing typed diagnosis: %v", err)
+		}
+		if got := err.Error(); got != "Service Lasso API token missing; set SERVICE_LASSO_API_TOKEN or the configured profile token environment variable" {
+			t.Fatalf("unsafe or unhelpful diagnosis %q", got)
+		}
+	}
+}

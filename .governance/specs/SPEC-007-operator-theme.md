@@ -130,3 +130,17 @@ overview remains valid. Partial, denied, failed and older-Core responses do
 not promote unavailable values. Wide layouts add RUN UPTIME to the service
 table and retain selected uptime/restarts in the inspector. Compact and
 monochrome layouts retain selection, telemetry status and keyboard recovery.
+
+Issue #123 (TUI-DASHBOARD) keeps graphical space present for every check state.
+No configured HTTP check uses a full-width muted neutral strip; configured
+checks without samples use a flat muted guide. Pending, stale, unavailable and
+denied observations retain distinct safe labels alongside neutral graphics.
+Wide latency panels retain axes and neutral guides without numeric sample claims;
+compact panels retain a graphical guide or timestamp-binned sample strip. Real
+observations retain durations, failures, gaps and existing freshness rules.
+Validate no-check, empty and real states from 60x18 through 200x20.
+
+Issue #123 launch diagnostic adjunct: absent credential returns a typed fixed
+configuration error naming SERVICE_LASSO_API_TOKEN or the configured profile
+token environment variable, never the private profile/env/URL or token value.
+Existing transport/profile admission remains before credential lookup.

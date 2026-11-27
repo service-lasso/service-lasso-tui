@@ -34,7 +34,11 @@ func stackCheckBuckets(checks stackServiceChecks, count int) []stackCheckBucket 
 
 func stackCheckStrip(checks stackServiceChecks, status string, style lipgloss.Style, width int) string {
 	if status != "" {
-		return operatorRender(style.Foreground(operatorMuted), padLine(status, width))
+		glyph := "─"
+		if status == "No HTTP check" {
+			glyph = "━"
+		}
+		return operatorRender(style.Foreground(operatorMuted), strings.Repeat(glyph, max(0, width)))
 	}
 	var line strings.Builder
 	for _, bucket := range stackCheckBuckets(checks, width) {
@@ -91,28 +95,35 @@ func stackCheckLatencyRows(checks stackServiceChecks, status string, service api
 		title = "HTTP check latency · paused 15m"
 	}
 	identity := row(base, "ID: "+operatorText(service.ServiceID))
-	if status != "" {
-		if height < 7 {
-			return []string{identity, row(base, "Runtime: "+stackRunningLabel(service.Running)+" · HTTP check: "+strings.ToLower(status)), row(band, runtimeMetrics)}
+	latestColor := operatorMuted
+	recent := status
+	if status == "" {
+		latestColor = operatorTeal
+		latest := checks.latest()
+		latestState := "pass"
+		if !latest.Passed {
+			latestColor, latestState = operatorAmber, "fail"
 		}
-		return []string{row(band, title), identity, row(base, status), row(base, "Runtime: "+stackRunningLabel(service.Running)+" · Health: "+operatorText(service.HealthStatus)), row(base, operatorText(service.Description)), row(band, runtimeMetrics)}
-	}
-	latest := checks.latest()
-	latestColor, latestState := operatorTeal, "pass"
-	if !latest.Passed {
-		latestColor, latestState = operatorAmber, "fail"
+		recent = fmt.Sprintf("Latest %d ms · %s", latest.DurationMS, latestState)
 	}
 	if height < 7 {
-		return []string{identity, row(band.Foreground(latestColor), fmt.Sprintf("HTTP check · 15m: %d ms (%s)", latest.DurationMS, latestState)), row(band, runtimeMetrics)}
+		// Reserve graphical space even when the panel cannot fit full axes.
+		guideWidth := max(1, width-ansi.StringWidth(recent)-3)
+		return []string{identity, row(base, stackCheckStrip(checks, status, base, guideWidth)+" "+recent), row(band, "Runtime: "+stackRunningLabel(service.Running)+" · "+runtimeMetrics)}
 	}
 	rowCount := min(6, height-6)
-	recent := fmt.Sprintf("Latest %d ms · %s", latest.DurationMS, latestState)
+	if status != "" && height > 7 {
+		rowCount = min(6, height-7)
+	}
 	preamble := operatorRender(base, padLine(" ID: "+operatorText(service.ServiceID), width-ansi.StringWidth(recent)-2)) +
 		operatorRender(band.Foreground(latestColor), " "+recent+" ")
 	out := []string{row(band, title), preamble}
 	const axisWidth = 7
 	columnCount := min(60, width-axisWidth-2)
 	buckets := stackCheckBuckets(checks, columnCount)
+	if status != "" {
+		buckets = make([]stackCheckBucket, columnCount)
+	}
 	ceiling := stackChartMax(buckets)
 	blocks := [...]string{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"}
 	middle := rowCount / 2
@@ -126,10 +137,13 @@ func stackCheckLatencyRows(checks stackServiceChecks, status string, service api
 		case middle:
 			label = stackChartTick(ceiling * float64(rowCount-middle) / float64(rowCount))
 		}
+		if status != "" {
+			label = "" // Neutral guides are not measured zero-latency samples.
+		}
 		line := operatorRender(base, padLine(" "+label, axisWidth))
 		for _, bucket := range buckets {
 			glyph, color := " ", operatorMuted
-			if label != "" {
+			if label != "" || status != "" && y == rowCount-1 {
 				glyph, color = "─", operatorBand
 			}
 			if bucket.present {
@@ -149,9 +163,12 @@ func stackCheckLatencyRows(checks stackServiceChecks, status string, service api
 	axis := strings.Repeat(" ", axisWidth) + "−15m" + strings.Repeat(" ", columnCount-5-len(endpoint)) + endpoint + " "
 	out = append(out,
 		operatorRender(base, padLine(axis, width)),
-		row(base, "█ Pass  ▒ Fail  · Gap"),
+		row(base, stackCheckLegend(status)),
 		row(band, runtimeMetrics),
 	)
+	if status != "" && len(out) < height {
+		out = append(out, row(base, operatorText(service.Description)))
+	}
 	if len(out) < height {
 		for i := len(checks.observation.Samples) - 1; i >= 0; i-- {
 			sample := checks.observation.Samples[i]
@@ -163,4 +180,11 @@ func stackCheckLatencyRows(checks stackServiceChecks, status string, service api
 		}
 	}
 	return out
+}
+
+func stackCheckLegend(status string) string {
+	if status != "" {
+		return "─ No measurement · " + status
+	}
+	return "█ Pass  ▒ Fail  · Gap"
 }

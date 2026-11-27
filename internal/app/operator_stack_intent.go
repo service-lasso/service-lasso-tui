@@ -49,7 +49,7 @@ func (m operatorModel) stackIntentStatus(s api.OperatorService, checks stackServ
 	case "expected":
 		return "Expected stopped", operatorCoral
 	case "prepared":
-		return "Prepared", operatorMuted
+		return "Ready", operatorGreen
 	case "optional":
 		return "Optional stopped", operatorMuted
 	case "disabled":

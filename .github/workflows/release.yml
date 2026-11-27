@@ -187,6 +187,7 @@ jobs:
     permissions:
       contents: write
       checks: read
+      actions: read
     env:
       CANDIDATE_VERSION: ${{ needs.validate-source.outputs.version }}
       CANDIDATE_TAG: ${{ needs.validate-source.outputs.tag }}

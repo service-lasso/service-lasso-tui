@@ -153,7 +153,7 @@ test("ordinary release confines Actions write to protected publisher job", async
   assert.ok(publisher);
   assert.doesNotMatch(before, /contents: write|GH_TOKEN:/u);
   assert.match(publisher, /environment:\n      name: development-candidate/u);
-  assert.match(publisher, /permissions:\n      contents: write\n      checks: read/u);
+  assert.match(publisher, /permissions:\n      contents: write\n      checks: read\n      actions: read/u);
   assert.match(publisher, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
   assert.match(publisher, /--policy-mode actions --operator-preflight-sha "\$OPERATOR_PREFLIGHT_SHA"/u);
   assert.equal((text.match(/GH_TOKEN:/gu) ?? []).length, 1);

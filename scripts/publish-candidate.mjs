@@ -1,3 +1,4 @@
+import { assertActionsCandidatePolicy } from "./actions-candidate-policy.mjs";
 import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -12,7 +13,7 @@ const canonical = value => JSON.stringify(value && typeof value === "object" ? A
 // One deadline covers response headers AND the entire streamed body. Never log
 // provider exception messages: they may contain credential-bearing URLs.
 export async function providerJSON(fetchImpl, token, route, { method = "GET", body, optional = false } = {}) {
-  if (!/^\/(?:immutable-releases|environments\/development-candidate|branches\/develop\/protection|git\/refs|git\/ref\/tags\/candidate-[a-zA-Z0-9.-]+|git\/tags\/[a-f0-9]{40}|releases(?:\/tags\/candidate-[a-zA-Z0-9.-]+|\/[1-9][0-9]*)?)$/u.test(route)) fail("provider route denied");
+  if (!/^\/(?:commits\/[a-f0-9]{40}\/check-runs\?per_page=100|branches\/develop|immutable-releases|environments\/development-candidate|branches\/develop\/protection|git\/refs|git\/ref\/tags\/candidate-[a-zA-Z0-9.-]+|git\/tags\/[a-f0-9]{40}|releases(?:\/tags\/candidate-[a-zA-Z0-9.-]+|\/[1-9][0-9]*)?)$/u.test(route)) fail("provider route denied");
   const controller = new AbortController();
   let timer;
   const deadline = new Promise((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error("provider deadline exceeded")); }, 30000); });
@@ -51,9 +52,10 @@ export async function resolveCandidateTag({ identity, read }) {
   fail("candidate tag unresolved");
 }
 
-export async function publishCandidate({ assetDirectory, identity, token, fetchImpl = fetch, beforeHeldAcquisition }) {
+export async function publishCandidate({ assetDirectory, identity, token, fetchImpl = fetch, beforeHeldAcquisition, policyMode = "admin", operatorPreflightSHA }) {
   candidateIdentity(identity);
   if (!token) fail("publisher authority missing");
+  if (!["admin", "actions"].includes(policyMode) || (policyMode === "actions" && operatorPreflightSHA !== identity.sourceCommit)) fail("operator preflight binding denied");
   const admittedManifestBytes = await readBoundedRegularLocalAsset(assetDirectory, "candidate-manifest.json", 1048576);
   const manifest = assertManifest(JSON.parse(admittedManifestBytes.toString("utf8")), identity);
   // Instrument the actual acquisition boundary without replacing any validator.
@@ -64,6 +66,9 @@ export async function publishCandidate({ assetDirectory, identity, token, fetchI
   if (!held.bytes["candidate-manifest.json"].equals(admittedManifestBytes)) fail("held candidate manifest differs from admitted bytes");
   const read = (route, options) => providerJSON(fetchImpl, token, route, options);
   const policy = async () => {
+    if (policyMode === "actions") {
+      return canonical(assertActionsCandidatePolicy({ branch: await read("/branches/develop"), environment: await read("/environments/development-candidate"), checks: await read(`/commits/${identity.sourceCommit}/check-runs?per_page=100`) }, identity.sourceCommit, operatorPreflightSHA));
+    }
     const value = { immutableReleases: await read("/immutable-releases"), environment: await read("/environments/development-candidate"), branchProtection: await read("/branches/develop/protection") };
     assertPreflight(value); return canonical(value);
   };
@@ -116,5 +121,5 @@ export async function publishCandidate({ assetDirectory, identity, token, fetchI
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const values = {}; for (let i = 2; i < process.argv.length; i += 2) { const key = process.argv[i]; if (!key?.startsWith("--") || !process.argv[i + 1] || values[key]) fail("publisher usage"); values[key] = process.argv[i + 1]; }
   if (process.env.GITHUB_REPOSITORY !== "service-lasso/service-lasso-tui") fail("publisher repository denied");
-  publishCandidate({ assetDirectory: values["--asset-directory"], identity: candidateIdentity({ sourceRef: values["--source-ref"], sourceCommit: values["--source-commit"], version: values["--version"], tag: values["--tag"] }), token: process.env.GH_TOKEN }).then(result => process.stdout.write(`${JSON.stringify(result)}\n`)).catch(() => { process.stderr.write("candidate publication denied\n"); process.exitCode = 1; });
+  publishCandidate({ assetDirectory: values["--asset-directory"], identity: candidateIdentity({ sourceRef: values["--source-ref"], sourceCommit: values["--source-commit"], version: values["--version"], tag: values["--tag"] }), token: process.env.GH_TOKEN, policyMode: values["--policy-mode"], operatorPreflightSHA: values["--operator-preflight-sha"] }).then(result => process.stdout.write(`${JSON.stringify(result)}\n`)).catch(() => { process.stderr.write("candidate publication denied\n"); process.exitCode = 1; });
 }

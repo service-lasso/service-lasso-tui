@@ -141,6 +141,10 @@ func resolveConnectionsWithOpener(options ConnectionOptions, operatorV2 bool, op
 	manager := &ConnectionManager{profiles: profiles, current: selected, env: env, operatorV2: operatorV2, receiver: options.Receiver}
 	client, err := manager.Client(selected)
 	if err != nil {
+		var configured *ConfigurationError
+		if errors.As(err, &configured) && configured.Kind == ConfigurationErrorMissingCredential {
+			return manager, nil, err
+		}
 		return nil, nil, err
 	}
 	return manager, client, nil
@@ -259,4 +263,28 @@ func (m *ConnectionManager) Switch(name string) (*Client, error) {
 	}
 	m.current = name
 	return client, nil
+}
+
+// CurrentProfile returns connection metadata only, never its credential.
+func (m *ConnectionManager) CurrentProfile() ConnectionProfile { return m.profiles[m.current] }
+
+// ValidateInteractiveOperatorTarget admits the target before accepting a secret.
+func ValidateInteractiveOperatorTarget(target string, mode AuthMode) error {
+	_, err := NewOperatorClientWithAuth(target, nil, "", mode, "service-lasso:read")
+	return err
+}
+
+// InteractiveOperatorConnection keeps the supplied credential in memory only.
+// The configured manager is replaced deliberately after target confirmation.
+func InteractiveOperatorConnection(receiver *lifetime.Receiver, target, token string, mode AuthMode) (*ConnectionManager, *Client, error) {
+	if token == "" {
+		return nil, nil, &ConfigurationError{Kind: ConfigurationErrorMissingCredential}
+	}
+	client, err := NewOperatorClientWithAuth(target, nil, token, mode, "service-lasso:read")
+	if err != nil {
+		return nil, nil, err
+	}
+	client.receiver = receiver
+	manager := &ConnectionManager{receiver: receiver, operatorV2: true, current: "interactive", profiles: map[string]ConnectionProfile{"interactive": {URL: target, TokenEnv: "in-memory", AuthMode: mode, Scopes: []string{"service-lasso:read"}}}, env: func(string) string { return token }}
+	return manager, client, nil
 }

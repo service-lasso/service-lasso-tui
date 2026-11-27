@@ -1,3 +1,5 @@
+Issue #126: SPEC-007 TUI-CONNECT, confirmed local/remote target and masked interactive login. Core #1985 supplies local selection or --connect.
+
 Issue #125: SPEC-007 TUI-DASHBOARD, authoritative Core #1985 Stack intent; neutral prepared/optional/unavailable metadata and expected-daemon attention.
 
 Issue #123: SPEC-007 TUI-DASHBOARD, always-visible neutral and sampled Stack check graphics; Core #1981 consumes the merged TUI pin.

@@ -7,7 +7,7 @@ import path from "node:path";
 import { fixture, artifactZIP, IDENTITY, RUN, SOURCE, VERSION } from "./scoped-candidate-fixture.mjs";
 import { assembleScopedCandidate } from "./assemble-scoped-candidate.mjs";
 import { publishCandidate } from "./publish-scoped-candidate.mjs";
-import { assertManifest, assertActualLocalAssets, assertPreflight } from "./verify-scoped-candidate-publication.mjs";
+import { assertManifest, assertActualLocalAssets, assertPreflight, readBoundedRegularLocalAsset } from "./verify-scoped-candidate-publication.mjs";
 import { assertManifest as legacyManifest } from "./verify-candidate-publication.mjs";
 import { SCOPE, PUBLIC_RECEIPTS, hash } from "./scoped-native-contract.mjs";
 import { parseStrictJSON } from "./scoped-json.mjs";
@@ -221,5 +221,8 @@ test("actual publisher verifies original draft and public bytes with a symlinked
   assert.equal(result.receipt.publication.assets.length,4);
   assert.deepEqual(f.mutations,["tag","draft","upload","upload","upload","upload","publish"]);
   assert.deepEqual(await readdir(physical),[]);
+  const linkedAssets=path.join(f.root,"linked-assets");
+  await symlink(f.assets,linkedAssets,process.platform==="win32"?"junction":"dir");
+  await assert.rejects(readBoundedRegularLocalAsset(linkedAssets,"candidate-manifest.json"),/linked candidate ancestor denied/u);
  }finally{os.tmpdir=original;}
 });

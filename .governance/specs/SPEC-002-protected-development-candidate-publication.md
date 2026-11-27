@@ -164,3 +164,5 @@ outside the checked source tree. Each platform build and the completed package
 require clean tracked/untracked source and exact clean VCS revision. Execute the
 actual workflow package steps in an isolated checkout; verify all four archives
 and seven publication assets, and deny dirty tracked or untracked source.
+
+Issue #139 AC-4/AC-6: package-job static GOFLAGS empty and GOWORK off apply to every provenance guard; exact workflow proof resolves job and per-step environment without injecting missing flags. Missing GOWORK on final guard must fail.

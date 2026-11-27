@@ -1,3 +1,5 @@
+Issue #143: SPEC-007 operator theme / TUI-DASHBOARD, blank table RUN UPTIME without confirmed running; canonical prepared intent displays green Ready in STATE and inspector.
+
 Issue #134: SPEC-002 AC-2/AC-3, ordinary protected Actions-token publication with exact-SHA operator preflight and live policy admission.
 
 Issue #126: SPEC-007 TUI-CONNECT, confirmed local/remote target and masked interactive login. Core #1985 supplies local selection or --connect.

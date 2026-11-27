@@ -346,7 +346,10 @@ func (m operatorModel) operatorStackView() string {
 			tail := operatorRender(style.Foreground(serviceColor), padLine(serviceStatus, statusWidth))
 			if stripWidth > 0 {
 				runtime, runtimeStatus := m.stackServiceRuntimeFor(s, now)
-				uptime := stackRunUptime(s, runtime, runtimeStatus)
+				uptime := ""
+				if s.Running == "yes" {
+					uptime = stackRunUptime(s, runtime, runtimeStatus)
+				}
 				switch uptime {
 				case "Unavailable":
 					uptime = "N/A"

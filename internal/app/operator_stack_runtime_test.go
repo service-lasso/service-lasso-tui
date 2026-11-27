@@ -146,3 +146,61 @@ func TestStackRuntimeReadsEmptyAdmittedOverview(t *testing.T) {
 		t.Fatalf("empty dashboard lost known Core metrics\n%s", view)
 	}
 }
+
+func TestStackRunUptimeTableOnlyForConfirmedRunning(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	for _, size := range [][2]int{{120, 32}, {80, 24}} {
+		for _, running := range []string{"no", "unknown", "", "yes"} {
+			for _, sampled := range []bool{false, true} {
+				m := stackFixture()
+				m.width, m.height = size[0], size[1]
+				m.services.Rows = m.services.Rows[:1]
+				m.services.Rows[0].Running = running
+				now := time.Now().UTC()
+				m.stackRuntime.pending = !sampled
+				run := int64(512000)
+				if sampled {
+					m.acceptStackRuntime(operatorStackRuntimeLoaded{ticket: m.ticket(), ids: []string{"demo-api"}, receipt: now,
+						frame: api.OperatorStackRuntimeFrame{ObservedAt: now.Format("2006-01-02T15:04:05.000Z"), Rows: []api.OperatorStackServiceRuntime{{ServiceID: "demo-api", UptimeMS: &run}}}})
+				}
+				view := ansi.Strip(m.View())
+				rows := strings.Split(view, "\n")
+				start := -1
+				var row string
+				for _, line := range rows {
+					if strings.Contains(line, "RUN UPTIME") {
+						start = strings.Index(line, "RUN UPTIME")
+					}
+					if strings.Contains(line, "> demo-api") {
+						row = line
+					}
+					if ansi.StringWidth(line) > size[0] {
+						t.Fatalf("row overflow at %v: %q", size, line)
+					}
+				}
+				if start < 0 || len(row) < start+10 {
+					t.Fatalf("missing table at %v\n%s", size, view)
+				}
+				got := strings.TrimSpace(string([]rune(row)[start : start+10]))
+				want := ""
+				if running == "yes" {
+					want = "Pending"
+					if sampled {
+						want = "8m 32s"
+					}
+				}
+				if got != want {
+					t.Fatalf("%v running=%q sampled=%v: uptime cell %q, want %q\n%s", size, running, sampled, got, want, view)
+				}
+				runtime, status := m.stackServiceRuntimeFor(m.services.Rows[0], now)
+				detail := "Uptime " + stackRunUptime(m.services.Rows[0], runtime, status) + " · Restarts"
+				if !strings.Contains(view, detail) {
+					t.Fatalf("inspector changed at %v: want %q\n%s", size, detail, view)
+				}
+				if len(rows) != size[1] {
+					t.Fatalf("height changed at %v", size)
+				}
+			}
+		}
+	}
+}

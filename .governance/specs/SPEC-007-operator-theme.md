@@ -191,3 +191,15 @@ Navigation only reads lifecycle availability and never sends a mutation. Existin
 authentication, capability availability, revision binding, preview and exact
 confirmation gates remain authoritative. Verify selection and read-only HTTP
 routing plus wide/compact footer layout and action-admission regressions.
+
+Issue #143 (TUI-DASHBOARD): RUN UPTIME is blank in the Stack service table
+unless the service observation confirms `running: yes`. This includes stopped,
+prepared, disabled, unsupported, and unknown observations, even if telemetry
+contains an uptime sample. Running rows retain measured uptime and explicit
+Pending/unavailable telemetry status. Preserve STATE, selected inspector uptime
+and restart status, column alignment, and check graphics at 120x32 and 80x24.
+
+Issue #143 owner clarification: show canonical `prepared` intent as green
+`Ready` in Stack STATE and selected inspector status. Ready denotes prepared
+capability, never a running observation; non-running Ready rows have blank
+RUN UPTIME. Health/check failures retain their existing precedence.

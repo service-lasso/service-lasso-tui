@@ -166,3 +166,19 @@ unsupported, gated, or unprepared. Unprepared means a supported provider lacks
 actual installed/configured preparation. Omitted or unknown values carry no
 intent claim. Reuse the runtime frame's reconciliation context, requested IDs,
 revision/generation binding, observation receipt and expiry.
+
+
+Issue #126 TUI-CONNECT: --connect opens a dark keyboard connection screen
+before any default target or credential lookup. Resolve repo-local runtime in
+the Core wrapper first. Display/edit URL, validate and confirm exact target,
+then accept a masked local-admin token for loopback or explicitly selected OAuth
+bearer with general-read admission for remote HTTPS. Never persist credentials
+or follow redirects. Authenticate through real operator/v2 discovery and context
+before admitting the overview. Safe rejection allows retry or target editing.
+Missing credentials on a real terminal open setup for the selected profile;
+nonterminal resolution failures remain noninteractive. Preserve configured
+profiles, lifecycle safety, existing input custody and explicit CLI precedence.
+
+Target confirmation and credential submission require the entire admitted URL
+to fit visibly, including after resize. Otherwise block the transition and give
+resize guidance; never confirm or send a credential to a hidden origin suffix.

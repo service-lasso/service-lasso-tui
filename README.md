@@ -197,3 +197,21 @@ log issuance, source handles, tail/source rotation and genuine installed/native
 acceptance remain missing or unproved; full issue1 delivery remains incomplete.
 
 Selected v2 metadata cache, local favorites filtering and current graph layout labels are source-only behavior described in [operator metadata](docs/operator-metadata.md). The authentic server revision/all-writer producer and finite retained-cache owner remain missing; all new cases are UNRUN.
+
+### Interactive connection and login
+
+Run `service-lasso-tui --connect` in a terminal to choose a runtime without an
+implicit default connection. The Core workspace launcher selects its own local
+runtime first and opens this screen if none is selected. `--api` or
+`SERVICE_LASSO_API_URL` can prefill the target. Edit the URL, press Enter to
+review the exact target, then Enter again to enter a masked credential. Local
+admin mode accepts loopback targets; Tab explicitly selects OAuth bearer mode
+for a remote HTTPS runtime using the existing operator read admission contract.
+Actual server entitlements govern available actions.
+
+Enter authenticates against real operator discovery and reconciliation context.
+Rejected credentials show a safe error and allow retry. Esc clears the credential
+and returns to target editing; Ctrl+U clears the edited field; Ctrl+C exits.
+Credentials are held only in memory for the session. On a real terminal, a
+missing selected-profile credential or rejected login also opens setup. Existing
+noninteractive configuration failures remain failures rather than prompting.

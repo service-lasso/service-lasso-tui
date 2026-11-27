@@ -1636,3 +1636,5 @@ Issue #136 / SPEC-008 TEMP006: parse original custody body before actual Bash3.2
 Issue #137: SPEC-002 AC-4/AC-6, runner-temp ordinary package outputs and exact workflow four-platform proof.
 
 Issue #139: SPEC-002 AC-4/AC-6, actual per-step package Go environment and missing-guard regression.
+
+Issue #141: SPEC-002 AC-6, explicit Bash source-binding and actual workflow/artifact proof.

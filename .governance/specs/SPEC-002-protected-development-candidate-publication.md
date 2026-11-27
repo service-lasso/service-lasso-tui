@@ -157,3 +157,10 @@ required checks enforced for everyone by app 15368, protected-only environment a
 one-to-thirty minute timer, and successful exact-SHA app check runs. Missing or changed
 controls deny. Final immutable public seven-asset acceptance remains mandatory.
 The scoped publisher keeps admin-policy admission. No custom secret is required.
+
+## Issue #137 packaging source cleanliness (AC-4/AC-6)
+All ordinary package build outputs, archives and manifests live under runner.temp,
+outside the checked source tree. Each platform build and the completed package
+require clean tracked/untracked source and exact clean VCS revision. Execute the
+actual workflow package steps in an isolated checkout; verify all four archives
+and seven publication assets, and deny dirty tracked or untracked source.

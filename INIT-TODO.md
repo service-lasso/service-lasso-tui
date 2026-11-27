@@ -1590,3 +1590,5 @@ Issue #131 / SPEC-008 TEMP001–003: canonical paths for freshly created owned v
 Issue #133 / SPEC-008 TEMP005: retain real fixture stdout before actual control-pipe close; unchanged EBADF/EPIPE/live-JWKS/natural-exit evidence.
 
 Issue #136 / SPEC-008 TEMP006: parse original custody body before actual Bash3.2 rendezvous; same owner/process/env/FDs and full positive/negative proofs preserved.
+
+Issue #137: SPEC-002 AC-4/AC-6 package outside source with clean VCS and seven-asset proof.

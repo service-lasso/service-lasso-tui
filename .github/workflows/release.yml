@@ -117,12 +117,14 @@ jobs:
         env:
           GOFLAGS: ""
           GOWORK: "off"
+          CANDIDATE_ASSET_DIR: ${{ runner.temp }}/release-assets
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = "refs/heads/develop"
           test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
           node scripts/assert-go-source-provenance.mjs
-          mkdir -p release-assets/stage
+          test ! -e "$CANDIDATE_ASSET_DIR"
+          mkdir -p "$CANDIDATE_ASSET_DIR/stage"
           declare -a targets=(
             "windows amd64 zip service-lasso-tui.exe win32-amd64"
             "linux amd64 tar service-lasso-tui linux-amd64"
@@ -131,22 +133,25 @@ jobs:
           )
           for target in "${targets[@]}"; do
             read -r goos goarch archive_kind executable suffix <<< "$target"
-            staged="release-assets/stage/$executable"
+            node scripts/assert-go-source-provenance.mjs
+            staged="$CANDIDATE_ASSET_DIR/stage/$executable"
             asset_base="service-lasso-tui-${CANDIDATE_VERSION}-${suffix}"
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -mod=readonly -buildvcs=true -trimpath -ldflags='-s -w' -o "$staged" ./cmd/service-lasso-tui
             test -s "$staged"
             go version -m "$staged" | grep -F "vcs.revision=$CANDIDATE_SHA" >/dev/null
             go version -m "$staged" | grep -F 'vcs.modified=false' >/dev/null
-            if [ "$archive_kind" = zip ]; then (cd release-assets/stage && zip -q "../${asset_base}.zip" "$executable"); else (cd release-assets/stage && tar -czf "../${asset_base}.tar.gz" "$executable"); fi
+            if [ "$archive_kind" = zip ]; then (cd "$CANDIDATE_ASSET_DIR/stage" && zip -q "../${asset_base}.zip" "$executable"); else (cd "$CANDIDATE_ASSET_DIR/stage" && tar -czf "../${asset_base}.tar.gz" "$executable"); fi
             rm -f "$staged"
           done
-          rmdir release-assets/stage
-          (cd release-assets && sha256sum service-lasso-tui-"$CANDIDATE_VERSION"-* > SHA256SUMS.txt)
+          rmdir "$CANDIDATE_ASSET_DIR/stage"
+          (cd "$CANDIDATE_ASSET_DIR" && sha256sum service-lasso-tui-"$CANDIDATE_VERSION"-* > SHA256SUMS.txt)
       - name: Verify checksums, extraction paths, and embedded VCS provenance
+        env:
+          CANDIDATE_ASSET_DIR: ${{ runner.temp }}/release-assets
         shell: bash
         run: |
           set -euo pipefail
-          cd release-assets
+          cd "$CANDIDATE_ASSET_DIR"
           sha256sum --check --strict SHA256SUMS.txt
           declare -a targets=("win32-amd64 zip service-lasso-tui.exe" "linux-amd64 tar service-lasso-tui" "darwin-amd64 tar service-lasso-tui" "darwin-arm64 tar service-lasso-tui")
           for target in "${targets[@]}"; do
@@ -159,22 +164,27 @@ jobs:
             rm -rf "$extraction_root"
           done
       - name: Write candidate manifest and local byte inventory
+        env:
+          CANDIDATE_ASSET_DIR: ${{ runner.temp }}/release-assets
         shell: bash
         run: |
           set -euo pipefail
-          cd release-assets
+          cd "$CANDIDATE_ASSET_DIR"
           checksum_manifest_sha256="$(sha256sum SHA256SUMS.txt | cut -d ' ' -f1)"
           jq -n --arg repository "$GITHUB_REPOSITORY" --arg sourceRef "$GITHUB_REF" --arg sourceCommit "$CANDIDATE_SHA" --arg tag "$CANDIDATE_TAG" --arg version "$CANDIDATE_VERSION" --arg checksumManifestSha256 "$checksum_manifest_sha256" \
             --arg win32 "service-lasso-tui-${CANDIDATE_VERSION}-win32-amd64.zip" --arg linux "service-lasso-tui-${CANDIDATE_VERSION}-linux-amd64.tar.gz" --arg darwinAmd64 "service-lasso-tui-${CANDIDATE_VERSION}-darwin-amd64.tar.gz" --arg darwinArm64 "service-lasso-tui-${CANDIDATE_VERSION}-darwin-arm64.tar.gz" \
             --arg win32Sha256 "$(sha256sum "service-lasso-tui-${CANDIDATE_VERSION}-win32-amd64.zip" | cut -d ' ' -f1)" --arg linuxSha256 "$(sha256sum "service-lasso-tui-${CANDIDATE_VERSION}-linux-amd64.tar.gz" | cut -d ' ' -f1)" --arg darwinAmd64Sha256 "$(sha256sum "service-lasso-tui-${CANDIDATE_VERSION}-darwin-amd64.tar.gz" | cut -d ' ' -f1)" --arg darwinArm64Sha256 "$(sha256sum "service-lasso-tui-${CANDIDATE_VERSION}-darwin-arm64.tar.gz" | cut -d ' ' -f1)" \
             '{schemaVersion: 3, kind: "develop-prerelease-candidate", source: {repository: $repository, ref: $sourceRef, commit: $sourceCommit}, release: {tag: $tag, prerelease: true, draft: false, immutable: true}, version: $version, checksumManifest: {name: "SHA256SUMS.txt", sha256: $checksumManifestSha256}, corePackagingIssue: "service-lasso/service-lasso#1461", assets: [{platform: "win32-amd64", name: $win32, sha256: $win32Sha256, executable: "service-lasso-tui.exe"}, {platform: "linux-amd64", name: $linux, sha256: $linuxSha256, executable: "service-lasso-tui"}, {platform: "darwin-amd64", name: $darwinAmd64, sha256: $darwinAmd64Sha256, executable: "service-lasso-tui"}, {platform: "darwin-arm64", name: $darwinArm64, sha256: $darwinArm64Sha256, executable: "service-lasso-tui"}]}' > candidate-manifest.json
-          node ../scripts/service-manifest.mjs ../service.json candidate-manifest.json service.json
+          node "$GITHUB_WORKSPACE/scripts/service-manifest.mjs" "$GITHUB_WORKSPACE/service.json" candidate-manifest.json service.json
           node --input-type=module -e 'import { createHash } from "node:crypto"; import { readFileSync, statSync } from "node:fs"; const inventory = {}; for (const name of process.argv.slice(1)) { const bytes = readFileSync(name); inventory[name] = { sha256: createHash("sha256").update(bytes).digest("hex"), size: statSync(name).size }; } process.stdout.write(JSON.stringify(inventory));' "service-lasso-tui-${CANDIDATE_VERSION}-win32-amd64.zip" "service-lasso-tui-${CANDIDATE_VERSION}-linux-amd64.tar.gz" "service-lasso-tui-${CANDIDATE_VERSION}-darwin-amd64.tar.gz" "service-lasso-tui-${CANDIDATE_VERSION}-darwin-arm64.tar.gz" SHA256SUMS.txt candidate-manifest.json service.json > candidate-local-assets.json
-          node ../scripts/verify-candidate-publication-cli.mjs --mode publication-assets --source-ref "$GITHUB_REF" --source-commit "$CANDIDATE_SHA" --version "$CANDIDATE_VERSION" --tag "$CANDIDATE_TAG" --manifest candidate-manifest.json --local-assets candidate-local-assets.json --asset-directory .
+          node "$GITHUB_WORKSPACE/scripts/verify-candidate-publication-cli.mjs" --mode publication-assets --source-ref "$GITHUB_REF" --source-commit "$CANDIDATE_SHA" --version "$CANDIDATE_VERSION" --tag "$CANDIDATE_TAG" --manifest candidate-manifest.json --local-assets candidate-local-assets.json --asset-directory .
+      - name: Require source cleanliness after complete package verification
+        shell: bash
+        run: node scripts/assert-go-source-provenance.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: service-lasso-tui-candidate-${{ needs.validate-source.outputs.version }}-${{ needs.validate-source.outputs.sha }}
-          path: release-assets
+          path: ${{ runner.temp }}/release-assets
           if-no-files-found: error
           retention-days: 90
 

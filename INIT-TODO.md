@@ -1582,3 +1582,6 @@ Issue #44 / SPEC006 PLATFORM001–003: ordinary matching-host Windows ConPTY wit
 
 
 Issue #129 / SPEC-007 MANIFEST001–004: release-native @tui provider manifest, exact candidate archives/tag/SHA-256 and protected seven-asset verification; no release dispatch or publication authorized.
+
+
+Issue #131 / SPEC-008 TEMP001–003: canonical paths for freshly created owned verification temp directories; unchanged strict candidate path denial and no-publish symlink-temp regression.

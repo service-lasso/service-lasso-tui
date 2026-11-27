@@ -1603,3 +1603,6 @@ existing owned native controls; broader #20 remains open. No gate bypass.
 
 
 Issue #129 / SPEC-007 MANIFEST001–004: release-native @tui provider manifest, exact candidate archives/tag/SHA-256 and protected seven-asset verification; no release dispatch or publication authorized.
+
+
+Issue #131 / SPEC-008 TEMP001–003: canonical paths for freshly created owned verification temp directories; unchanged strict candidate path denial and no-publish symlink-temp regression.

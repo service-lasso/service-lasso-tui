@@ -461,7 +461,28 @@ test("actual workflow custody producer preserves literals and consumes every rea
     assert.ok(identity.birth.length > 0);
     assert.ok(path.isAbsolute(identity.image));
   }
-  assert.equal(await realpath(writer.image), await realpath(privateInput.tools.python3.path));
+  // A framework launcher may exec a different native image (Homebrew Python
+  // on Darwin). Retain both existing identities; independently launch the exact
+  // validated launcher and require its observed OS image to match the writer.
+  const launcher = privateInput.tools.python3;
+  const launcherPath = await realpath(launcher.path);
+  const launcherBefore = await readFile(launcherPath);
+  assert.equal(digest(launcherBefore), launcher.sha256);
+  assert.equal(launcherBefore.length, launcher.size);
+  const probeEnvironment = JSON.parse(await readFile(path.join(diagnostics, "1-binding.json"), "utf8")).freshEnvironment;
+  const probe = spawnSync(launcherPath, ["-c", `import json,os,subprocess
+image=os.readlink('/proc/self/exe') if os.uname().sysname=='Linux' else subprocess.check_output(['ps','-o','comm=','-p',str(os.getpid())],text=True).strip()
+print(json.dumps({'pid':os.getpid(),'ppid':os.getppid(),'image':image}))`], { encoding: "utf8", env: probeEnvironment });
+  assert.equal(probe.error, undefined);
+  assert.equal(probe.status, 0, "validated Python launcher must execute the independent positive image probe");
+  const launched = JSON.parse(probe.stdout);
+  assert.equal(launched.ppid, process.pid);
+  assert.notEqual(launched.pid, writer.pid);
+  assert.equal(await realpath(writer.image), await realpath(launched.image));
+  const runtimeImage = await stat(await realpath(launched.image));
+  assert.ok(runtimeImage.isFile() && runtimeImage.size > 0);
+  assert.equal(digest(await readFile(launcherPath)), launcher.sha256, "launcher bytes must stay stable across actual execution");
+  assert.equal((await stat(launcherPath)).size, launcher.size);
   assert.equal(await realpath(parent.image), await realpath(privateInput.tools.bash.path));
   assert.equal(await realpath(parent.image), parser, "actual observed producer image must match the explicitly bound parser");
   assert.equal(privateInput.tools.bash.sha256, digest(parserBytes));

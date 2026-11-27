@@ -32,6 +32,10 @@ await writeFile(path.join(root, "connections.json"), JSON.stringify(profiles), {
 const [instanceRegistry, portRegistry, runtimeInstance] = await Promise.all([readFile(instanceRegistryPath, "utf8"), readFile(hostPortRegistryPath, "utf8"), readFile(path.join(workspaceRoot, ".service-lasso", "runtime-instance.json"), "utf8")]);
 if (!JSON.parse(runtimeInstance).instance?.instanceId || !JSON.parse(instanceRegistry).instances?.length || !JSON.parse(portRegistry).allocations?.length) throw new Error("Core runtime-path readback unavailable"); await Promise.all([stat(workspaceRoot), stat(instanceRegistryPath), stat(hostPortRegistryPath)]);
 await writeFile(path.join(root, "ready.json"), JSON.stringify({ coreCommit, runtimePathReceipt: invalidReadyReceipt ? { coreReadback: false } : { coreReadback: true, uniqueOwnedPaths: ["workspaceRoot", "instanceRegistryPath", "hostPortRegistryPath"], runtimeInstanceBound: true } }), { encoding: "utf8", mode: 0o600 });
+// Retain the real output stream before closing fd0: Darwin libuv stream
+// initialization probes with a temporary kqueue, which must not reuse fd0.
+// This creates no readiness output and never opens or replaces process.stdin.
+const output = process.stdout;
 if (shutdownPipeFailure) {
   // This process owns the original control read end. Special process.stdin
   // destroy() does not close fd0. Close it once BEFORE handing off readiness,
@@ -44,8 +48,8 @@ if (shutdownPipeFailure) {
     if (original?.code !== "EBADF") throw original;
   }
 }
-if (readyMode === "normal") process.stdout.write(JSON.stringify({ event: "ready", url: server.url, token, deniedToken, jwksPort: address.port }) + "\n");
-if (readyMode === "eof") process.stdout.end();
+if (readyMode === "normal") output.write(JSON.stringify({ event: "ready", url: server.url, token, deniedToken, jwksPort: address.port }) + "\n");
+if (readyMode === "eof") output.end();
 if (shutdownPipeFailure) {
   // Keep the same natural 250ms teardown. No stream getter/read/delayed close
   // may act on fd0 after its original close, because the number may be reused.

@@ -1594,3 +1594,5 @@ Issue #136 / SPEC-008 TEMP006: parse original custody body before actual Bash3.2
 Issue #137: SPEC-002 AC-4/AC-6 package outside source with clean VCS and seven-asset proof.
 
 Issue #139: package Go env scope and faithful per-step proof.
+
+Issue #141: actual publisher Bash invocation and original-SHA hosted artifact verification.

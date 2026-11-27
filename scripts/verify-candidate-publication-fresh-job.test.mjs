@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmod, cp, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { execFile as execFileCallback } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -32,7 +32,6 @@ test("fresh job binds checked source before consuming its artifact and runs the 
     cp(path.join(scriptsDirectory, "verify-candidate-publication-cli.mjs"), path.join(sourceScripts, "verify-candidate-publication-cli.mjs")),
     cp(path.join(scriptsDirectory, "bind-candidate-publication-source.sh"), path.join(sourceScripts, "bind-candidate-publication-source.sh")),
   ]);
-  await chmod(path.join(sourceScripts, "bind-candidate-publication-source.sh"), 0o755);
   await run("git", ["init", "--quiet"], { cwd: source });
   await run("git", ["config", "user.email", "candidate-fixture@example.invalid"], { cwd: source });
   await run("git", ["config", "user.name", "Candidate fixture"], { cwd: source });
@@ -100,7 +99,12 @@ test("fresh job binds checked source before consuming its artifact and runs the 
   const verifierLibrary = path.join(sourceScripts, "verify-candidate-publication.mjs");
   const sourceReceipt = path.join(jobRoot, "candidate-source-binding.json");
   const artifactName = `service-lasso-tui-candidate-${version}-${sha}`;
-  await run(bash, [path.join(sourceScripts, "bind-candidate-publication-source.sh"), sha, "refs/heads/develop", sourceReceipt, artifactName], { cwd: source });
+  const workflow = (await readFile(path.join(scriptsDirectory, "../.github/workflows/release.yml"), "utf8")).replaceAll("\r\n", "\n");
+  const binding = workflow.split("      - name: Bind checked-out source before candidate artifact retrieval\n")[1].split("      - uses:")[0];
+  const bindingBody = binding.split("        run: |\n")[1].replace(/^          /gm, "");
+  assert.match(bindingBody, /bash scripts\/bind-candidate-publication-source\.sh/u);
+  const executeWorkflowBinding = () => run(bash, ["-c", bindingBody], {cwd: source, env: {...process.env, CANDIDATE_SHA:sha,GITHUB_REF:"refs/heads/develop",RUNNER_TEMP:jobRoot,CANDIDATE_VERSION:version}});
+  await executeWorkflowBinding();
   assert.deepEqual(JSON.parse(await readFile(sourceReceipt, "utf8")), { sourceRef: "refs/heads/develop", sourceCommit: sha, checkedOutCommit: sha, artifactName });
   let artifactRetrieved = false;
   const retrieveArtifact = () => {
@@ -109,7 +113,7 @@ test("fresh job binds checked source before consuming its artifact and runs the 
   };
   await writeFile(path.join(source, "unexpected-untracked-input"), "dirty\n");
   await assert.rejects(async () => {
-    await run(bash, [path.join(sourceScripts, "bind-candidate-publication-source.sh"), sha, "refs/heads/develop", sourceReceipt, artifactName], { cwd: source });
+    await executeWorkflowBinding();
     retrieveArtifact();
   }, /candidate publication source must have no tracked or untracked changes/u);
   assert.equal(artifactRetrieved, false);
@@ -117,7 +121,7 @@ test("fresh job binds checked source before consuming its artifact and runs the 
   const cleanVerifierLibrary = await readFile(verifierLibrary);
   await writeFile(verifierLibrary, `${cleanVerifierLibrary}\ntracked dirty input\n`);
   await assert.rejects(async () => {
-    await run(bash, [path.join(sourceScripts, "bind-candidate-publication-source.sh"), sha, "refs/heads/develop", sourceReceipt, artifactName], { cwd: source });
+    await executeWorkflowBinding();
     retrieveArtifact();
   }, /candidate publication source must have no tracked or untracked changes/u);
   assert.equal(artifactRetrieved, false);

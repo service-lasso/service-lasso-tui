@@ -166,3 +166,5 @@ actual workflow package steps in an isolated checkout; verify all four archives
 and seven publication assets, and deny dirty tracked or untracked source.
 
 Issue #139 AC-4/AC-6: package-job static GOFLAGS empty and GOWORK off apply to every provenance guard; exact workflow proof resolves job and per-step environment without injecting missing flags. Missing GOWORK on final guard must fail.
+
+Issue #141 AC-6: invoke the tracked nonexecutable source-binding script explicitly with Bash. Fresh-job proof executes the actual workflow shell body without changing mode. Real hosted package artifact is verified separately at its own original SHA, never relabelled as successor output.

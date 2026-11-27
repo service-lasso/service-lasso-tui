@@ -287,7 +287,7 @@ test("actual runtime closes its original fault control pipe before readiness and
           clearTimeout(timer);
           try { resolve(JSON.parse(stdout.slice(0, stdout.indexOf("\n")))); } catch (error) { reject(error); }
         });
-        child.once("exit", (code, signal) => { clearTimeout(timer); reject(new Error(`controlled runtime exited before readiness: code=${code} signal=${signal}; ${stderr.slice(0, 8192)}`)); });
+        child.once("exit", (code, signal) => { clearTimeout(timer); reject(new Error(`controlled runtime exited before readiness: code=${code} signal=${signal}; ${["EBADF", "EINVAL", "ENOTSOCK", "runtime control read end remained open", "Assertion failed", "ERR_MODULE_NOT_FOUND", "ERR_INVALID_FD", "bad file descriptor"].filter(marker => stderr.includes(marker)).join(",") || "unclassified-fixture-stderr"}`)); });
       });
       assert.equal(ready.event, "ready");
       assert.equal(child.exitCode, null);

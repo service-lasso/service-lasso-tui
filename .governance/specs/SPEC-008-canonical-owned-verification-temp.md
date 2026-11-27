@@ -8,4 +8,4 @@ Issue #131; protected ordinary publisher prerequisite for #129/#1992.
 
 Evidence baseline: develop 0f0fe55 (and parent 2fcdf2c) macOS native-pair/scoped four failures reach scoped publisher download reader through /var ancestry. Root fixture already realpaths its own directory. Correct the publisher-owned mkdtemp outputs only. No settings/credentials/publication or native qualification is authorized here.
 
-TEMP004 diagnostic: after original four failures clear, macOS reaches an existing controlled pipe-fault test where a fixture child exits before readiness. Retain its actual exit code/signal and bounded synthetic stderr in the failure so the runtime cause can be diagnosed; no new skip, altered success assertion or runtime behavior.
+TEMP004 diagnostic: after original four failures clear, macOS reaches an existing controlled pipe-fault test where a fixture child exits before readiness. Retain its actual exit code/signal and fixed allowlisted synthetic stderr classification in the failure so the runtime cause can be diagnosed; no new skip, altered success assertion or runtime behavior.

@@ -307,6 +307,7 @@ jobs:
             test ! -e "$phase"
             mkdir -p "$(dirname "$phase")"
             env -i PATH="$PATH" HOME="$HOME" LANG="${LANG:-C.UTF-8}" LC_ALL="${LC_ALL:-C.UTF-8}" GOFLAGS='' GOWORK=off CI_SOURCE_SHA="$CI_SOURCE_SHA" CORE_COMMIT="$CORE_COMMIT" PHASE="$phase" SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json" bash -euo pipefail <<'TUI20_PHASE'
+          tui20_prepare_custody() {
           phase="$PHASE"
           workspace="$SERVICE_LASSO_WORKSPACE_ROOT"
           instances="$SERVICE_LASSO_INSTANCE_REGISTRY_PATH"
@@ -416,6 +417,8 @@ jobs:
           wait "$writer_pid"
           trap - EXIT
           exec 8>&- 9>&-
+          }
+          tui20_prepare_custody
           git -C "$phase/core-source" init -q
           git -C "$phase/core-source" remote add origin https://github.com/service-lasso/service-lasso.git
           git -C "$phase/core-source" fetch --no-tags origin develop
@@ -605,6 +608,7 @@ jobs:
             test ! -e "$phase"
             mkdir -p "$(dirname "$phase")"
             env -i PATH="$PATH" HOME="$HOME" LANG="${LANG:-C.UTF-8}" LC_ALL="${LC_ALL:-C.UTF-8}" GOFLAGS='' GOWORK=off CI_SOURCE_SHA="$CI_SOURCE_SHA" CORE_COMMIT="$CORE_COMMIT" PHASE="$phase" SERVICE_LASSO_WORKSPACE_ROOT="$phase/workspace" SERVICE_LASSO_INSTANCE_REGISTRY_PATH="$phase/registry/instances.json" SERVICE_LASSO_HOST_PORT_REGISTRY_PATH="$phase/registry/ports.json" bash -euo pipefail <<'TUI20_PHASE'
+          tui20_prepare_custody() {
           phase="$PHASE"
           workspace="$SERVICE_LASSO_WORKSPACE_ROOT"
           instances="$SERVICE_LASSO_INSTANCE_REGISTRY_PATH"
@@ -714,6 +718,8 @@ jobs:
           wait "$writer_pid"
           trap - EXIT
           exec 8>&- 9>&-
+          }
+          tui20_prepare_custody
           git -C "$phase/core-source" init -q
           git -C "$phase/core-source" remote add origin https://github.com/service-lasso/service-lasso.git
           git -C "$phase/core-source" fetch --no-tags origin develop

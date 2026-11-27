@@ -1,3 +1,5 @@
+Issue #134: SPEC-002 AC-2/AC-3, ordinary protected Actions-token publication with exact-SHA operator preflight and live policy admission.
+
 Issue #126: SPEC-007 TUI-CONNECT, confirmed local/remote target and masked interactive login. Core #1985 supplies local selection or --connect.
 
 Issue #125: SPEC-007 TUI-DASHBOARD, authoritative Core #1985 Stack intent; neutral prepared/optional/unavailable metadata and expected-daemon attention.

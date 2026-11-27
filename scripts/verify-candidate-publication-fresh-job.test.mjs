@@ -147,36 +147,15 @@ test("fresh job binds checked source before consuming its artifact and runs the 
   assert.notEqual(path.resolve(verifier), path.resolve(path.join(scriptsDirectory, "verify-candidate-publication-cli.mjs")));
 });
 
-test("release workflow confines scoped authority to the actual publisher step", async () => {
-  const workflow = await readFile(path.join(scriptsDirectory, "../.github/workflows/release.yml"), "utf8");
-  const assertCredentialContract = text => {
-    text = text.replaceAll("\r\n", "\n");
-    const publisher = text.split("  publish-candidate:\n")[1];
-    assert.ok(publisher, "publication job missing");
-    const [job, ...steps] = publisher.split("      - ");
-    assert.match(job, /environment:\n      name: development-candidate/u);
-    assert.match(job, /permissions:\n      contents: read/u);
-    assert.doesNotMatch(job, /GH_TOKEN|DEVELOPMENT_CANDIDATE_TOKEN/u);
-    const actual = steps.filter(step => step.includes("node scripts/publish-candidate.mjs"));
-    assert.equal(actual.length, 1, "exactly one actual publisher step");
-    assert.match(actual[0], /env:\n          GH_TOKEN: \$\{\{ secrets\.DEVELOPMENT_CANDIDATE_TOKEN \}\}\n        shell: bash/u);
-    assert.match(actual[0], /test -n "\$GH_TOKEN"[^\n]*exit 1; \}\n          node scripts\/publish-candidate\.mjs/u);
-    assert.equal((text.match(/secrets\.DEVELOPMENT_CANDIDATE_TOKEN/gu) ?? []).length, 1);
-    assert.equal((text.match(/GH_TOKEN:/gu) ?? []).length, 1);
-    assert.doesNotMatch(text, /github\.token|contents: write|set -[^\n]*x/u);
-    for (const step of steps.filter(step => step !== actual[0])) {
-      assert.doesNotMatch(step, /GH_TOKEN|DEVELOPMENT_CANDIDATE_TOKEN/u);
-    }
-    assert.doesNotMatch(actual[0], /(?:echo|printf)[^\n]*\$GH_TOKEN/u);
-    const command = actual[0].split("node scripts/publish-candidate.mjs")[1];
-    assert.doesNotMatch(command, /GH_TOKEN|DEVELOPMENT_CANDIDATE_TOKEN|--token/u);
-  };
-  for (const text of [workflow.replaceAll("\r\n", "\n"), workflow.replaceAll("\r\n", "\n").replaceAll("\n", "\r\n")]) {
-    assertCredentialContract(text);
-    // EVERY original negative is applied before normalization for both forms.
-    assert.throws(() => assertCredentialContract(text.replace("secrets.DEVELOPMENT_CANDIDATE_TOKEN", "github.token")));
-    assert.throws(() => assertCredentialContract(text.replace("secrets.DEVELOPMENT_CANDIDATE_TOKEN", "secrets.DEVELOPMENT_CANDIDATE_TOKEN || github.token")));
-    assert.throws(() => assertCredentialContract(text.replace("      contents: read", "      contents: write")));
-    assert.throws(() => assertCredentialContract(text.replace('          test -n "$GH_TOKEN"', '          echo "$GH_TOKEN"\n          test -n "$GH_TOKEN"')));
-  }
+test("ordinary release confines Actions write to protected publisher job", async () => {
+  const text = (await readFile(path.join(scriptsDirectory, "../.github/workflows/release.yml"), "utf8")).replaceAll("\r\n", "\n");
+  const [before, publisher] = text.split("  publish-candidate:\n");
+  assert.ok(publisher);
+  assert.doesNotMatch(before, /contents: write|GH_TOKEN:/u);
+  assert.match(publisher, /environment:\n      name: development-candidate/u);
+  assert.match(publisher, /permissions:\n      contents: write\n      checks: read\n      actions: read/u);
+  assert.match(publisher, /GH_TOKEN: \$\{\{ github\.token \}\}/u);
+  assert.match(publisher, /--policy-mode actions --operator-preflight-sha "\$OPERATOR_PREFLIGHT_SHA"/u);
+  assert.equal((text.match(/GH_TOKEN:/gu) ?? []).length, 1);
+  assert.doesNotMatch(text, /DEVELOPMENT_CANDIDATE_TOKEN|set -[^\n]*x/u);
 });

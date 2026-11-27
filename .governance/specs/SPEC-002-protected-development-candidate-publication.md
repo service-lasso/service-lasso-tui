@@ -145,3 +145,15 @@ Archive-only checksum rows are unchanged. The service manifest must equal the
 canonical root provider projection with the exact version/tag, four architecture
 mappings and the independently computed archive digests. A coherently rehashed
 but semantically altered service.json denies before provider access.
+
+## Issue #134 ordinary Actions publication (AC-2/AC-3)
+The protected ordinary publisher uses contents write and checks read with the built-in
+Actions token. An authenticated operator verifies admin-only immutable settings and
+full protection (strict checks, review count, disabled force pushes), exact completed
+push CI, then supplies operator_preflight_sha matching the full candidate SHA. This
+input is an operator attestation, not independent proof of admin settings. Before
+every mutation live develop must remain protected at that SHA with exactly the five
+required checks enforced for everyone by app 15368, protected-only environment and
+one-to-thirty minute timer, and successful exact-SHA app check runs. Missing or changed
+controls deny. Final immutable public seven-asset acceptance remains mandatory.
+The scoped publisher keeps admin-policy admission. No custom secret is required.

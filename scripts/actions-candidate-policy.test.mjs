@@ -21,3 +21,10 @@ for (const [name, mutate] of Object.entries({
   truncated: f => f.checks.total_count = 101,
   duplicateCheck: f => { f.checks.check_runs.push(f.checks.check_runs[0]); f.checks.total_count++; },
 })) test(`deny ${name}`, () => { const f = fixture(); mutate(f); assert.throws(() => verify(f, sha, sha)); });
+
+test('actual publisher rejects missing Actions attestation before local or provider access', async () => {
+  const { publishCandidate } = await import('./publish-candidate.mjs');
+  let calls = 0;
+  await assert.rejects(publishCandidate({ assetDirectory: '/nonexistent-unread-candidate', identity: {sourceRef: 'refs/heads/develop',sourceCommit: sha,version: '2026.11.28-aaaaaaa',tag:'candidate-2026.11.28-aaaaaaa'},token: 'held-token',policyMode:'actions',fetchImpl:async()=>{calls++;throw new Error('unexpected provider');} }), /operator preflight binding denied/);
+  assert.equal(calls, 0);
+});

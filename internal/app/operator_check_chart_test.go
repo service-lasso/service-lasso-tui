@@ -118,7 +118,7 @@ func TestStackOptionalChecksReadDoesNotFailOverview(t *testing.T) {
 		SnapshotID: "snapshot-checks", SourceRevision: "list-revision", ExpiresAt: "2099-10-08T00:00:00.000Z",
 		Rows: m.services.Rows,
 	}
-	checkReads := 0
+	checkReads, runtimeReads := 0, 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/operator/v2/reconciliation-context":
@@ -133,6 +133,9 @@ func TestStackOptionalChecksReadDoesNotFailOverview(t *testing.T) {
 				t.Errorf("optional read crossed admitted page: %v", ids)
 			}
 			w.WriteHeader(http.StatusNotFound)
+		case "/api/operator/v2/stack-runtime":
+			runtimeReads++
+			w.WriteHeader(http.StatusNotFound)
 		default:
 			t.Errorf("unexpected route %s", r.URL.Path)
 			w.WriteHeader(http.StatusBadRequest)
@@ -146,18 +149,23 @@ func TestStackOptionalChecksReadDoesNotFailOverview(t *testing.T) {
 	m.client = client
 	updated, side := m.Update(operatorLoaded{Ticket: m.ticket(), Data: operatorOverviewRead{Page: page}})
 	current := updated.(operatorModel)
-	if checkReads != 0 || side == nil || !current.pageSelectionCurrent() || current.services.Snapshot != page.SnapshotID {
+	if checkReads != 0 || runtimeReads != 0 || side == nil || !current.pageSelectionCurrent() || current.services.Snapshot != page.SnapshotID {
 		t.Fatal("overview publication waited for or skipped the optional check read")
 	}
 	if view := current.View(); !strings.Contains(view, "> demo-api") || !strings.Contains(view, "Pending") {
 		t.Fatalf("optional pending check hid the overview\n%s", view)
 	}
-	msg := side()
-	if checkReads != 1 {
-		t.Fatalf("expected one batched health read, got %d", checkReads)
+	batch, ok := side().(tea.BatchMsg)
+	if !ok || len(batch) != 2 {
+		t.Fatal("optional reads are not independently scheduled")
 	}
-	updated, _ = current.Update(msg)
-	current = updated.(operatorModel)
+	for _, read := range batch {
+		updated, _ = current.Update(read())
+		current = updated.(operatorModel)
+	}
+	if checkReads != 1 || runtimeReads != 1 {
+		t.Fatalf("expected one batched read per source, got %d health and %d runtime", checkReads, runtimeReads)
+	}
 	if view := current.View(); !strings.Contains(view, "Unavailable") || !strings.Contains(view, "ID: demo-api") || current.errorText != "" {
 		t.Fatalf("older Core check route failed overview\n%s", view)
 	}

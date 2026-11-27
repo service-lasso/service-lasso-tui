@@ -61,6 +61,8 @@ func (m operatorModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case operatorChecksLoaded:
 		receivedErr = msg.err
+	case operatorStackRuntimeLoaded:
+		receivedErr = msg.err
 	case operatorPreviewed:
 		receivedErr = msg.Err
 	case operatorDraftBinding:
@@ -190,10 +192,13 @@ func (m operatorModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.errorText = ""
 		m.clampJourneyPosition()
 		if read, ok := msg.Data.(operatorOverviewRead); ok {
-			return m, m.refreshStackChecks(read, msg.Ticket, msg.Cursor == nil)
+			replace := msg.Cursor == nil
+			return m, tea.Batch(m.refreshStackChecks(read, msg.Ticket, replace), m.refreshStackRuntime(read, msg.Ticket, replace))
 		}
 	case operatorChecksLoaded:
 		m.acceptStackChecks(msg)
+	case operatorStackRuntimeLoaded:
+		m.acceptStackRuntime(msg)
 	case operatorPreviewed:
 		if !m.current(msg.Ticket) {
 			return m, nil

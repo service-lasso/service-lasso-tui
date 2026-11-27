@@ -33,6 +33,8 @@ func (m operatorModel) operatorStackView() string {
 		return ""
 	}
 	current := m.pageSelectionCurrent() && m.services.Snapshot != ""
+	runtime := m.stackRuntime
+	runtimeStatus := m.stackRuntimeFreshness(now, runtime.receipt, runtime.status)
 	var services []api.OperatorService
 	if current {
 		services = m.overviewServices()
@@ -186,6 +188,19 @@ func (m operatorModel) operatorStackView() string {
 		labels[1], labels[2] = "ATTENTION", "OPERATION"
 		values[2] = "Unavailable"
 	}
+	if runtimeStatus != "" && runtimeStatus != "Unavailable" {
+		values[2], values[3] = runtimeStatus, runtimeStatus
+	}
+	if runtimeStatus == "" {
+		values[3] = stackUptime(runtime.frame.CoreUptimeMS, "")
+		if operations := runtime.frame.ActiveOperations; operations != nil {
+			values[2] = fmt.Sprintf("%d active · workspace", operations.Count)
+			if !wide {
+				labels[2] = "ACTIVE OPS"
+				values[2] = fmt.Sprintf("%d workspace", operations.Count)
+			}
+		}
+	}
 	if w < 80 {
 		labels[3] = "UPTIME"
 	}
@@ -222,6 +237,13 @@ func (m operatorModel) operatorStackView() string {
 	if w >= 110 && m.height >= 24 {
 		lines = append(lines, "")
 	}
+	incidentRows, provenance := m.stackIncidentRows(now, runtimeStatus, services)
+	if len(incidentRows) != 0 {
+		attentionRows = incidentRows
+	}
+	if runtimeStatus == "Unavailable" && failedChecks > 0 {
+		provenance = "Incident history unavailable · observed HTTP checks and service summaries"
+	}
 	// Reserve a separate attention panel, footer and gaps before sizing the list.
 	feedLimit := 6
 	if wide && m.height >= 30 {
@@ -254,11 +276,12 @@ func (m operatorModel) operatorStackView() string {
 		inspectorHeight = 4
 		listHeight = max(3, bodyHeight-inspectorHeight)
 	}
+	const uptimeWidth = 10
 	stateWidth := 0
 	nameWidth := max(8, (leftWidth-5)*60/100)
 	if stripWidth > 0 {
 		stateWidth = 17
-		nameWidth = leftWidth - 6 - stateWidth - stripWidth
+		nameWidth = leftWidth - 7 - stateWidth - uptimeWidth - stripWidth
 	}
 	// Reserve the service rows here. Render only the visible rows once the
 	// viewport and selection offset are known.
@@ -322,7 +345,18 @@ func (m operatorModel) operatorStackView() string {
 			serviceStatus, serviceColor := stackCheckServiceStatus(s, checks, status)
 			tail := operatorRender(style.Foreground(serviceColor), padLine(serviceStatus, statusWidth))
 			if stripWidth > 0 {
-				tail += operatorRender(style, " ") + stackCheckStrip(checks, status, style, stripWidth)
+				runtime, runtimeStatus := m.stackServiceRuntimeFor(s, now)
+				uptime := stackRunUptime(s, runtime, runtimeStatus)
+				switch uptime {
+				case "Unavailable":
+					uptime = "N/A"
+				case "Access denied":
+					uptime = "Denied"
+				case "Read failed":
+					uptime = "Read error"
+				}
+				tail += operatorRender(style.Foreground(operatorMuted), " "+padLine(uptime, uptimeWidth)+" ") +
+					stackCheckStrip(checks, status, style, stripWidth)
 			}
 			list[1+j] = rail + operatorRender(style, prefix) + tail
 		}
@@ -330,7 +364,7 @@ func (m operatorModel) operatorStackView() string {
 	if columnHeader {
 		header := "   " + padLine("NAME", nameWidth) + "  STATE"
 		if stripWidth > 0 {
-			header = "   " + padLine("NAME", nameWidth) + "  " + padLine("STATE", stateWidth) + " 15M CHECKS"
+			header = "   " + padLine("NAME", nameWidth) + "  " + padLine("STATE", stateWidth) + " " + padLine("RUN UPTIME", uptimeWidth) + " 15M CHECKS"
 		}
 		list = append(list[:1], append([]string{operatorRender(operatorBaseStyle.Foreground(operatorMuted), padLine(header, leftWidth))}, list[1:]...)...)
 	}
@@ -355,7 +389,9 @@ func (m operatorModel) operatorStackView() string {
 		nameWidth := rightWidth - ansi.StringWidth(inspectorStatus) - 2
 		detail[0] = operatorRender(band, padLine(" "+inspectorTitle, nameWidth)) +
 			operatorRender(band.Foreground(inspectorColor), " "+inspectorStatus+" ")
-		content := stackCheckLatencyRows(checks, state, s, rightWidth, inspectorHeight-1, m.overviewPaused)
+		runtime, runtimeStatus := m.stackServiceRuntimeFor(s, now)
+		metrics := "Uptime " + stackRunUptime(s, runtime, runtimeStatus) + " · Restarts " + stackRestartCount(runtime, runtimeStatus)
+		content := stackCheckLatencyRows(checks, state, s, metrics, rightWidth, inspectorHeight-1, m.overviewPaused)
 		for i := 1; i < len(detail); i++ {
 			detail[i] = operatorRender(operatorBaseStyle, strings.Repeat(" ", rightWidth))
 		}
@@ -371,15 +407,11 @@ func (m operatorModel) operatorStackView() string {
 	}
 	lines = append(lines, "")
 	if len(attentionRows) == 0 {
-		text := "No stopped or unhealthy summaries observed."
+		observations := "No stopped or unhealthy summaries observed."
 		if !current {
-			text = "Observed service conditions unavailable."
+			observations = "Observed service conditions unavailable."
 		}
-		attentionRows = append(attentionRows, text)
-	}
-	provenance := "Incident history unavailable · summary observations only"
-	if failedChecks > 0 {
-		provenance = "Incident history unavailable · observed HTTP checks and service summaries"
+		attentionRows = append(attentionRows, observations)
 	}
 	attentionRows = append(attentionRows, provenance)
 	// Keep the incident provenance visible even when many services need attention.

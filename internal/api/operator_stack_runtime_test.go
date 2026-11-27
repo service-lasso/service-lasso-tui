@@ -86,3 +86,26 @@ func TestOperatorStackRuntimeEmptyScopeAndNullHistory(t *testing.T) {
 		})
 	}
 }
+
+func TestOperatorStackRuntimeOptionalIntentCompatibility(t *testing.T) {
+	for _, intent := range []string{"", "expected", "prepared", "optional", "disabled", "unsupported", "gated", "unprepared", "future-private-text"} {
+		t.Run(intent, func(t *testing.T) {
+			field := ""
+			if intent != "" {
+				field = fmt.Sprintf(",\"stackIntent\":%q", intent)
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				fmt.Fprintf(w, `{"contractVersion":"%s","requestId":"request","generatedAt":"2026-11-27T10:15:00.000Z","data":{"observedAt":"2026-11-27T10:15:00.000Z","coreUptimeMs":null,"activeOperations":null,"rows":[{"serviceId":"demo-api","uptimeMs":null,"restartCount":null%s}],"incidents":null}}`, OperatorContract, field)
+			}))
+			defer server.Close()
+			client, err := NewClient(server.URL, server.Client(), "fixture-token")
+			if err != nil {
+				t.Fatal(err)
+			}
+			frame, err := client.OperatorStackRuntime(context.Background(), []string{"demo-api"})
+			if err != nil || frame.Rows[0].StackIntent != intent {
+				t.Fatalf("intent compatibility: %v", err)
+			}
+		})
+	}
+}

@@ -104,8 +104,8 @@ func TestStackHTTPFailureAttentionIsBoundAndDoesNotPromoteAggregateHealth(t *tes
 			t.Fatalf("missing %q in Stack view\n%s", phrase, view)
 		}
 	}
-	if strings.Count(view, "Latest HTTP check failed") != 1 || strings.Contains(view, "Healthy") {
-		t.Fatal("probe double-counted the stopped service or promoted aggregate health")
+	if strings.Count(view, "Latest HTTP check failed") != 2 || strings.Contains(view, "Healthy") {
+		t.Fatal("probe lost observed failure with unknown intent or promoted aggregate health")
 	}
 }
 

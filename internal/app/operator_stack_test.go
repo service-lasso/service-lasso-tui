@@ -112,7 +112,7 @@ func TestStackAttentionAndSafetyFallback(t *testing.T) {
 	m.services.Rows[0].HealthStatus = "unhealthy"
 	m.services.Rows[1].Running = "yes"
 	view := m.View()
-	for _, want := range []string{"1 stopped or unhealthy", "Stopped", "Running"} {
+	for _, want := range []string{"1 need attention", "Degraded", "Running"} {
 		if !strings.Contains(view, want) {
 			t.Fatal(view)
 		}

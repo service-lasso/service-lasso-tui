@@ -68,9 +68,9 @@ func (m operatorModel) operatorStackView() string {
 				httpPassed++
 			}
 		}
-		if s.Running == "no" || s.HealthStatus == "unhealthy" {
+		if m.stackNeedsAttention(s, now) {
 			attention++
-			attentionRows = append(attentionRows, operatorText(s.ServiceID)+"  ·  "+stackObservedStatus(s)+"  ·  observed summary")
+			attentionRows = append(attentionRows, operatorText(s.ServiceID)+"  ·  "+m.stackIntentStatusText(s, now)+"  ·  observed summary")
 		} else if httpCheckFailed {
 			latest := checks.latest()
 			at, _ := time.Parse(time.RFC3339Nano, latest.At)
@@ -160,7 +160,7 @@ func (m operatorModel) operatorStackView() string {
 		if checked == 0 {
 			values[0] = fmt.Sprintf("0 of %d checked", len(services))
 		}
-		values[1] = fmt.Sprintf("%d stopped or unhealthy", attention)
+		values[1] = fmt.Sprintf("%d need attention", attention)
 		if !wide {
 			values[0] = fmt.Sprintf("%d/%d checked", checked, len(services))
 		}
@@ -342,7 +342,7 @@ func (m operatorModel) operatorStackView() string {
 				statusWidth = stateWidth
 			}
 			checks, status := m.stackCheckFor(s, now)
-			serviceStatus, serviceColor := stackCheckServiceStatus(s, checks, status)
+			serviceStatus, serviceColor := m.stackIntentStatus(s, checks, status, now)
 			tail := operatorRender(style.Foreground(serviceColor), padLine(serviceStatus, statusWidth))
 			if stripWidth > 0 {
 				runtime, runtimeStatus := m.stackServiceRuntimeFor(s, now)
@@ -383,7 +383,7 @@ func (m operatorModel) operatorStackView() string {
 		s := services[m.row]
 		inspectorTitle = operatorText(s.DisplayName)
 		checks, state := m.stackCheckFor(s, now)
-		inspectorStatus, inspectorColor := stackCheckServiceStatus(s, checks, state)
+		inspectorStatus, inspectorColor := m.stackIntentStatus(s, checks, state, now)
 		inspectorStatus = strings.ToUpper(inspectorStatus)
 		band := operatorFocusStyle
 		nameWidth := rightWidth - ansi.StringWidth(inspectorStatus) - 2
@@ -407,7 +407,7 @@ func (m operatorModel) operatorStackView() string {
 	}
 	lines = append(lines, "")
 	if len(attentionRows) == 0 {
-		observations := "No stopped or unhealthy summaries observed."
+		observations := "No conditions requiring attention observed."
 		if !current {
 			observations = "Observed service conditions unavailable."
 		}

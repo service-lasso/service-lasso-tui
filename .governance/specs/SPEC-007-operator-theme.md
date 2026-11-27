@@ -144,3 +144,25 @@ Issue #123 missing-credential diagnosis retains the fixed generic observer
 prefix and adds a fixed hint to load the local admin token in this terminal.
 No environment variable names, private profile names, URLs or values are exposed;
 profile/transport admission still precedes credential lookup.
+
+
+Issue #125 (TUI-DASHBOARD) classifies Stack service intent using authoritative
+Core metadata, separately from observed running and health state. Stopped
+expected daemons require attention; prepared providers, optional services,
+disabled services, unsupported services and first-run gated services retain
+neutral explicit states. Never infer intent from IDs, names, check presence or
+a missing metadata record. Missing, denied, failed, stale or older-Core metadata
+retains an explicit unknown intent and its safe status. Running/unhealthy and
+actual failed checks remain observed failures, and durable timestamped incident
+history remains history. Preserve the existing dark hierarchy, keyboard
+selection and inspector, uptime/restarts/operations, neutral no-probe/no-data
+graphics and real timestamped latency samples at 120x32 and 80x24. Metadata
+contracts must be agreed with Core before implementation and use the existing
+authenticated connection, context and freshness safety boundaries.
+
+Agreed Core #1985 contract: optional scalar `stackIntent` on each authenticated
+operator/v2 stack-runtime row: expected, prepared, optional, disabled,
+unsupported, gated, or unprepared. Unprepared means a supported provider lacks
+actual installed/configured preparation. Omitted or unknown values carry no
+intent claim. Reuse the runtime frame's reconciliation context, requested IDs,
+revision/generation binding, observation receipt and expiry.

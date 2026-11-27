@@ -139,8 +139,3 @@ Wide latency panels retain axes and neutral guides without numeric sample claims
 compact panels retain a graphical guide or timestamp-binned sample strip. Real
 observations retain durations, failures, gaps and existing freshness rules.
 Validate no-check, empty and real states from 60x18 through 200x20.
-
-Issue #123 launch diagnostic adjunct: absent credential returns a typed fixed
-configuration error naming SERVICE_LASSO_API_TOKEN or the configured profile
-token environment variable, never the private profile/env/URL or token value.
-Existing transport/profile admission remains before credential lookup.

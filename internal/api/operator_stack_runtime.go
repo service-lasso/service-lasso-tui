@@ -13,6 +13,7 @@ type OperatorStackOperations struct {
 
 type OperatorStackServiceRuntime struct {
 	ServiceID    string `json:"serviceId"`
+	StackIntent  string `json:"stackIntent,omitempty"`
 	UptimeMS     *int64 `json:"uptimeMs"`
 	RestartCount *int64 `json:"restartCount"`
 }

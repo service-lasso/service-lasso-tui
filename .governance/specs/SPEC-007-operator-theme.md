@@ -110,3 +110,22 @@ precedence. When present, HTTP observations supply explicitly scoped HTTP
 check coverage and pass/fail totals without promoting aggregate health. Pause
 retains the admitted frame while its overview remains valid and labels the
 chart endpoint as its last observation.
+
+Issue #121 completes Stack runtime telemetry (TUI-DASHBOARD). Read the
+additive, bounded operator/v2 GET /stack-runtime view from Core #1973 for
+the current admitted overview page. Its observed values supply Core uptime,
+current-run service uptime, durable service restart counts, workspace-scoped
+active durable operation count and recent UTC incidents. Nullable metrics
+and histories are unavailable; known empty history and zero counts are
+explicit. Display only safe fixed incident labels and server-supplied
+timestamps. Distinguish durable incidents from current service and HTTP
+observations. Keep check strips and the fifteen-minute latency chart.
+
+Read and publish runtime telemetry independently of overview and check
+samples. Confirm its existing reconciliation context and selector before
+retaining it; reject obsolete responses, server mismatches and expired reads.
+When paused, the display retains only the admitted observation while the
+overview remains valid. Partial, denied, failed and older-Core responses do
+not promote unavailable values. Wide layouts add RUN UPTIME to the service
+table and retain selected uptime/restarts in the inspector. Compact and
+monochrome layouts retain selection, telemetry status and keyboard recovery.

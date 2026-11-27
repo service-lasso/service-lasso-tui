@@ -80,10 +80,14 @@ jobs:
           set -euo pipefail
           node scripts/assert-go-source-provenance.mjs
           binary="$RUNNER_TEMP/service-lasso-tui"
+          if [ "$RUNNER_OS" = Windows ]; then binary="${binary}.exe"; fi
           go build -mod=readonly -buildvcs=true -trimpath -ldflags='-s -w' -o "$binary" ./cmd/service-lasso-tui
           go version -m "$binary" | grep -F "vcs.revision=${{ needs.validate-source.outputs.sha }}" >/dev/null
           go version -m "$binary" | grep -F 'vcs.modified=false' >/dev/null
-          "$binary" --help >/dev/null
+          help_status=0
+          "$binary" --help > "$RUNNER_TEMP/tui-help.txt" 2>&1 || help_status=$?
+          test "$help_status" = 2
+          grep -F "Usage of service-lasso-tui:" "$RUNNER_TEMP/tui-help.txt" >/dev/null
 
   package-candidate:
     needs: [validate-source, platform-smoke]

@@ -50,17 +50,5 @@
         "args": []
       }
     }
-  },
-  "actions": {
-    "install": {
-      "description": "Acquire and unpack the prebuilt terminal client.",
-      "mode": "converge-install",
-      "idempotent": true
-    },
-    "update": {
-      "description": "Acquire the selected terminal client release.",
-      "mode": "converge-update",
-      "idempotent": true
-    }
   }
 }

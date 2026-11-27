@@ -139,6 +139,7 @@ type operatorModel struct {
 	overviewPaused                            bool
 	stackChecks                               map[string]stackServiceChecks
 	stackChecksPending                        bool
+	stackRuntime                              stackRuntimeState
 	services                                  operatorPageState[api.OperatorService]
 	graph                                     operatorGraphState
 	variables                                 operatorPageState[api.OperatorVariable]
@@ -218,6 +219,7 @@ func (m operatorModel) bootstrap() tea.Cmd {
 func (m *operatorModel) invalidate() {
 	m.stackChecks = nil
 	m.stackChecksPending = false
+	m.stackRuntime = stackRuntimeState{}
 	m.metadataCurrent = nil
 	m.logSearchDraft = nil
 	m.declaredReadReview = false

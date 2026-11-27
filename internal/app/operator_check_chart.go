@@ -78,7 +78,7 @@ func stackChartTick(value float64) string {
 	return fmt.Sprintf("%.0f", value)
 }
 
-func stackCheckLatencyRows(checks stackServiceChecks, status string, service api.OperatorService, width, height int, paused bool) []string {
+func stackCheckLatencyRows(checks stackServiceChecks, status string, service api.OperatorService, runtimeMetrics string, width, height int, paused bool) []string {
 	base := operatorBaseStyle.Foreground(operatorMuted)
 	band := operatorBaseStyle.Bold(true).Foreground(operatorTextColor)
 	row := func(style lipgloss.Style, text string) string {
@@ -93,9 +93,9 @@ func stackCheckLatencyRows(checks stackServiceChecks, status string, service api
 	identity := row(base, "ID: "+operatorText(service.ServiceID))
 	if status != "" {
 		if height < 7 {
-			return []string{identity, row(base, "Runtime: "+stackRunningLabel(service.Running)+" · Health: "+operatorText(service.HealthStatus)), row(band, "HTTP check · 15m: "+strings.ToLower(status))}
+			return []string{identity, row(base, "Runtime: "+stackRunningLabel(service.Running)+" · HTTP check: "+strings.ToLower(status)), row(band, runtimeMetrics)}
 		}
-		return []string{row(band, title), identity, row(base, status), row(base, "Runtime: "+stackRunningLabel(service.Running)+" · Health: "+operatorText(service.HealthStatus)), row(base, operatorText(service.Description)), row(base, "Uptime / restarts: unavailable")}
+		return []string{row(band, title), identity, row(base, status), row(base, "Runtime: "+stackRunningLabel(service.Running)+" · Health: "+operatorText(service.HealthStatus)), row(base, operatorText(service.Description)), row(band, runtimeMetrics)}
 	}
 	latest := checks.latest()
 	latestColor, latestState := operatorTeal, "pass"
@@ -103,7 +103,7 @@ func stackCheckLatencyRows(checks stackServiceChecks, status string, service api
 		latestColor, latestState = operatorAmber, "fail"
 	}
 	if height < 7 {
-		return []string{identity, row(band.Foreground(latestColor), fmt.Sprintf("HTTP check · 15m: %d ms (%s)", latest.DurationMS, latestState)), row(base, "Uptime / restarts: unavailable")}
+		return []string{identity, row(band.Foreground(latestColor), fmt.Sprintf("HTTP check · 15m: %d ms (%s)", latest.DurationMS, latestState)), row(band, runtimeMetrics)}
 	}
 	rowCount := min(6, height-6)
 	recent := fmt.Sprintf("Latest %d ms · %s", latest.DurationMS, latestState)
@@ -150,7 +150,7 @@ func stackCheckLatencyRows(checks stackServiceChecks, status string, service api
 	out = append(out,
 		operatorRender(base, padLine(axis, width)),
 		row(base, "█ Pass  ▒ Fail  · Gap"),
-		row(base, "Uptime / restarts: unavailable"),
+		row(band, runtimeMetrics),
 	)
 	if len(out) < height {
 		for i := len(checks.observation.Samples) - 1; i >= 0; i-- {

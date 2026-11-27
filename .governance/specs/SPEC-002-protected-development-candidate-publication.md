@@ -132,3 +132,16 @@ OPV2-NATIVE-PRODUCER-DEADLINE-1 source traceability: repair the original-owned h
 
 ## OPV2-LEGACY-SAVE-OWNERSHIP-1 current source repair
 Original BLUEPRINT79/81 and ACCEPTANCE D03 A/B preservation also bind the authentic compatibility-v1 local writer. Current legacy operation readbacks call Save again before Clear; unconditional Save(A) can overwrite newer B and defeat Clear(A)'s exact comparison. Preserve exact four-key v2 grammar and raw originals: under the shared held all-writer protocol, admit publication from genuine absence or an unchanged exact-own-record no-op; a different operation/connection/digest or migrated3 remains retained and denies the legacy write. Normal authoritative A clear then B save stays useful. Source cases must cover terminal lateA readback→Save/Clear with B retained, concurrent foreign ownership, identical noncanonical raw no-op, and sequential positive publication. This is original preservation implementation, not public storage outcome B, a waiver of BLUEPRINT79/81, sourceGO, native closure, signing recovery, or execution. All46 full product and genuine Windows/Linux installed acceptance remain required.
+
+## Issue #129 / SPEC-007 seven-asset amendment
+
+New candidates use schemaVersion 3 and exactly seven public regular files: the
+four unchanged archives, SHA256SUMS.txt, candidate-manifest.json and service.json.
+All six-file/six-record/six-held-byte references above describe retained schema2
+verification only. Schema3 carries service.json through the same bounded local
+inventory, original-held-byte upload, draft gate, immutable receipt and recovery.
+New publication refuses schema2; existing schema2 recovery remains read-only.
+Archive-only checksum rows are unchanged. The service manifest must equal the
+canonical root provider projection with the exact version/tag, four architecture
+mappings and the independently computed archive digests. A coherently rehashed
+but semantically altered service.json denies before provider access.

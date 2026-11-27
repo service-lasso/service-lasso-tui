@@ -215,3 +215,18 @@ and returns to target editing; Ctrl+U clears the edited field; Ctrl+C exits.
 Credentials are held only in memory for the session. On a real terminal, a
 missing selected-profile credential or rejected login also opens setup. Existing
 noninteractive configuration failures remain failures rather than prompting.
+
+### Release-native provider manifest
+
+Root `service.json` is the source template for the on-demand `@tui` provider.
+The protected develop candidate producer emits its pinned `service.json` beside
+the four prebuilt client archives, checksums and candidate provenance. Consumers
+install that release manifest and launch its contained executable on demand with
+an attached terminal; installation requires no Go toolchain or daemon.
+
+Released platform keys are `win32-x64`, `linux-x64`, `darwin-arm64` and
+`darwin-x64`. Each maps one exact archive, executable and SHA-256. Unsupported
+architectures have no fallback. The source template's acquisition channel and
+`{version}` archive placeholders are replaced by an exact immutable candidate tag
+and concrete archive identities during packaging; only that pinned output is a
+consumer deployment manifest. This source change does not publish a candidate.

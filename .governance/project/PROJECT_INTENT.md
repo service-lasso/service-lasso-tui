@@ -1600,3 +1600,6 @@ Issue #112 / PR #113 now includes the user-authorized Linux operator/v2 native
 landing prerequisite under #20: see TUI112-LINUX-V2-NATIVE-PREREQUISITE.md.
 Preserve all five authoritative actions/negative auth/review/readback and
 existing owned native controls; broader #20 remains open. No gate bypass.
+
+
+Issue #129 / SPEC-007 MANIFEST001–004: release-native @tui provider manifest, exact candidate archives/tag/SHA-256 and protected seven-asset verification; no release dispatch or publication authorized.

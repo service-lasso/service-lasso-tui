@@ -1,3 +1,4 @@
+import { assertServiceManifest } from './service-manifest.mjs';
 import { PublicationError, withPublicationCleanup } from "./publication-failure.mjs";
 import { createHash } from "node:crypto";
 import { lstat, mkdir, open, readFile, readdir, rm } from "node:fs/promises";
@@ -28,7 +29,7 @@ function object(value, name) { if (!value || typeof value !== "object" || Array.
 function exactKeys(value, keys, name) { const actual = Object.keys(object(value, name)).sort(); const expected = [...keys].sort(); if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) fail(`${name} has an unexpected shape`); }
 function positiveBoundedSize(value, name) { if (!Number.isSafeInteger(value) || value <= 0 || value > MAX_ASSET_BYTES) fail(`${name} size is invalid`); return value; }
 function fixedArchiveAssets(version) { return REQUIRED_PLATFORMS.map(platform => ({ platform, name: `service-lasso-tui-${version}-${platform}.${PLATFORM_ARCHIVES[platform].extension}`, executable: PLATFORM_ARCHIVES[platform].executable })); }
-function fixedInventoryNames(version) { return [...fixedArchiveAssets(version).map(asset => asset.name), "SHA256SUMS.txt", "candidate-manifest.json"].sort(); }
+function fixedInventoryNames(manifest) { return [...fixedArchiveAssets(manifest.version).map(asset => asset.name), "SHA256SUMS.txt", "candidate-manifest.json", ...(manifest.schemaVersion === 3 ? ["service.json"] : [])].sort(); }
 
 export function candidateIdentity({ sourceRef, sourceCommit, version, tag }) {
   if (sourceRef !== "refs/heads/develop" || !SHA1.test(sourceCommit)) fail("candidate source must be the full develop commit");
@@ -55,7 +56,7 @@ export function assertPreflight({ immutableReleases, environment, branchProtecti
 
 export function assertManifest(manifest, identity) {
   exactKeys(manifest, ["assets", "checksumManifest", "corePackagingIssue", "kind", "release", "schemaVersion", "source", "version"], "candidate manifest");
-  if (manifest.schemaVersion !== 2 || manifest.kind !== "develop-prerelease-candidate" || manifest.version !== identity.version) fail("candidate manifest identity is invalid");
+  if (![2, 3].includes(manifest.schemaVersion) || manifest.kind !== "develop-prerelease-candidate" || manifest.version !== identity.version) fail("candidate manifest identity is invalid");
   exactKeys(manifest.source, ["commit", "ref", "repository"], "candidate manifest source");
   exactKeys(manifest.release, ["draft", "immutable", "prerelease", "tag"], "candidate manifest release");
   exactKeys(manifest.checksumManifest, ["name", "sha256"], "candidate checksum manifest");
@@ -133,7 +134,7 @@ function assertChecksumManifestBytes(bytes, manifest) {
 }
 
 export async function assertActualLocalAssets({ assetDirectory, manifest, localAssets }) {
-  const requiredNames = fixedInventoryNames(manifest?.version);
+  const requiredNames = fixedInventoryNames(manifest);
   assertLocalAssets(localAssets, requiredNames);
   const actual = {};
   for (const name of requiredNames) {
@@ -147,11 +148,12 @@ export async function assertActualLocalAssets({ assetDirectory, manifest, localA
   }
   if (manifest.checksumManifest.sha256 !== actual["SHA256SUMS.txt"].sha256) fail("actual local checksum manifest does not match the manifest");
   assertChecksumManifestBytes(actual["SHA256SUMS.txt"].bytes, manifest);
+  if (manifest.schemaVersion === 3) await assertServiceManifest(actual["service.json"].bytes, manifest);
   return Object.fromEntries(requiredNames.map(name => [name, { sha256: actual[name].sha256, size: actual[name].size }]));
 }
 
 export async function assertPublicationDirectory(assetDirectory, manifest) {
-  const expected = new Set([...fixedInventoryNames(manifest?.version), "candidate-local-assets.json"]);
+  const expected = new Set([...fixedInventoryNames(manifest), "candidate-local-assets.json"]);
   const entries = await readdir(assetDirectory);
   if (entries.length !== expected.size || entries.some(entry => !expected.has(entry))) fail("candidate publication directory has unexpected files");
   return [...expected].sort();
@@ -160,7 +162,7 @@ export async function assertPublicationDirectory(assetDirectory, manifest) {
 // The returned buffers are the custody boundary for a new publication.  Callers
 // upload these held bytes, never paths that can be reopened after verification.
 export async function holdVerifiedLocalAssets({ assetDirectory, manifest, localAssets, beforeOpen }) {
-  const requiredNames = fixedInventoryNames(manifest?.version);
+  const requiredNames = fixedInventoryNames(manifest);
   assertLocalAssets(localAssets, requiredNames);
   const held = {}; let totalBytes = 0;
   for (const name of requiredNames) {
@@ -175,11 +177,12 @@ export async function holdVerifiedLocalAssets({ assetDirectory, manifest, localA
   const actual = await assertActualLocalAssets({ assetDirectory, manifest, localAssets: Object.fromEntries(requiredNames.map(name => [name, heldInventory[name]])) });
   // Verify the manifest/checksum relation against the held immutable bytes too.
   assertChecksumManifestBytes(held["SHA256SUMS.txt"], manifest);
+  if (manifest.schemaVersion === 3) await assertServiceManifest(held["service.json"], manifest);
   return { inventory: actual, bytes: held, totalBytes };
 }
 
 function assertReleaseAssetMetadata(release, manifest, localAssets, draft) {
-  const requiredNames = fixedInventoryNames(manifest?.version);
+  const requiredNames = fixedInventoryNames(manifest);
   assertLocalAssets(localAssets, requiredNames);
   for (const expected of fixedArchiveAssets(manifest?.version)) {
     const asset = manifest?.assets?.find(candidate => candidate?.platform === expected.platform);

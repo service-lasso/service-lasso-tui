@@ -26,6 +26,7 @@ test("fresh job binds checked source before consuming its artifact and runs the 
   await mkdir(sourceScripts, { recursive: true });
   await mkdir(path.join(artifact, "provider-bodies"), { recursive: true });
   await Promise.all([
+    cp(path.join(scriptsDirectory, "service-manifest.mjs"), path.join(sourceScripts, "service-manifest.mjs")),
     cp(path.join(scriptsDirectory, "verify-candidate-publication.mjs"), path.join(sourceScripts, "verify-candidate-publication.mjs")),
     cp(path.join(scriptsDirectory, "publication-failure.mjs"), path.join(sourceScripts, "publication-failure.mjs")),
     cp(path.join(scriptsDirectory, "verify-candidate-publication-cli.mjs"), path.join(sourceScripts, "verify-candidate-publication-cli.mjs")),

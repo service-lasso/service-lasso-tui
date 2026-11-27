@@ -1,3 +1,4 @@
+import { assembleServiceManifest } from './service-manifest.mjs';
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
@@ -8,13 +9,14 @@ import { assertDraftReleaseReceipt, assertExistingCandidateRecovery, assertManif
 
 
 const identity = candidateIdentity({ sourceRef: "refs/heads/develop", sourceCommit: "0123456789abcdef0123456789abcdef01234567", version: "2026.10.1-0123456", tag: "candidate-2026.10.1-0123456" });
-const names = ["service-lasso-tui-2026.10.1-0123456-win32-amd64.zip", "service-lasso-tui-2026.10.1-0123456-linux-amd64.tar.gz", "service-lasso-tui-2026.10.1-0123456-darwin-amd64.tar.gz", "service-lasso-tui-2026.10.1-0123456-darwin-arm64.tar.gz", "SHA256SUMS.txt", "candidate-manifest.json"];
+const names = ["service-lasso-tui-2026.10.1-0123456-win32-amd64.zip", "service-lasso-tui-2026.10.1-0123456-linux-amd64.tar.gz", "service-lasso-tui-2026.10.1-0123456-darwin-amd64.tar.gz", "service-lasso-tui-2026.10.1-0123456-darwin-arm64.tar.gz", "SHA256SUMS.txt", "candidate-manifest.json", "service.json"];
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 const bodyFor = name => name === "SHA256SUMS.txt"
   ? Buffer.from(names.slice(0, 4).map(asset => `${digest(bodyFor(asset))}  ${asset}`).join("\n") + "\n", "utf8")
   : Buffer.from(`published-${name}`, "utf8");
-const manifest = { schemaVersion: 2, kind: "develop-prerelease-candidate", source: { repository: "service-lasso/service-lasso-tui", ref: identity.sourceRef, commit: identity.sourceCommit }, release: { tag: identity.tag, prerelease: true, draft: false, immutable: true }, version: identity.version, checksumManifest: { name: "SHA256SUMS.txt", sha256: digest(bodyFor("SHA256SUMS.txt")) }, corePackagingIssue: "service-lasso/service-lasso#1461", assets: [{ platform: "win32-amd64", name: names[0], sha256: digest(bodyFor(names[0])), executable: "service-lasso-tui.exe" }, { platform: "linux-amd64", name: names[1], sha256: digest(bodyFor(names[1])), executable: "service-lasso-tui" }, { platform: "darwin-amd64", name: names[2], sha256: digest(bodyFor(names[2])), executable: "service-lasso-tui" }, { platform: "darwin-arm64", name: names[3], sha256: digest(bodyFor(names[3])), executable: "service-lasso-tui" }] };
-const localBodies = Object.fromEntries(names.map(name => [name, name === "candidate-manifest.json" ? Buffer.from(JSON.stringify(manifest), "utf8") : bodyFor(name)]));
+const manifest = { schemaVersion: 3, kind: "develop-prerelease-candidate", source: { repository: "service-lasso/service-lasso-tui", ref: identity.sourceRef, commit: identity.sourceCommit }, release: { tag: identity.tag, prerelease: true, draft: false, immutable: true }, version: identity.version, checksumManifest: { name: "SHA256SUMS.txt", sha256: digest(bodyFor("SHA256SUMS.txt")) }, corePackagingIssue: "service-lasso/service-lasso#1461", assets: [{ platform: "win32-amd64", name: names[0], sha256: digest(bodyFor(names[0])), executable: "service-lasso-tui.exe" }, { platform: "linux-amd64", name: names[1], sha256: digest(bodyFor(names[1])), executable: "service-lasso-tui" }, { platform: "darwin-amd64", name: names[2], sha256: digest(bodyFor(names[2])), executable: "service-lasso-tui" }, { platform: "darwin-arm64", name: names[3], sha256: digest(bodyFor(names[3])), executable: "service-lasso-tui" }] };
+const service = assembleServiceManifest(JSON.parse(await readFile(new URL("../service.json", import.meta.url), "utf8")), manifest);
+const localBodies = Object.fromEntries(names.map(name => [name, name === "candidate-manifest.json" ? Buffer.from(JSON.stringify(manifest), "utf8") : name === "service.json" ? Buffer.from(JSON.stringify(service)) : bodyFor(name)]));
 const localAssets = Object.fromEntries(names.map(name => { const body = localBodies[name]; return [name, { sha256: digest(body), size: body.length }]; }));
 const release = { tag_name: identity.tag, target_commitish: identity.sourceCommit, draft: false, prerelease: true, immutable: true, assets: names.map((name, index) => ({ id: index + 101, url: `https://api.github.com/repos/service-lasso/service-lasso-tui/releases/assets/${index + 101}`, name, digest: `sha256:${localAssets[name].sha256}`, size: localAssets[name].size, browser_download_url: `https://github.com/service-lasso/service-lasso-tui/releases/download/${identity.tag}/${name}` })) };
 const preflight = { immutableReleases: { enabled: true }, environment: { name: "development-candidate", protection_rules: [{ type: "wait_timer", wait_timer: 10 }], deployment_branch_policy: { protected_branches: true, custom_branch_policies: false } }, branchProtection: { required_status_checks: { strict: true, contexts: ["Linux test and build", "Windows test and build", "Windows owned GOROOT overlay tests", "macOS test and build", "Release asset cross-compilation"] }, required_pull_request_reviews: { required_approving_review_count: 0 }, allow_force_pushes: { enabled: false } } };
@@ -81,7 +83,7 @@ test("validates complete immutable metadata inventory before reading public byte
 });
 test("recovers a complete existing candidate only after all six public bodies match", async () => {
   const calls = []; const receipt = await verify({ calls });
-  assert.equal(receipt.verified.length, 6); assert.equal(receipt.totalBytes, names.reduce((sum, name) => sum + localAssets[name].size, 0));
+  assert.equal(receipt.verified.length, 7); assert.equal(receipt.totalBytes, names.reduce((sum, name) => sum + localAssets[name].size, 0));
   assert.ok(calls.every(call => call.options.method === "GET" && call.options.redirect === "manual" && Object.keys(call.options.headers).length === 0));
   assert.ok(calls.some(call => new URL(call.url).hostname === "release-assets.githubusercontent.com"));
 });
@@ -202,8 +204,8 @@ async function runPublisher(provider, acquisitionFault) {
 }
 test("complete publisher creates once, verifies private inventory, publishes once, and resolves annotated source", async () => {
   const provider = publisherProvider({ annotated: true }); const result = await runPublisher(provider);
-  assert.equal(result.recovered, false); assert.equal(result.receipt.verified.length, 6); assert.equal(result.receipt.tagProof.chain.length, 2);
-  assert.equal(provider.writes(), 9); assert.equal(provider.policyReads(), 10);
+  assert.equal(result.recovered, false); assert.equal(result.receipt.verified.length, 7); assert.equal(result.receipt.tagProof.chain.length, 2);
+  assert.equal(provider.writes(), 10); assert.equal(provider.policyReads(), 11);
   assert.equal(provider.calls.filter(call => call.method === "PATCH").length, 1);
 });
 
@@ -238,8 +240,8 @@ test("policy changes or denial midphase stop before the next mutation", async ()
   }
 });
 test("private complete-byte gate denies publish and final public mismatch denies acceptance", async () => {
-  const draft = publisherProvider({ draftMismatch: true }); await assert.rejects(() => runPublisher(draft)); assert.equal(draft.writes(), 8);
-  const final = publisherProvider({ publicMismatch: true }); await assert.rejects(() => runPublisher(final)); assert.equal(final.writes(), 9);
+  const draft = publisherProvider({ draftMismatch: true }); await assert.rejects(() => runPublisher(draft)); assert.equal(draft.writes(), 9);
+  const final = publisherProvider({ publicMismatch: true }); await assert.rejects(() => runPublisher(final)); assert.equal(final.writes(), 10);
 });
 
 
@@ -248,6 +250,18 @@ test("private complete-byte gate denies publish and final public mismatch denies
 test("complete publisher uploads held bytes after path replacement and private redirect drops all auth", async () => {
   const provider = publisherProvider({ replaceLocal: true, draftRedirect: true });
   await assert.rejects(() => runPublisher(provider), /actual local/u);
-  assert.equal(provider.writes(), 9);
-  assert.equal(provider.calls.filter(call => new URL(call.url).hostname === "release-assets.githubusercontent.com").length, 6);
+  assert.equal(provider.writes(), 10);
+  assert.equal(provider.calls.filter(call => new URL(call.url).hostname === "release-assets.githubusercontent.com").length, 7);
+});
+
+test('coherently rehashed service identity and unknown platform deny before provider reads', async () => {
+ for (const mutate of [s => { s.artifact.source.tag = 'latest'; }, s => { s.artifact.platforms['linux-arm64'] = s.artifact.platforms['linux-x64']; delete s.artifact.platforms['linux-x64']; }, s => { s.artifact.platforms['win32-x64'].sha256 = 'f'.repeat(64); }]) {
+  const provider = publisherProvider();
+  await assert.rejects(() => runPublisher(provider, async directory => {
+   const changed = structuredClone(service); mutate(changed); const bytes = Buffer.from(JSON.stringify(changed));
+   await writeFile(path.join(directory, 'service.json'), bytes);
+   await writeFile(path.join(directory, 'candidate-local-assets.json'), JSON.stringify({...localAssets, 'service.json': {sha256:digest(bytes),size:bytes.length}}));
+  }), /service manifest/);
+  assert.deepEqual(provider.calls, []);
+ }
 });

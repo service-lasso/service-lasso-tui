@@ -1579,3 +1579,6 @@ Issue #42 / SPEC005 E2E001–E2E004: automate ordinary-source local real-Core au
 
 
 Issue #44 / SPEC006 PLATFORM001–003: ordinary matching-host Windows ConPTY with shared verified DACL/tool bootstrap and separately scoped exploratory macOS POSIX evidence. Preserve Linux behavior and all existing full operator/native acceptance gates.
+
+
+Issue #129 / SPEC-007 MANIFEST001–004: release-native @tui provider manifest, exact candidate archives/tag/SHA-256 and protected seven-asset verification; no release dispatch or publication authorized.

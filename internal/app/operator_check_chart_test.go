@@ -170,3 +170,48 @@ func TestStackOptionalChecksReadDoesNotFailOverview(t *testing.T) {
 		t.Fatalf("older Core check route failed overview\n%s", view)
 	}
 }
+
+func TestStackEmptyChecksKeepGraphicsAcrossSizes(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	for _, state := range []string{"not_configured", "configured", "Pending", "Stale", "Unavailable", "Access denied", "Read failed"} {
+		t.Run(state, func(t *testing.T) {
+			for _, size := range [][2]int{{60, 18}, {80, 24}, {100, 28}, {112, 33}, {120, 32}, {160, 45}, {200, 20}} {
+				m := stackFixture()
+				m.width, m.height = size[0], size[1]
+				now := time.Now().UTC()
+				check := stackServiceChecks{observation: api.OperatorServiceChecks{State: state}, receipt: now}
+				service := m.services.Rows[0]
+				check.revision, check.generation, check.modelEpoch = service.DefinitionRevision, service.Generation, service.ModelEpoch
+				if state != "configured" && state != "not_configured" {
+					check.status = state
+				}
+				m.stackChecks = map[string]stackServiceChecks{service.ServiceID: check}
+				_, status := m.stackCheckFor(service, now)
+				view := m.View()
+				if !strings.Contains(view, status) || !strings.Contains(view, "ID: demo-api") || !strings.Contains(view, "─") && !strings.Contains(view, "━") {
+					t.Fatalf("missing state or graphic for %s at %v\n%s", state, size, view)
+				}
+				if strings.Contains(view, "Latest 0 ms") || strings.Contains(view, "0 ms · pass") {
+					t.Fatal("fabricated sample")
+				}
+				rows := strings.Split(view, "\n")
+				if len(rows) != size[1] {
+					t.Fatalf("height %d at %v", len(rows), size)
+				}
+				for _, row := range rows {
+					if ansi.StringWidth(row) > size[0] {
+						t.Fatalf("overflow at %v: %q", size, row)
+					}
+				}
+				strip := stackCheckStrip(check, status, operatorBaseStyle, 15)
+				want := strings.Repeat("─", 15)
+				if state == "not_configured" {
+					want = strings.Repeat("━", 15)
+				}
+				if strip != want {
+					t.Fatalf("neutral strip %q want %q", strip, want)
+				}
+			}
+		})
+	}
+}

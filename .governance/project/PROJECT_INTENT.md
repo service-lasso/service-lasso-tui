@@ -1,3 +1,5 @@
+Issue #123: SPEC-007 TUI-DASHBOARD, always-visible neutral and sampled Stack check graphics; Core #1981 consumes the merged TUI pin.
+
 ## Issue 37 Linux acquisition
 
 Bounded source intent: [TUI37-LINUX-ACQUISITION.md](TUI37-LINUX-ACQUISITION.md). Linux executor and legacy lifecycle repairs implemented; exact-head CI/landing are tracked by PR39. Genuine input/native entry gates remain unresolved. Windows deferred; normal develop integration owned here; release owner-only.

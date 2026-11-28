@@ -155,6 +155,7 @@ type operatorModel struct {
 	metadataCurrent                           map[string]operatorMetaObservation
 	favoritesOnly                             bool
 	meta                                      *api.OperatorMeta
+	pinnedRelease                             *operatorPinnedRelease
 	lifecycle                                 *api.OperatorLifecycleAvailability
 	config                                    *api.OperatorConfigForm
 	setup                                     *api.OperatorSetupForm
@@ -217,6 +218,7 @@ func (m operatorModel) bootstrap() tea.Cmd {
 	}
 }
 func (m *operatorModel) invalidate() {
+ m.pinnedRelease=nil
 	m.stackChecks = nil
 	m.stackChecksPending = false
 	m.stackRuntime = stackRuntimeState{}

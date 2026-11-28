@@ -49,6 +49,7 @@ func(m *operatorModel)loadDraftLifecycleBinding()tea.Cmd{
  return func()tea.Msg{if err:=operatorSameContext(ctx,client,binding);err!=nil{return operatorDraftBinding{Ticket:ticket,Action:action,Err:err}};current,err:=client.OperatorLifecycleAvailability(ctx,service);if err==nil{err=operatorSameContext(ctx,client,binding)};return operatorDraftBinding{ticket,action,current,err}}
 }
 func(m *operatorModel)beginEdit()tea.Cmd{
+ if m.pinnedReleaseRow(){return m.beginPinnedRelease()}
  m.expirePages(time.Now())
  if !m.pageSelectionCurrent()||m.formReadFailed(){return nil}
  if m.mutationBlocked()||m.draft.Sent||m.loading||m.discovery==nil||!m.binding.Valid()||m.operation!=nil&&!m.operation.Operation.CanClear(){return nil}

@@ -165,14 +165,15 @@ test("rejects an external same-size file swapped in through a symlink", async ()
 
 import { publishCandidate } from "./publish-candidate.mjs";
 
-function publisherProvider({ existing = false, orphan = false, annotated = false, malformed = false, cycle = false, mismatch = false, changeAt = 0, policyUnavailable = false, draftMismatch = false, publicMismatch = false, createCollision = false, draftRedirect = false, replaceLocal = false } = {}) {
+function publisherProvider({ existing = false, orphan = false, annotated = false, malformed = false, cycle = false, mismatch = false, changeAt = 0, policyUnavailable = false, draftMismatch = false, publicMismatch = false, createCollision = false, draftRedirect = false, replaceLocal = false, fixture } = {}) {
+  const { names: selectedNames = names, bodies: selectedBodies = localBodies, release: selectedRelease = release } = fixture ?? {};
   const calls = []; const state = { directory: null }; let writes = 0; let policyReads = 0; let releaseReads = 0; let created = existing; let tagExists = existing || orphan;
   const tagSHA = "a".repeat(40);
-  const record = draft => ({ ...release, id: 123, draft, immutable: !draft, assets: draft && writes === 2 ? [] : release.assets });
+  const record = draft => ({ ...selectedRelease, id: 123, draft, immutable: !draft, assets: draft && writes === 2 ? [] : selectedRelease.assets });
   const fetchImpl = async (url, options) => {
     const parsed = new URL(url); calls.push({ url: String(url), method: options.method, headers: options.headers });
     const json = value => response(200, {}, Buffer.from(JSON.stringify(value)));
-    if (parsed.hostname === "uploads.github.com") { if (replaceLocal && writes === 2) await Promise.all(names.map(name => writeFile(path.join(state.directory, name), Buffer.from(`replacement-${name}`)))); writes++; assert.deepEqual(options.body, localBodies[parsed.searchParams.get("name")]); return response(201); }
+    if (parsed.hostname === "uploads.github.com") { if (replaceLocal && writes === 2) await Promise.all(selectedNames.map(name => writeFile(path.join(state.directory, name), Buffer.from(`replacement-${name}`)))); writes++; assert.deepEqual(options.body, selectedBodies[parsed.searchParams.get("name")]); return response(201); }
     if (options.method === "POST" && parsed.pathname.endsWith("/git/refs")) { writes++; tagExists = true; return response(201, {}, Buffer.from("{}")); }
     if (options.method === "POST") { writes++; created = true; return response(201, {}, Buffer.from(JSON.stringify(record(true)))); }
     if (options.method === "PATCH") { writes++; return json(record(false)); }
@@ -185,21 +186,22 @@ function publisherProvider({ existing = false, orphan = false, annotated = false
     }
     if (parsed.pathname.includes("/git/tags/")) return json({ sha: tagSHA, object: { type: cycle ? "tag" : "commit", sha: cycle ? tagSHA : mismatch ? "b".repeat(40) : identity.sourceCommit } });
     if (parsed.pathname.includes("/releases/tags/")) { releaseReads++; if (createCollision && releaseReads === 2) return json(record(false)); return created ? json(record(false)) : response(404); }
-    if (parsed.pathname.endsWith("/releases/123")) return json({ ...record(true), ...(draftMismatch ? { assets: release.assets.slice(1) } : {}) });
-    if (parsed.pathname.includes("/releases/assets/")) { const name = release.assets.find(asset => asset.url === String(url)).name; return draftRedirect ? response(302, { location: signedRedirect(name) }) : response(200, {}, localBodies[name]); }
-    if (parsed.hostname === "release-assets.githubusercontent.com") { assert.deepEqual(options.headers, {}); const name = decodeURIComponent(parsed.pathname.split("/").at(-1)); return response(200, {}, localBodies[name]); }
-    if (parsed.hostname === "github.com") { assert.deepEqual(options.headers, {}); const name = decodeURIComponent(parsed.pathname.split("/").at(-1)); return response(200, {}, publicMismatch ? Buffer.alloc(localBodies[name].length) : localBodies[name]); }
+    if (parsed.pathname.endsWith("/releases/123")) return json({ ...record(true), ...(draftMismatch ? { assets: selectedRelease.assets.slice(1) } : {}) });
+    if (parsed.pathname.includes("/releases/assets/")) { const name = selectedRelease.assets.find(asset => asset.url === String(url)).name; return draftRedirect ? response(302, { location: signedRedirect(name) }) : response(200, {}, selectedBodies[name]); }
+    if (parsed.hostname === "release-assets.githubusercontent.com") { assert.deepEqual(options.headers, {}); const name = decodeURIComponent(parsed.pathname.split("/").at(-1)); return response(200, {}, selectedBodies[name]); }
+    if (parsed.hostname === "github.com") { assert.deepEqual(options.headers, {}); const name = decodeURIComponent(parsed.pathname.split("/").at(-1)); return response(200, {}, publicMismatch ? Buffer.alloc(selectedBodies[name].length) : selectedBodies[name]); }
     throw new Error("unexpected fixture endpoint");
   };
-  return { fetchImpl, calls, state, writes: () => writes, policyReads: () => policyReads };
+  return { fetchImpl, calls, state, fixture, writes: () => writes, policyReads: () => policyReads };
 }
-async function runPublisher(provider, acquisitionFault) {
+async function runPublisher(provider, acquisitionFault, platformScope) {
+  const { names: selectedNames = names, bodies: selectedBodies = localBodies, assets: selectedAssets = localAssets } = provider.fixture ?? {};
   const directory = await mkdtemp(path.join(os.tmpdir(), "complete-publisher-"));
   try {
-    await Promise.all(names.map(name => writeFile(path.join(directory, name), localBodies[name])));
-    await writeFile(path.join(directory, "candidate-local-assets.json"), JSON.stringify(localAssets));
+    await Promise.all(selectedNames.map(name => writeFile(path.join(directory, name), selectedBodies[name])));
+    await writeFile(path.join(directory, "candidate-local-assets.json"), JSON.stringify(selectedAssets));
     provider.state.directory = directory;
-    return await publishCandidate({ assetDirectory: directory, identity, token: "fixture-token", fetchImpl: provider.fetchImpl, beforeHeldAcquisition: acquisitionFault ? () => acquisitionFault(directory) : undefined });
+    return await publishCandidate({ assetDirectory: directory, identity, token: "fixture-token", platformScope, fetchImpl: provider.fetchImpl, beforeHeldAcquisition: acquisitionFault ? () => acquisitionFault(directory) : undefined });
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
 test("complete publisher creates once, verifies private inventory, publishes once, and resolves annotated source", async () => {
@@ -264,4 +266,45 @@ test('coherently rehashed service identity and unknown platform deny before prov
   }), /service manifest/);
   assert.deepEqual(provider.calls, []);
  }
+});
+
+function windowsLinuxFixture() {
+ const selectedManifest = structuredClone(manifest);
+ selectedManifest.schemaVersion = 4;
+ selectedManifest.assets = selectedManifest.assets.filter(asset => ['win32-amd64','linux-amd64'].includes(asset.platform));
+ const sums = Buffer.from(selectedManifest.assets.map(asset => `${asset.sha256}  ${asset.name}`).join('\n')+'\n');
+ selectedManifest.checksumManifest.sha256 = digest(sums);
+ const selectedNames = [...selectedManifest.assets.map(asset => asset.name),'SHA256SUMS.txt','candidate-manifest.json','service.json'];
+ const bodies = Object.fromEntries(selectedNames.map(name => [name,localBodies[name]]));
+ bodies['SHA256SUMS.txt'] = sums;
+ bodies['candidate-manifest.json'] = Buffer.from(JSON.stringify(selectedManifest));
+ bodies['service.json'] = Buffer.from(JSON.stringify(assembleServiceManifest(JSON.parse(JSON.stringify(service)),selectedManifest)));
+ const assets = Object.fromEntries(selectedNames.map(name => [name,{sha256:digest(bodies[name]),size:bodies[name].length}]));
+ return {names:selectedNames,bodies,assets,release:{...release,assets:release.assets.filter(asset => selectedNames.includes(asset.name)).map(asset => ({...asset,digest:'sha256:'+assets[asset.name].sha256,size:assets[asset.name].size}))}};
+}
+test('schema4 publisher verifies five original public assets and supports readback-only recovery', async () => {
+ const fixture = windowsLinuxFixture();
+ const provider = publisherProvider({fixture});
+ const result = await runPublisher(provider);
+ assert.equal(result.receipt.verified.length,5);
+ assert.equal(provider.writes(),8);
+ const recovery = publisherProvider({fixture,existing:true});
+ assert.equal((await runPublisher(recovery)).recovered,true);
+ assert.equal(recovery.writes(),0);
+});
+test('schema4 rejects absent or extra platform archives before publication', () => {
+ const selected = JSON.parse(windowsLinuxFixture().bodies['candidate-manifest.json']);
+ const missing = structuredClone(selected); missing.assets.pop();
+ assert.throws(() => assertManifest(missing,identity));
+ const extra = structuredClone(selected); extra.assets.push(manifest.assets[2]);
+ assert.throws(() => assertManifest(extra,identity));
+});
+
+test('selected publication scope rejects different manifest before provider reads', async () => {
+ const full = publisherProvider();
+ await assert.rejects(runPublisher(full,undefined,'windows-linux'),/scope mismatch/);
+ assert.equal(full.calls.length,0);
+ const selected = publisherProvider({fixture:windowsLinuxFixture()});
+ await assert.rejects(runPublisher(selected,undefined,'full'),/scope mismatch/);
+ assert.equal(selected.calls.length,0);
 });

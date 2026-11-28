@@ -52,12 +52,14 @@ export async function resolveCandidateTag({ identity, read }) {
   fail("candidate tag unresolved");
 }
 
-export async function publishCandidate({ assetDirectory, identity, token, fetchImpl = fetch, beforeHeldAcquisition, policyMode = "admin", operatorPreflightSHA }) {
+export async function publishCandidate({ assetDirectory, identity, token, fetchImpl = fetch, beforeHeldAcquisition, policyMode = "admin", platformScope, operatorPreflightSHA }) {
   candidateIdentity(identity);
   if (!token) fail("publisher authority missing");
   if (!["admin", "actions"].includes(policyMode) || (policyMode === "actions" && operatorPreflightSHA !== identity.sourceCommit)) fail("operator preflight binding denied");
   const admittedManifestBytes = await readBoundedRegularLocalAsset(assetDirectory, "candidate-manifest.json", 1048576);
   const manifest = assertManifest(JSON.parse(admittedManifestBytes.toString("utf8")), identity);
+  if (platformScope !== undefined && (!["full", "windows-linux"].includes(platformScope) || manifest.schemaVersion !== (platformScope === "full" ? 3 : 4))) fail("candidate platform scope mismatch");
+  if (policyMode === "actions" && platformScope === undefined) fail("candidate platform scope required");
   // Instrument the actual acquisition boundary without replacing any validator.
   if (beforeHeldAcquisition) await beforeHeldAcquisition();
   const inventory = JSON.parse((await readBoundedRegularLocalAsset(assetDirectory, "candidate-local-assets.json", 1048576)).toString("utf8"));
@@ -121,5 +123,5 @@ export async function publishCandidate({ assetDirectory, identity, token, fetchI
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const values = {}; for (let i = 2; i < process.argv.length; i += 2) { const key = process.argv[i]; if (!key?.startsWith("--") || !process.argv[i + 1] || values[key]) fail("publisher usage"); values[key] = process.argv[i + 1]; }
   if (process.env.GITHUB_REPOSITORY !== "service-lasso/service-lasso-tui") fail("publisher repository denied");
-  publishCandidate({ assetDirectory: values["--asset-directory"], identity: candidateIdentity({ sourceRef: values["--source-ref"], sourceCommit: values["--source-commit"], version: values["--version"], tag: values["--tag"] }), token: process.env.GH_TOKEN, policyMode: values["--policy-mode"], operatorPreflightSHA: values["--operator-preflight-sha"] }).then(result => process.stdout.write(`${JSON.stringify(result)}\n`)).catch(() => { process.stderr.write("candidate publication denied\n"); process.exitCode = 1; });
+  publishCandidate({ assetDirectory: values["--asset-directory"], identity: candidateIdentity({ sourceRef: values["--source-ref"], sourceCommit: values["--source-commit"], version: values["--version"], tag: values["--tag"] }), token: process.env.GH_TOKEN, policyMode: values["--policy-mode"], platformScope: values["--platform-scope"], operatorPreflightSHA: values["--operator-preflight-sha"] }).then(result => process.stdout.write(`${JSON.stringify(result)}\n`)).catch(() => { process.stderr.write("candidate publication denied\n"); process.exitCode = 1; });
 }

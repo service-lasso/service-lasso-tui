@@ -1598,3 +1598,5 @@ Issue #139: package Go env scope and faithful per-step proof.
 Issue #141: actual publisher Bash invocation and original-SHA hosted artifact verification.
 
 #147 active — ordinary Windows/Linux TUI publication with exact schema4 identity, service manifest, protected Actions publisher and public byte verification.
+
+#149 active — Core-owned pinned client release check and confirmed install in TUI Lifecycle actions.

@@ -420,7 +420,12 @@ func (m operatorModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		refresh := m.refreshTerminalState(false)
 		next := m.nextPollTick()
 		return m, tea.Batch(refresh, next)
+	case operatorPinnedReleaseResult:
+		return m.acceptPinnedRelease(msg)
 	case tea.KeyMsg:
+		if m.pinnedRelease != nil {
+			return m.pinnedReleaseKey(msg)
+		}
 		if m.consumeQuotedPayloadKey(msg) {
 			return m, nil
 		}

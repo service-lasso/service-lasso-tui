@@ -28,3 +28,13 @@ test('rejects altered released manifest even with a valid candidate', async () =
  const bad = assembleServiceManifest(source, candidate); bad.artifact.platforms['linux-x64'].sha256 = 'c'.repeat(64);
  await assert.rejects(assertServiceManifest(Buffer.from(JSON.stringify(bad)), candidate));
 });
+
+test('schema4 releases exactly Windows and Linux while historical projection remains complete', async () => {
+ const selected = {...structuredClone(candidate), schemaVersion:4};
+ selected.assets = selected.assets.filter(asset => ['win32-amd64','linux-amd64'].includes(asset.platform));
+ const actual = assembleServiceManifest(source, selected);
+ assert.deepEqual(Object.keys(actual.artifact.platforms), ['win32-x64','linux-x64']);
+ await assertServiceManifest(Buffer.from(JSON.stringify(actual)),selected);
+ const extra = structuredClone(selected); extra.assets.push(candidate.assets[2]);
+ assert.throws(() => assembleServiceManifest(source,extra));
+});

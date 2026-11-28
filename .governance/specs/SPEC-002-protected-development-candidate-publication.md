@@ -168,3 +168,20 @@ and seven publication assets, and deny dirty tracked or untracked source.
 Issue #139 AC-4/AC-6: package-job static GOFLAGS empty and GOWORK off apply to every provenance guard; exact workflow proof resolves job and per-step environment without injecting missing flags. Missing GOWORK on final guard must fail.
 
 Issue #141 AC-6: invoke the tracked nonexecutable source-binding script explicitly with Bash. Fresh-job proof executes the actual workflow shell body without changing mode. Real hosted package artifact is verified separately at its own original SHA, never relabelled as successor output.
+
+## Issue #147 Windows and Linux ordinary publication
+
+The owner authorizes the existing ordinary release workflow for a new TUI
+candidate containing Ready, blank non-running uptime and Stack Actions, with
+macOS deferred. The explicit windows-linux selection emits schema4 with exactly Windows amd64 ZIP,
+Linux amd64 TAR, SHA256SUMS.txt, candidate-manifest.json and service.json.
+The candidate and service manifest select exactly those two platform mappings.
+Existing schema2/schema3 manifests and immutable recovery retain their original
+four-platform inventories. Preserve all five required source CI checks and the
+existing protected environment, source cleanliness, provenance, held byte,
+private draft and immutable public readback gates. Windows and Linux source
+smoke remain required in the release workflow. Explicit full selection retains
+all four archives and macOS source smoke. The scoped native programme is
+separate and unchanged. Core must pin only the actual published manifest.
+
+Issue #147 keeps full as the default selection. Dispatch windows-linux explicitly; the publisher binds selected scope to admitted manifest schema before any provider access.

@@ -1642,3 +1642,5 @@ Issue #139: SPEC-002 AC-4/AC-6, actual per-step package Go environment and missi
 Issue #141: SPEC-002 AC-6, explicit Bash source-binding and actual workflow/artifact proof.
 
 Issue #145 / SPEC-007 TUI-DASHBOARD: direct selected-row `a Actions` navigation, guarded observation selection and existing lifecycle confirmation/auth path.
+
+- #147 in_progress — SPEC-002 Windows/Linux ordinary publication and SPEC-007 schema4 provider projection.

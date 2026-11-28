@@ -1596,3 +1596,5 @@ Issue #137: SPEC-002 AC-4/AC-6 package outside source with clean VCS and seven-a
 Issue #139: package Go env scope and faithful per-step proof.
 
 Issue #141: actual publisher Bash invocation and original-SHA hosted artifact verification.
+
+#147 active — ordinary Windows/Linux TUI publication with exact schema4 identity, service manifest, protected Actions publisher and public byte verification.

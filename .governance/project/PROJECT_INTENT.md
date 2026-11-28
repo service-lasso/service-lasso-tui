@@ -1616,3 +1616,5 @@ Issue #133 / SPEC-008 TEMP005: retain real fixture stdout before actual control-
 Issue #136 / SPEC-008 TEMP006: parse original custody body before actual Bash3.2 rendezvous; same owner/process/env/FDs and full positive/negative proofs preserved.
 
 Issue #145 adds direct keyboard access from Stack service rows to existing Lifecycle actions, preserving inspection and all existing mutation gates.
+
+Development #147 publishes the approved TUI UX through the existing ordinary release pipeline for Windows and Linux, with macOS deferred. SPEC-002 and SPEC-007 govern the closed schema4 inventory and retained historical recovery.

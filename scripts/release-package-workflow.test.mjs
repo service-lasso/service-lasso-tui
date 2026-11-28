@@ -7,7 +7,7 @@ import path from 'node:path';
 const root = path.resolve(import.meta.dirname, '..');
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 // Execute the production YAML shell bodies, not a mirrored packaging algorithm.
-test('actual ordinary workflow packages four clean stamped platforms outside source and denies dirty input', () => {
+for (const scope of ['full', 'windows-linux']) test(`actual ordinary workflow packages ${scope} clean stamped platforms outside source and denies dirty input`, () => {
   const tmp = mkdtempSync(path.join(os.tmpdir(), 'tui137-package-'));
   const source = path.join(tmp, 'source');
   const sha = git('rev-parse', 'HEAD');
@@ -25,7 +25,7 @@ test('actual ordinary workflow packages four clean stamped platforms outside sou
     // Resolve literal env declarations at their actual YAML indentation. Unknown
     // expressions fail rather than being supplied by test-only defaults.
     const version = `2026.11.28-${sha.slice(0,7)}`;
-    const contexts = {'needs.validate-source.outputs.sha':sha,'needs.validate-source.outputs.version':version,'needs.validate-source.outputs.tag':`candidate-${version}`,'runner.temp':tmp};
+    const contexts = {'needs.validate-source.outputs.platform_scope':scope,'needs.validate-source.outputs.sha':sha,'needs.validate-source.outputs.version':version,'needs.validate-source.outputs.tag':`candidate-${version}`,'runner.temp':tmp};
     const declared = (block, depth) => Object.fromEntries([...block.matchAll(new RegExp(`^ {${depth}}([A-Z_]+): (.*)$`,'gm'))].map(([,key,raw]) => [key, raw.startsWith('"') ? JSON.parse(raw) : raw.replace(/\$\{\{ ([^}]+) \}\}/g,(_,context)=>{assert.ok(Object.hasOwn(contexts,context),`unknown env expression ${context}`);return contexts[context];})]));
     const base = {...process.env,GITHUB_REF:'refs/heads/develop',GITHUB_REPOSITORY:'service-lasso/service-lasso-tui',GITHUB_WORKSPACE:source};
     for(const key of ['GOFLAGS','GOWORK','CANDIDATE_SHA','CANDIDATE_VERSION','CANDIDATE_TAG','CANDIDATE_ASSET_DIR']) delete base[key];
@@ -39,7 +39,7 @@ test('actual ordinary workflow packages four clean stamped platforms outside sou
     assert.equal(execFileSync('git',['status','--porcelain=v1','--untracked-files=all'],{cwd:source,encoding:'utf8'}).trim(),'');
     assert.equal(existsSync(path.join(source,'release-assets')),false);
     const inventory = JSON.parse(readFileSync(path.join(tmp,'release-assets','candidate-local-assets.json')));
-    assert.equal(Object.keys(inventory).length,7);
+    assert.equal(Object.keys(inventory).length,scope === 'full' ? 7 : 5);
     for (const mode of ['tracked','untracked']) {
       const file = path.join(source,mode === 'tracked'?'README.md':'unexpected-output');
       const original = mode === 'tracked' ? readFileSync(file) : null;

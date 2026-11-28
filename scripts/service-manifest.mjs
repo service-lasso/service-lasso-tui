@@ -11,12 +11,13 @@ export const platforms = Object.freeze({
 export function assembleServiceManifest(source, candidate) {
   if (source?.id !== '@tui' || source.role !== 'provider' || source.enabled !== true || source.autostart !== false || source.artifact?.kind !== 'archive' || source.artifact.source?.repo !== 'service-lasso/service-lasso-tui') throw new Error('canonical TUI provider manifest invalid');
   if (!/^\d{4}\.\d{1,2}\.\d{1,2}-[a-f0-9]{7}$/.test(candidate.version) || candidate.release?.tag !== `candidate-${candidate.version}` || candidate.source?.commit?.slice(0, 7) !== candidate.version.slice(-7)) throw new Error('service candidate identity invalid');
-  if (candidate.assets?.length !== 4 || new Set(candidate.assets.map(row => row.platform)).size !== 4) throw new Error('service platform inventory invalid');
+  const selected = Object.entries(platforms).filter(([, [native]]) => candidate.schemaVersion !== 4 || ['win32-amd64', 'linux-amd64'].includes(native));
+  if (candidate.assets?.length !== selected.length || new Set(candidate.assets.map(row => row.platform)).size !== selected.length) throw new Error('service platform inventory invalid');
   const manifest = structuredClone(source);
   manifest.version = candidate.version;
   manifest.artifact.source = { type: 'github-release', repo: 'service-lasso/service-lasso-tui', tag: candidate.release.tag };
   manifest.artifact.platforms = {};
-  for (const [platform, [native, archiveType, executable]] of Object.entries(platforms)) {
+  for (const [platform, [native, archiveType, executable]] of selected) {
     const asset = candidate.assets.find(row => row.platform === native);
     const name = `service-lasso-tui-${candidate.version}-${native}.${archiveType}`;
     if (asset?.name !== name || asset.executable !== executable || !/^[a-f0-9]{64}$/.test(asset.sha256)) throw new Error('service platform archive identity invalid');

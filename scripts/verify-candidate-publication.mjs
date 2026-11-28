@@ -28,8 +28,8 @@ function fail(message,...causes) { throw new PublicationError(message,causes.len
 function object(value, name) { if (!value || typeof value !== "object" || Array.isArray(value)) fail(`${name} must be an object`); return value; }
 function exactKeys(value, keys, name) { const actual = Object.keys(object(value, name)).sort(); const expected = [...keys].sort(); if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) fail(`${name} has an unexpected shape`); }
 function positiveBoundedSize(value, name) { if (!Number.isSafeInteger(value) || value <= 0 || value > MAX_ASSET_BYTES) fail(`${name} size is invalid`); return value; }
-function fixedArchiveAssets(version) { return REQUIRED_PLATFORMS.map(platform => ({ platform, name: `service-lasso-tui-${version}-${platform}.${PLATFORM_ARCHIVES[platform].extension}`, executable: PLATFORM_ARCHIVES[platform].executable })); }
-function fixedInventoryNames(manifest) { return [...fixedArchiveAssets(manifest.version).map(asset => asset.name), "SHA256SUMS.txt", "candidate-manifest.json", ...(manifest.schemaVersion === 3 ? ["service.json"] : [])].sort(); }
+function fixedArchiveAssets(version, schemaVersion = 3) { const selected = schemaVersion === 4 ? ["linux-amd64", "win32-amd64"] : REQUIRED_PLATFORMS; return selected.map(platform => ({ platform, name: `service-lasso-tui-${version}-${platform}.${PLATFORM_ARCHIVES[platform].extension}`, executable: PLATFORM_ARCHIVES[platform].executable })); }
+function fixedInventoryNames(manifest) { return [...fixedArchiveAssets(manifest.version, manifest.schemaVersion).map(asset => asset.name), "SHA256SUMS.txt", "candidate-manifest.json", ...(manifest.schemaVersion >= 3 ? ["service.json"] : [])].sort(); }
 
 export function candidateIdentity({ sourceRef, sourceCommit, version, tag }) {
   if (sourceRef !== "refs/heads/develop" || !SHA1.test(sourceCommit)) fail("candidate source must be the full develop commit");
@@ -56,7 +56,7 @@ export function assertPreflight({ immutableReleases, environment, branchProtecti
 
 export function assertManifest(manifest, identity) {
   exactKeys(manifest, ["assets", "checksumManifest", "corePackagingIssue", "kind", "release", "schemaVersion", "source", "version"], "candidate manifest");
-  if (![2, 3].includes(manifest.schemaVersion) || manifest.kind !== "develop-prerelease-candidate" || manifest.version !== identity.version) fail("candidate manifest identity is invalid");
+  if (![2, 3, 4].includes(manifest.schemaVersion) || manifest.kind !== "develop-prerelease-candidate" || manifest.version !== identity.version) fail("candidate manifest identity is invalid");
   exactKeys(manifest.source, ["commit", "ref", "repository"], "candidate manifest source");
   exactKeys(manifest.release, ["draft", "immutable", "prerelease", "tag"], "candidate manifest release");
   exactKeys(manifest.checksumManifest, ["name", "sha256"], "candidate checksum manifest");
@@ -64,7 +64,7 @@ export function assertManifest(manifest, identity) {
   if (manifest.corePackagingIssue !== "service-lasso/service-lasso#1461") fail("candidate manifest Core handoff is invalid");
   if (manifest.release?.tag !== identity.tag || manifest.release?.prerelease !== true || manifest.release?.draft !== false || manifest.release?.immutable !== true) fail("candidate manifest release contract is invalid");
   if (manifest.checksumManifest?.name !== "SHA256SUMS.txt" || !SHA256.test(manifest.checksumManifest?.sha256)) fail("candidate checksum manifest is invalid");
-  const expectedAssets = fixedArchiveAssets(identity.version);
+  const expectedAssets = fixedArchiveAssets(identity.version, manifest.schemaVersion);
   if (!Array.isArray(manifest.assets) || manifest.assets.length !== expectedAssets.length) fail("candidate manifest must describe all platform assets");
   for (const expected of expectedAssets) {
     const asset = manifest.assets.find(candidate => candidate?.platform === expected.platform);
@@ -117,7 +117,7 @@ export async function readBoundedRegularLocalAsset(assetDirectory, name, maxByte
 }
 
 function assertChecksumManifestBytes(bytes, manifest) {
-  const expected = fixedArchiveAssets(manifest.version);
+  const expected = fixedArchiveAssets(manifest.version, manifest.schemaVersion);
   const lines = bytes.toString("utf8").split("\n");
   if (lines.at(-1) === "") lines.pop();
   if (lines.length !== expected.length) fail("candidate checksum manifest inventory is invalid");
@@ -142,13 +142,13 @@ export async function assertActualLocalAssets({ assetDirectory, manifest, localA
     actual[name] = { sha256: createHash("sha256").update(bytes).digest("hex"), size: bytes.length, bytes };
     if (actual[name].sha256 !== localAssets[name].sha256 || actual[name].size !== localAssets[name].size) fail(`actual local candidate asset does not match the inventory for ${name}`);
   }
-  for (const expected of fixedArchiveAssets(manifest.version)) {
+  for (const expected of fixedArchiveAssets(manifest.version, manifest.schemaVersion)) {
     const asset = manifest.assets.find(candidate => candidate?.platform === expected.platform);
     if (asset.sha256 !== actual[expected.name].sha256) fail(`actual local candidate asset does not match the manifest for ${expected.name}`);
   }
   if (manifest.checksumManifest.sha256 !== actual["SHA256SUMS.txt"].sha256) fail("actual local checksum manifest does not match the manifest");
   assertChecksumManifestBytes(actual["SHA256SUMS.txt"].bytes, manifest);
-  if (manifest.schemaVersion === 3) await assertServiceManifest(actual["service.json"].bytes, manifest);
+  if (manifest.schemaVersion >= 3) await assertServiceManifest(actual["service.json"].bytes, manifest);
   return Object.fromEntries(requiredNames.map(name => [name, { sha256: actual[name].sha256, size: actual[name].size }]));
 }
 
@@ -177,14 +177,14 @@ export async function holdVerifiedLocalAssets({ assetDirectory, manifest, localA
   const actual = await assertActualLocalAssets({ assetDirectory, manifest, localAssets: Object.fromEntries(requiredNames.map(name => [name, heldInventory[name]])) });
   // Verify the manifest/checksum relation against the held immutable bytes too.
   assertChecksumManifestBytes(held["SHA256SUMS.txt"], manifest);
-  if (manifest.schemaVersion === 3) await assertServiceManifest(held["service.json"], manifest);
+  if (manifest.schemaVersion >= 3) await assertServiceManifest(held["service.json"], manifest);
   return { inventory: actual, bytes: held, totalBytes };
 }
 
 function assertReleaseAssetMetadata(release, manifest, localAssets, draft) {
   const requiredNames = fixedInventoryNames(manifest);
   assertLocalAssets(localAssets, requiredNames);
-  for (const expected of fixedArchiveAssets(manifest?.version)) {
+  for (const expected of fixedArchiveAssets(manifest?.version, manifest?.schemaVersion)) {
     const asset = manifest?.assets?.find(candidate => candidate?.platform === expected.platform);
     if (!asset || asset.name !== expected.name || asset.executable !== expected.executable || localAssets[expected.name].sha256 !== asset.sha256) fail(`local candidate asset inventory does not match the manifest for ${expected.name}`);
   }

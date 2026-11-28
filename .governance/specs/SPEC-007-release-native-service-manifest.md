@@ -16,5 +16,5 @@ No-publish Node fixtures exercise deterministic assembly, actual file hashes and
 
 Issue #147 adds schema4 as the ordinary Windows/Linux publication profile. Its
 service.json projects only win32-x64 and linux-x64. Historical schema3 projections
-retain all four mappings. New ordinary publication requires schema4 and its exact
-five-asset inventory. No consumer source build or movable selector is admitted.
+retain all four mappings. The windows-linux selection requires schema4 and its exact
+five-asset inventory. Explicit full selection retains schema3 publication. No consumer source build or movable selector is admitted.

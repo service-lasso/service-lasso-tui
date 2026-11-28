@@ -72,11 +72,10 @@ func (c *Client) pinnedReleaseRequest(ctx context.Context, id, action string, bo
 	} else {
 		request.Header.Set("Authorization", "Bearer "+c.operatorToken)
 	}
-	client := c.http
+	client := *c.http
+	client.Timeout = 55 * time.Second
 	if action == "install" {
-		copy := *client
-		copy.Timeout = 120 * time.Second
-		client = &copy
+		client.Timeout = 120 * time.Second
 	}
 	response, err := client.Do(request)
 	occurrence.Response = response

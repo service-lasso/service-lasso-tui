@@ -1618,3 +1618,5 @@ Issue #136 / SPEC-008 TEMP006: parse original custody body before actual Bash3.2
 Issue #145 adds direct keyboard access from Stack service rows to existing Lifecycle actions, preserving inspection and all existing mutation gates.
 
 Development #147 publishes the approved TUI UX through the existing ordinary release pipeline for Windows and Linux, with macOS deferred. SPEC-002 and SPEC-007 govern the closed schema4 inventory and retained historical recovery.
+
+Issue #149: TUI-PINNED-RELEASE adds check and confirmed exact-tag install to the existing operator-client Lifecycle actions using Core #2015.

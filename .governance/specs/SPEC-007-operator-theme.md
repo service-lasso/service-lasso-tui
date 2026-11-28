@@ -203,3 +203,13 @@ Issue #143 owner clarification: show canonical `prepared` intent as green
 `Ready` in Stack STATE and selected inspector status. Ready denotes prepared
 capability, never a running observation; non-running Ready rows have blank
 RUN UPTIME. Health/check failures retain their existing precedence.
+
+Issue #149 (TUI-PINNED-RELEASE): For selected @tui and @cli, existing Stack
+Actions exposes Check new releases and installation of the checked exact tag.
+Use Core #2015 POST /api/services/:id/pinned-release/check with {} and
+POST /api/services/:id/pinned-release/install with {tag,confirm:true}. Show
+current and candidate tags, require explicit confirmation, bind async responses
+and install requests to the selected connection/service/context, and show safe
+unavailable/error results from older Core. Installation takes effect on the next
+client launch. Existing lifecycle actions remain available. Verify HTTP/auth,
+confirmation/cancellation, stale selection, error redaction and compact layout.

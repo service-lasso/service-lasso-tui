@@ -218,7 +218,7 @@ func (m operatorModel) bootstrap() tea.Cmd {
 	}
 }
 func (m *operatorModel) invalidate() {
- m.pinnedRelease=nil
+	m.pinnedRelease = nil
 	m.stackChecks = nil
 	m.stackChecksPending = false
 	m.stackRuntime = stackRuntimeState{}

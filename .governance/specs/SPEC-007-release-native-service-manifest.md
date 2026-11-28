@@ -13,3 +13,8 @@ Reference: service-template develop 6785b43a4aa5497d21cc3068eb61a91f71472337.
 ## Proof and authority
 
 No-publish Node fixtures exercise deterministic assembly, actual file hashes and publisher refusal before provider access. Build/extract actual four-platform archives locally and verify embedded source identity. Hosted ordinary CI must pass before normal develop merge. Publication, protected workflow dispatch, native acceptance, promotion and GA remain outside this issue.
+
+Issue #147 adds schema4 as the ordinary Windows/Linux publication profile. Its
+service.json projects only win32-x64 and linux-x64. Historical schema3 projections
+retain all four mappings. New ordinary publication requires schema4 and its exact
+five-asset inventory. No consumer source build or movable selector is admitted.
